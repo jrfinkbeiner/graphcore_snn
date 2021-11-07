@@ -63,7 +63,7 @@ class LIFNeuron(tf.keras.layers.Layer):
         reset_pot = tf.sparse.map_values(tf.math.multiply, spikes_out, -self.reset_val)
         
         # optionally stop gradient propagation through reset potential       
-        # TODO jan: tf.stop_gradient doen't seem to support sparse tensors
+        # TODO jan: tf.stop_gradient doesn't seem to support sparse tensors
         if self.stop_reset_grad:
             reset_pot = tf.sparse.to_dense(reset_pot)
             membrane_potential = membrane_potential + tf.stop_gradient(reset_pot)

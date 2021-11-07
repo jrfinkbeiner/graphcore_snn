@@ -12,6 +12,7 @@ from nn_sparse import SparseLinear
 
 
 # TODO jan: temporary helper calss until proper sparse dataloader is set-up
+# maybe not so temporary as keras.layers.RNN apparently can't handle tf.SparseTensors
 class ToSparseCell(tf.keras.layers.Layer):
     def __init__(self, dim):
         super().__init__()
@@ -21,6 +22,16 @@ class ToSparseCell(tf.keras.layers.Layer):
     def __call__(self, inp, stat):
         return tf.sparse.from_dense(inp), stat
     
+# TODO jan: temporary helper calss until proper sparse dataloader is set-up
+# maybe not so temporary as keras.layers.RNN apparently can't handle tf.SparseTensors
+class ToDenseCell(tf.keras.layers.Layer):
+    def __init__(self, dim):
+        super().__init__()
+        self.state_size = 0
+        self.output_size = dim
+    
+    def __call__(self, inp, stat):
+        return tf.sparse.to_dense(inp), stat
 
 class SNNCell(tf.keras.layers.Layer):
     def __init__(self, inp_dim, out_dim, alpha, beta, gamma, u_thresh, refac_val, self_recurrent):
@@ -32,23 +43,24 @@ class SNNCell(tf.keras.layers.Layer):
         self.linear = SparseLinear(self.inp_dim, self.out_dim)
         self.lif = LIFNeuron((self.out_dim,), alpha, beta, gamma, u_thresh, refac_val)
 
-        self.state_size = (*self.lif.state_size, TensorShape(out_dim)) if self.self_recurrent else self.lif.state_size # TODO jan: SparseTensorShape ?!
+        # TODO jan: how to specify sparse TensorShape ?
+        self.state_size = (self.lif.state_size, TensorShape(out_dim)) if self.self_recurrent else self.lif.state_size
         self.output_size = self.lif.output_size
 
     def call(self, inp, state):
 
         if self.self_recurrent:
-            print(inp.shape)
-            print(state[-1].shape)
-            inp = tf.sparse.concat(-1, [inp, state[-1]])
-            lif_state = state[:-1]
+            rec_inp = tf.sparse.from_dense(state[1]) # TODO jan: necessary until solution for sparse TensorShape found
+            inp = tf.sparse.concat(-1, [inp, rec_inp])
+            lif_state = state[0]
         else: 
             lif_state = state
         
         x = self.linear(inp)
-        x, lif_state_new = self.lif(x, state) 
+        x, lif_state_new = self.lif(x, lif_state) 
 
-        state_new = (*lif_state_new, x) if self.self_recurrent else lif_state_new
+        # TODO jan: for now, convert spare spikes to dense until clear how to deal with TensorShape for sparse initial state
+        state_new = (lif_state_new, tf.sparse.to_dense(x)) if self.self_recurrent else lif_state_new
         return x, state_new
 
 
@@ -62,8 +74,8 @@ def gen_data(zero_probability, train_data_len, seq_len, hidden_dim):
 
 def get_data(batch_size, seq_len, hidden_dim):
 
-    train_data_len = 2**12 
-    test_data_len = 2**12
+    train_data_len = 2**8
+    test_data_len = 2**8
     zero_probability = 0.8
 
     x_train = gen_data(zero_probability, train_data_len, seq_len, hidden_dim)
@@ -85,34 +97,26 @@ def get_data(batch_size, seq_len, hidden_dim):
     return (x_train, y_train), (x_test, y_test), train_steps_per_execution, test_steps_per_execution
 
 
-def SNNLayer(*args, **kwargs):
-    return tf.keras.layers.RNN(SNNCell(*args, **kwargs))
-
 def model_fn_sequential_multilayer(num_layers, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent):
 
     input_layer = keras.Input(shape=(None, dim))
     x = input_layer
-    x = tf.keras.layers.RNN(ToSparseCell(dim), return_sequences=True)(x) # TODO jan: temporary fix until sparse dataloader is set up
+    x = tf.keras.layers.RNN(ToSparseCell(dim), return_sequences=True)(x) # TODO jan: temporary fix
     for _ in range(num_layers):
         x = tf.keras.layers.RNN(SNNCell(dim, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent), return_sequences=True)(x)
-
-    # only last item of sequence
-    x = tf.sparse.to_dense(x)[:, -1, :] # TODO jan: temporary fix until sparse dataloader is set up
+    x = tf.keras.layers.RNN(ToDenseCell(dim), return_sequences=False)(x) # TODO jan: temporary fix
     return input_layer, x
-
 
 def model_fn_sequential_multicell(num_layers, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent):
 
     snn_cells = [
         SNNCell(dim, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent) for _ in range(num_layers)
     ]
-    cells = [ToSparseCell(dim), *snn_cells] # TODO jan: temporary fix until sparse dataloader is set up
+    cells = [ToSparseCell(dim), *snn_cells, ToDenseCell(dim)] # TODO jan: temporary fix to enable handling of sparse tensors in RNN
 
     input_layer = keras.Input(shape=(None, dim))
     x = tf.keras.layers.RNN(cells)(input_layer)
-    x = tf.sparse.to_dense(x)
     return input_layer, x
-
 
 
 def main(args):
@@ -130,6 +134,11 @@ def main(args):
     u_thresh = 0.5
     reset_val = u_thresh
     
+    mode_to_model_fn = {
+        "multicell": model_fn_sequential_multicell,
+        "multilayer": model_fn_sequential_multilayer,
+    }
+
     # gen random data
     (x_train, y_train), (x_test, y_test), train_steps_per_execution, test_steps_per_execution = get_data(batch_size, seq_len, dim)
 
@@ -142,8 +151,7 @@ def main(args):
 
     # with strategy.scope():
     # init model
-    model = keras.Model(*model_fn_sequential_multilayer(num_layers, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent))
-    # model = keras.Model(*model_fn_sequential_multicell(num_layers, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent))
+    model = keras.Model(*mode_to_model_fn[args.mode](num_layers, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent))
     # model.set_pipelining_options(gradient_accumulation_steps_per_replica=32) #2*num_ipus)
 
     # Compile our model with Stochastic Gradient Descent as an optimizer
@@ -170,9 +178,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--layer_dim", default=512, type=int, help="Number of nodes of each layer.")
     parser.add_argument("--batch_size", default=16, type=int, help="Batchsize to use.")
-    parser.add_argument("--self_recurrent", default=0, type=int, help="Whether to use self recurrence or not. Int will be cast to bool (default 0, therefore False).")
+    parser.add_argument("--self_recurrent", default=0, type=int, help="Whether to use self recurrence or not. `int` will be cast to `bool` (default `0`, therefore `False`).")
+    parser.add_argument("--mode", default="multicell", type=str, help="Whether to use `multilayer` or `multicell` approach to stack SNN-blocks.")
     args = parser.parse_args()
     
-    assert not bool(args.self_recurrent), "Currently self recurrence is not supported due to issues in the handling of TensorShapes for initial internal state."
+    assert args.mode == "multilayer" or args.mode == "multicell", f"Unknown mode, got '{args.mode}'."
+    if args.mode == "multilayer":
+        raise ValueError("`multilayer` approach currently not supported due to issues with handling of sparse tensors in `tensorflow.keras.layers.RNN`")
 
     main(args)

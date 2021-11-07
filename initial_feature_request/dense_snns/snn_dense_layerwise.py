@@ -20,21 +20,21 @@ class SNNCell(tf.keras.layers.Layer):
         self.linear = tf.keras.layers.Dense(self.out_dim, activation=None)
         self.lif = LIFNeuron((self.out_dim,), alpha, beta, gamma, u_thresh, refac_val)
 
-        self.state_size = (*self.lif.state_size, TensorShape(out_dim)) if self.self_recurrent else self.lif.state_size
+        self.state_size = (self.lif.state_size, TensorShape(out_dim)) if self.self_recurrent else self.lif.state_size
         self.output_size = self.lif.output_size
 
     def call(self, inp, state):
 
         if self.self_recurrent:
-            inp = tf.concat(-1, [inp, state[-1]])
-            lif_state = state[:-1]
+            inp = tf.concat([inp, state[1]], axis=-1)
+            lif_state = state[0]
         else: 
             lif_state = state
         
         x = self.linear(inp)
-        x, lif_state_new = self.lif(x, state) 
+        x, lif_state_new = self.lif(x, lif_state) 
 
-        state_new = (*lif_state_new, x) if self.self_recurrent else lif_state_new
+        state_new = (lif_state_new, x) if self.self_recurrent else lif_state_new
         return x, state_new
 
 
@@ -71,16 +71,12 @@ def get_data(batch_size, seq_len, hidden_dim):
     return (x_train, y_train), (x_test, y_test), train_steps_per_execution, test_steps_per_execution
 
 
-def SNNLayer(*args, **kwargs):
-    return tf.keras.layers.RNN(SNNCell(*args, **kwargs))
-
 def model_fn_sequential_multilayer(num_layers, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent):
     input_layer = keras.Input(shape=(None, dim))
     x = input_layer
     for _ in range(num_layers):
         x = tf.keras.layers.RNN(SNNCell(dim, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent), return_sequences=True)(x)
     return input_layer, x[:, -1, :] # only last item of sequence
-
 
 def model_fn_sequential_multicell(num_layers, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent):
 
@@ -90,7 +86,6 @@ def model_fn_sequential_multicell(num_layers, dim, alpha, beta, gamma, u_thresh,
     input_layer = keras.Input(shape=(None, dim))
     x = tf.keras.layers.RNN(snn_cells)(input_layer)
     return input_layer, x
-
 
 
 def main(args):
@@ -108,6 +103,11 @@ def main(args):
     u_thresh = 0.5
     reset_val = u_thresh
     
+    mode_to_model_fn = {
+        "multicell": model_fn_sequential_multicell,
+        "multilayer": model_fn_sequential_multilayer,
+    }
+
     # gen random data
     (x_train, y_train), (x_test, y_test), train_steps_per_execution, test_steps_per_execution = get_data(batch_size, seq_len, dim)
 
@@ -121,14 +121,14 @@ def main(args):
     # with strategy.scope():
     # init model
     # model = keras.Model(*model_fn_sequential_multilayer(num_layers, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent))
-    model = keras.Model(*model_fn_sequential_multicell(num_layers, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent))
-    # model.set_pipelining_options(gradient_accumulation_steps_per_replica=32) # 2*num_ipus)
+    model = keras.Model(*mode_to_model_fn[args.mode](num_layers, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent))
+    # model.set_pipelining_options(gradient_accumulation_steps_per_replica=32) #2*num_ipus)
 
     # Compile our model with Stochastic Gradient Descent as an optimizer
     # and Categorical Cross Entropy as a loss.
     model.compile('sgd', 'mse',
                 metrics=["mse"],
-                steps_per_execution=2) #train_steps_per_execution)
+                steps_per_execution=train_steps_per_execution)
     model.summary()
     
 
@@ -148,7 +148,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--layer_dim", default=512, type=int, help="Number of nodes of each layer.")
     parser.add_argument("--batch_size", default=16, type=int, help="Batchsize to use.")
-    parser.add_argument("--self_recurrent", default=0, type=int, help="Whether to use self recurrence or not. Int will be cast to bool (default 0, therefore False).")
+    parser.add_argument("--self_recurrent", default=0, type=int, help="Whether to use self recurrence or not. `int` will be cast to `bool` (default `0`, therefore `False`).")
+    parser.add_argument("--mode", default="multicell", type=str, help="Whether to use `multilayer` or `multicell` approach to stack SNN-blocks.")
     args = parser.parse_args()
     
+    assert args.mode == "multilayer" or args.mode == "multicell", f"Unknown mode, got '{args.mode}'."
+
     main(args)
