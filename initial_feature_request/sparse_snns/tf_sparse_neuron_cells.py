@@ -28,36 +28,36 @@ class LIFNeuron(tf.keras.layers.Layer):
             reset_val: Union[float, MoreArrays],
             stop_reset_grad: Optional[bool] = True,
             spike_func: Callable[[MoreArrays], MoreArrays] = heaviside_with_super_spike_surrogate,
-            v_func: Optional[Callable[[MoreArrays], MoreArrays]] = lambda x: x,
+            state2_func: Optional[Callable[[MoreArrays], MoreArrays]] = lambda x: x,
         ) -> None:
 
         super().__init__()
 
-        assert tf.math.reduce_all(alpha > 0) and tf.math.reduce_all(alpha < 1) # TODO test assertion
-        assert tf.math.reduce_all(beta > 0) and tf.math.reduce_all(beta < 1) # TODO test assertion
-        assert tf.math.reduce_all(gamma > 0) and tf.math.reduce_all(gamma < 1) # TODO test assertion
+        assert tf.math.reduce_all(alpha > 0) and tf.math.reduce_all(alpha < 1)
+        assert tf.math.reduce_all(beta > 0) and tf.math.reduce_all(beta < 1)
+        assert tf.math.reduce_all(gamma > 0) and tf.math.reduce_all(gamma < 1)
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
         self.u_thresh = u_thresh
         self.spike_func = spike_func
-        self.v_func = v_func
+        self.state2_func = state2_func
         self.reset_val = reset_val
         self.stop_reset_grad = stop_reset_grad
 
-        # self.shape = (shape,) if isinstance(shape, int) else shape
         self.state_size = (TensorShape(shape), TensorShape(shape))
         self.output_size = TensorShape(shape)
 
 
     def __call__(self, synaptic_input: MoreArrays, state: Tuple[MoreArrays, MoreArrays]) -> Tuple[Any, Any]:
 
-        membrane_potential, V = state
+        state1, state2 = state
 
-        membrane_potential_new = self.alpha*membrane_potential + (1-self.alpha) * synaptic_input + self.v_func(V)
-        V_new = self.beta * V + self.gamma * membrane_potential
+        state1_new = self.alpha*state1 + (1-self.alpha) * (synaptic_input + self.state2_func(state2))
+        state2_new = self.beta * state2 + (1-self.beta) * self.gamma * state1
+
         # TODO jan: use u_thresh or V_new here? if not u_thresh, u_thresh is an unneseccary paramter
-        spikes_out = tf.sparse.from_dense(self.spike_func(membrane_potential_new-V_new)) 
+        spikes_out = tf.sparse.from_dense(self.spike_func(state1_new-state2_new)) 
 
         # TODO jan: don't know how else/less hacky to do it...
         reset_pot = tf.sparse.map_values(tf.math.multiply, spikes_out, -self.reset_val)
@@ -66,10 +66,10 @@ class LIFNeuron(tf.keras.layers.Layer):
         # TODO jan: tf.stop_gradient doesn't seem to support sparse tensors
         if self.stop_reset_grad:
             reset_pot = tf.sparse.to_dense(reset_pot)
-            membrane_potential = membrane_potential + tf.stop_gradient(reset_pot)
+            state1_new = state1_new + tf.stop_gradient(reset_pot)
         else:
-            membrane_potential = tf.sparse.add(membrane_potential, reset_pot)
+            state1_new = tf.sparse.add(state1_new, reset_pot)
 
         output = spikes_out
-        state_new = (membrane_potential_new, V_new)
+        state_new = (state1_new, state2_new)
         return output, state_new

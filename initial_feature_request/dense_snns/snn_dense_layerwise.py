@@ -1,3 +1,6 @@
+import os
+import sys
+
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras as keras
@@ -9,8 +12,11 @@ from tensorflow.python.framework.tensor_shape import TensorShape
 
 from tf_dense_neuron_cells import LIFNeuron
 
+root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(root_path)
+from data import get_data
 
-class SNNCell(tf.keras.layers.Layer):
+class SNNBlock(tf.keras.layers.Layer):
     def __init__(self, inp_dim, out_dim, alpha, beta, gamma, u_thresh, refac_val, self_recurrent):
         super().__init__()
         self.inp_dim = inp_dim+out_dim if self_recurrent else inp_dim
@@ -37,51 +43,17 @@ class SNNCell(tf.keras.layers.Layer):
         state_new = (lif_state_new, x) if self.self_recurrent else lif_state_new
         return x, state_new
 
-
-def make_divisible(number, divisor):
-    return number - number % divisor
-
-def gen_data(zero_probability, train_data_len, seq_len, hidden_dim):
-    data = np.random.random((train_data_len, seq_len, hidden_dim))
-    data = (data > zero_probability).astype(np.float32)
-    return data
-
-def get_data(batch_size, seq_len, hidden_dim):
-
-    train_data_len = 2**8
-    test_data_len = 2**8
-    zero_probability = 0.8
-
-    x_train = gen_data(zero_probability, train_data_len, seq_len, hidden_dim)
-    x_test  = gen_data(zero_probability, test_data_len,  seq_len, hidden_dim)
-    y_train = gen_data(zero_probability, train_data_len, seq_len, hidden_dim)[:, 0, ...]
-    y_test  = gen_data(zero_probability, test_data_len,  seq_len, hidden_dim)[:, 0, ...]
-
-    # Adjust dataset lengths to be divisible by the batch size
-    train_steps_per_execution = train_data_len // batch_size
-    train_steps_per_execution = make_divisible(train_steps_per_execution, 4) # For multi IPU
-    train_data_len = make_divisible(train_data_len, train_steps_per_execution * batch_size)
-    x_train, y_train = x_train[:train_data_len], y_train[:train_data_len]
-
-    test_steps_per_execution = test_data_len // batch_size
-    test_steps_per_execution = make_divisible(test_steps_per_execution, 4) # For multi IPU
-    test_data_len = make_divisible(test_data_len, test_steps_per_execution * batch_size)
-    x_test, y_test = x_test[:test_data_len], y_test[:test_data_len]
-
-    return (x_train, y_train), (x_test, y_test), train_steps_per_execution, test_steps_per_execution
-
-
 def model_fn_sequential_multilayer(num_layers, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent):
     input_layer = keras.Input(shape=(None, dim))
     x = input_layer
     for _ in range(num_layers):
-        x = tf.keras.layers.RNN(SNNCell(dim, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent), return_sequences=True)(x)
+        x = tf.keras.layers.RNN(SNNBlock(dim, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent), return_sequences=True)(x)
     return input_layer, x[:, -1, :] # only last item of sequence
 
 def model_fn_sequential_multicell(num_layers, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent):
 
     snn_cells = [
-        SNNCell(dim, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent) for _ in range(num_layers)
+        SNNBlock(dim, dim, alpha, beta, gamma, u_thresh, reset_val, self_recurrent) for _ in range(num_layers)
     ]
     input_layer = keras.Input(shape=(None, dim))
     x = tf.keras.layers.RNN(snn_cells)(input_layer)
@@ -133,12 +105,12 @@ def main(args):
     
 
     print('\nTraining')
-    model.fit(x_train, y_train, epochs=10, batch_size=batch_size)
-    # model.compile('sgd', 'categorical_crossentropy',
-    #             metrics=["mse"],
-    #             steps_per_execution=test_steps_per_execution)
-    # print('\nEvaluation')
-    # model.evaluate(x_test, y_test, batch_size=batch_size)
+    model.fit(x_train, y_train, epochs=5, batch_size=batch_size)
+    model.compile('sgd', 'categorical_crossentropy',
+                metrics=["mse"],
+                steps_per_execution=test_steps_per_execution)
+    print('\nEvaluation')
+    model.evaluate(x_test, y_test, batch_size=batch_size)
 
     print("Program ran successfully")
 
