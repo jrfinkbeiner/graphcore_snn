@@ -65,6 +65,7 @@ class SNNasGNNCellModel(tf.keras.layers.Layer):
             for j,inp_conn_nodej in enumerate(self.inp_conn):
                 if i in inp_conn_nodej:
                     out_conn_nodei.append(j)
+            out_conn.append(out_conn_nodei)
         self.out_conn = out_conn
 
         self.snn_blocks = [SNNBlock(dims[inode], alpha, beta, gamma, u_thresh, refac_val) for inode in range(self.num_nodes)]
