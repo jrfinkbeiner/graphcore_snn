@@ -30,7 +30,7 @@ The following summarizes the key challanges.
 
 ### 1. Efficient LIF
 
-First, the idea would be to have an efficient implementation of the LIF block, similar to the implementation of the poplibs LSTM/GRU. It would be useful if both linear/dense transformations as well as convolutions would be supported, but probably this would be implemneted in two separate layers?
+First, the idea would be to have an efficient implementation of the LIF block, similar to the implementation of the poplibs LSTM/GRU. It would be useful if both linear/dense transformations as well as convolutions would be supported, but probably this would be implemneted in two separate modules?
 <img src="./drawings/snn_layer.svg">
 
 As the output of a LIF layer represent spikes, which are mostly zero, it would probably be most efficient to handle the spikes as sparse, rather than dense tensors. As the sparsity structure changes every timestep, support of some for of dynamic sparsity is necessary in order to realize sparse LIF layers.
@@ -39,7 +39,7 @@ As the output of a LIF layer represent spikes, which are mostly zero, it would p
 
 ### 2. Distributed LIF Network
 
-Eventually, the goal is to build large multi-layer spiking neural networks. Here the it should be noted that spiking neural networks can take a different compared to the traditional multi-layer recurrent neural networks. Traditional multi-layer RNNs work by simply sequentially stacking multiple RNN layers together in a strict feed-forward fashion. Multi-layer SNNs, however, can have an arbitrary graph-like structure with an arbitrary connectiviry between the different nodes/layers.
+Eventually, the goal is to build large multi-layer spiking neural networks. Here, it should be noted that SNNs can take a different from compared to the traditional multi-layer recurrent neural networks (RNNs). Traditional multi-layer RNNs work by sequentially stacking multiple RNN layers together in a strict feed-forward fashion. Multi-layer SNNs, however, can have an arbitrary graph-like structure with an arbitrary connectiviry between the different nodes/layers.
 <img src="./drawings/snn_gnn_graph.svg">
 
 Unrolled in time the compuation graph takes a similar for as the standard multi-layer RNN.
