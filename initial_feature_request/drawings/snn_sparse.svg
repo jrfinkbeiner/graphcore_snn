@@ -23,12 +23,12 @@
      inkscape:pagecheckerboard="0"
      inkscape:document-units="mm"
      showgrid="false"
-     inkscape:zoom="0.64542298"
-     inkscape:cx="206.06642"
-     inkscape:cy="416.00626"
-     inkscape:window-width="3000"
-     inkscape:window-height="1664"
-     inkscape:window-x="1992"
+     inkscape:zoom="2.5816919"
+     inkscape:cx="398.18849"
+     inkscape:cy="148.546"
+     inkscape:window-width="1848"
+     inkscape:window-height="1136"
+     inkscape:window-x="72"
      inkscape:window-y="27"
      inkscape:window-maximized="1"
      inkscape:current-layer="layer1" />
@@ -2078,7 +2078,7 @@
          id="tspan46236">LIF block</tspan></text>
     <path
        style="fill:none;stroke:#4b4b4b;stroke-width:0.984926;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:1.96985, 0.984926;stroke-dashoffset:0;stroke-opacity:1;marker-start:url(#Arrow2Mstart-3)"
-       d="M 23.770173,108.59128 C 0.48168162,108.78036 0.48223839,108.81741 0.48223839,108.81741"
+       d="m 21.785798,108.59128 c -23.2884913,0.18908 -23.2879346,0.22613 -23.2879346,0.22613"
        id="path20345-8" />
     <path
        style="fill:none;stroke:#c7c7c7;stroke-width:0.749;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-start:url(#marker48884)"
@@ -2298,7 +2298,7 @@
        ry="1.8794814" />
     <path
        style="fill:none;stroke:#4b4b4b;stroke-width:0.983535;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:1.96707, 0.983535;stroke-dashoffset:0;stroke-opacity:1;marker-start:url(#Arrow2Mstart-05-1)"
-       d="m 321.64241,108.61401 c -23.18348,0.1894 -23.18293,0.22651 -23.18293,0.22651"
+       d="m 323.62678,108.61401 c -23.18348,0.1894 -23.18293,0.22651 -23.18293,0.22651"
        id="path20345-9-8" />
     <path
        style="opacity:1;fill:none;stroke:#4b4b4b;stroke-width:0.928902;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:1.85781, 0.928902;stroke-dashoffset:0;stroke-opacity:1;marker-start:url(#Arrow2Mstart)"
@@ -2328,7 +2328,7 @@
          y="52.799034">LIF block</tspan></text>
     <path
        style="fill:none;stroke:#4b4b4b;stroke-width:0.984926;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:1.96985, 0.984926;stroke-dashoffset:0;stroke-opacity:1;marker-start:url(#Arrow2Mstart-3-9)"
-       d="M 23.586805,49.081581 C 0.29845281,49.270658 0.29901281,49.307708 0.29901281,49.307708"
+       d="M 21.60243,49.081581 C -1.6859221,49.270658 -1.6853621,49.307708 -1.6853621,49.307708"
        id="path20345-8-5" />
     <rect
        id="rect191-7-0"
@@ -2368,7 +2368,7 @@
        ry="1.8615065" />
     <path
        style="fill:none;stroke:#4b4b4b;stroke-width:0.983535;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:1.96707, 0.983535;stroke-dashoffset:0;stroke-opacity:1;marker-start:url(#Arrow2Mstart-05-1-96)"
-       d="m 321.45861,49.104311 c -23.18348,0.189397 -23.18293,0.226507 -23.18293,0.226507"
+       d="m 323.44298,49.104311 c -23.18348,0.189397 -23.18293,0.226507 -23.18293,0.226507"
        id="path20345-9-8-1" />
     <path
        style="fill:none;stroke:#4b4b4b;stroke-width:0.923812;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:1.84763, 0.923812;stroke-dashoffset:0;stroke-opacity:1;marker-start:url(#Arrow2Mstart-5)"
@@ -2379,7 +2379,7 @@
        d="m 220.4007,48.750526 c -18.37929,0.205395 -18.37884,0.245639 -18.37884,0.245639"
        id="path20345-9-4" />
     <path
-       style="fill:none;stroke:#000000;stroke-width:0.852741;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#ExperimentalArrow-92-0)"
+       style="fill:none;stroke:#000000;stroke-width:0.85124998;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#ExperimentalArrow-92-0)"
        d="M -13.106764,184.72834 C 343.89196,184.41453 343.89196,184.41453 343.89196,184.41453"
        id="path25366" />
     <text
@@ -2389,7 +2389,7 @@
        style="font-style:normal;font-weight:normal;font-size:40px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect27352);fill:#000000;fill-opacity:1;stroke:none"><tspan
          x="1225.5977"
          y="769.93164"
-         id="tspan52379">time</tspan></text>
+         id="tspan6412">time</tspan></text>
     <path
        style="opacity:0.374385;fill:none;stroke:#000000;stroke-width:0.901769;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:1.80354, 3.60707;stroke-dashoffset:0;stroke-opacity:1"
        d="m 110.29382,-32.999461 0.25695,214.999471"
@@ -2405,7 +2405,7 @@
        style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:40px;line-height:1.25;font-family:sans-serif;-inkscape-font-specification:'sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect41864);fill:#555555;fill-opacity:1;stroke:#969696;stroke-opacity:1"><tspan
          x="10.654297"
          y="123.95312"
-         id="tspan52381">t</tspan></text>
+         id="tspan6414">t</tspan></text>
     <text
        xml:space="preserve"
        transform="matrix(0.26458333,0,0,0.26458333,118.04259,-53.148356)"
@@ -2413,7 +2413,7 @@
        style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:40px;line-height:1.25;font-family:sans-serif;-inkscape-font-specification:'sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect41864-8);fill:#555555;fill-opacity:1;stroke:#969696;stroke-opacity:1"><tspan
          x="10.654297"
          y="123.95312"
-         id="tspan52383">t+1</tspan></text>
+         id="tspan6416">t+1</tspan></text>
     <text
        xml:space="preserve"
        transform="matrix(0.26458333,0,0,0.26458333,213.36849,-53.35219)"
@@ -2421,7 +2421,7 @@
        style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:40px;line-height:1.25;font-family:sans-serif;-inkscape-font-specification:'sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect41864-8-7);fill:#555555;fill-opacity:1;stroke:#969696;stroke-opacity:1"><tspan
          x="10.654297"
          y="123.95312"
-         id="tspan52385">t+2</tspan></text>
+         id="tspan6418">t+2</tspan></text>
     <path
        style="fill:none;stroke:#c7c7c7;stroke-width:0.749;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-start:url(#marker48884-1)"
        d="m 240.93906,63.301912 c -0.004,34.352383 -0.004,34.352383 -0.004,34.352383"

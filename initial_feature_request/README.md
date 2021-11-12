@@ -47,7 +47,7 @@ Unrolled in time the compuation graph takes a similar for as the standard multi-
 
 However, note, that there are no direct connections between blocks within one time-step. Information can only flow between blocks between two timesteps. Therefore the block-wise computations within one timestep are independet from each other. In our eyes this naturally matches the IPUs 3-step computation scheme. Additionally, the communication should be rather sparse due to the outputs only being spikes, while the dense states remain local.
 
-Lastly, it would interesting to see the IPUs performance for pure inference of the SNN. While training with backpropagation through time (BPTT) is still the dominant training method, it has the downside that the intermediate states have to be stored for the full time sequence. If we understand this correctly, this prevents a true dynamic unroll in time (as the memory cost increases linearly in time). Nonetheless, it would be nice to see the performance of the IPU for a true dynamic unroll (as it seems to be the more fitting mode).
+Lastly, it would be interesting to see the IPUs performance for pure inference of the SNN. While training with backpropagation through time (BPTT) is still the dominant training method, it has the downside that the intermediate states have to be stored for the full time sequence. If we understand this correctly, this prevents a true dynamic unroll in time (as the memory cost increases linearly in time). Nonetheless, it would be nice to see the performance of the IPU for a true dynamic unroll (as it seems to be the more fitting mode).
 
 ## Repository Structure
 
@@ -55,6 +55,6 @@ The following outlines the structure of the repository:
 
 1. In `./dense_snns/` you can find the base implementation, as it implements the SNN in the standard multi-layer RNN framework, where multiple SNN layers are stacked in a sequential manner. This is possible either via stacking multiple `tensorflow.keras.layers.RNN`s with `return_sequences` set to `True`, or via multiple cells wrapped by a single `tensorflow.keras.layers.RNN`.
 2. `./sparse_snns/` builds on top of `dense_snns`, where now the `LIFNeuron`'s outputs are replaced with sparse instead of dense tensors. (Here, some workarounds are necessary as not the full functionality is supported in tensorflow, making the SNN implementation less efficient.)
-3. Lastly, in `./snns_as_gnn/` we want to highlight the similarity between SNNs and graph neural networks (GNNs). Eventually, `SNNBlock`s are not supposed to be stacked in a sequential manner, but to be connected in an arbitrary graph like structure. At the moment, the easiest way to implement this, seems to be an approach based on the `tensorflow.keras.layers.RNN` with a single cell. This, however, as far as we understood, prevents parallization onto multiple IPUs.
+3. Lastly, in `./snns_as_gnn/` we want to highlight the similarity between SNNs and graph neural networks (GNNs). Eventually, `SNNBlock`s are not supposed to be stacked in a sequential manner, but to be connected in an arbitrary graph&reservoir like structure. At the moment, the easiest way to implement this, seems to be an approach based on the `tensorflow.keras.layers.RNN` with a single cell. This, however, as far as we understood, prevents parallization onto multiple IPUs.
 
 ## Relevant Papers

@@ -23,18 +23,32 @@
      inkscape:pagecheckerboard="0"
      inkscape:document-units="mm"
      showgrid="false"
-     inkscape:zoom="0.64542298"
-     inkscape:cx="185.92459"
-     inkscape:cy="591.08524"
-     inkscape:window-width="3000"
-     inkscape:window-height="1664"
-     inkscape:window-x="1992"
+     inkscape:zoom="2.5816919"
+     inkscape:cx="441.95823"
+     inkscape:cy="181.47014"
+     inkscape:window-width="1848"
+     inkscape:window-height="1136"
+     inkscape:window-x="72"
      inkscape:window-y="27"
      inkscape:window-maximized="1"
      inkscape:current-layer="layer1"
      inkscape:snap-global="false" />
   <defs
      id="defs2">
+    <marker
+       style="overflow:visible;"
+       id="Arrow2Lend"
+       refX="0.0"
+       refY="0.0"
+       orient="auto"
+       inkscape:stockid="Arrow2Lend"
+       inkscape:isstock="true">
+      <path
+         transform="scale(1.1) rotate(180) translate(1,0)"
+         d="M 8.7185878,4.0337352 L -2.2072895,0.016013256 L 8.7185884,-4.0017078 C 6.9730900,-1.6296469 6.9831476,1.6157441 8.7185878,4.0337352 z "
+         style="stroke:context-stroke;fill-rule:evenodd;fill:context-stroke;stroke-width:0.62500000;stroke-linejoin:round;"
+         id="path2750" />
+    </marker>
     <marker
        style="overflow:visible"
        id="marker48952"
@@ -3416,7 +3430,7 @@
        d="m 360.09536,179.93699 c -31.85595,0.16603 -31.8552,0.19857 -31.8552,0.19857"
        id="path20345-7-6-0-3" />
     <path
-       style="fill:none;stroke:#000000;stroke-width:0.852741;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#ExperimentalArrow-92-0)"
+       style="fill:none;stroke:#000000;stroke-width:0.85387498;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow2Lend)"
        d="M -13.106764,328.66257 C 343.89196,328.34876 343.89196,328.34876 343.89196,328.34876"
        id="path25366" />
     <text
@@ -3426,7 +3440,7 @@
        style="font-style:normal;font-weight:normal;font-size:40px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect27352);fill:#000000;fill-opacity:1;stroke:none"><tspan
          x="1225.5977"
          y="769.93164"
-         id="tspan8164">time</tspan></text>
+         id="tspan3585">time</tspan></text>
     <path
        style="opacity:0.374385;fill:none;stroke:#000000;stroke-width:0.79592;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:1.59184, 3.18368;stroke-dashoffset:0;stroke-opacity:1"
        d="m 117.27331,58.047595 0.16676,258.071035"
@@ -3438,7 +3452,7 @@
        style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:40px;line-height:1.25;font-family:sans-serif;-inkscape-font-specification:'sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect41864);fill:#555555;fill-opacity:1;stroke:#969696;stroke-opacity:1"><tspan
          x="10.654297"
          y="123.95312"
-         id="tspan8166">t</tspan></text>
+         id="tspan3587">t</tspan></text>
     <text
        xml:space="preserve"
        transform="matrix(0.26458333,0,0,0.26458333,132.33018,39.455857)"
@@ -3446,7 +3460,7 @@
        style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:40px;line-height:1.25;font-family:sans-serif;-inkscape-font-specification:'sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect41864-8);fill:#555555;fill-opacity:1;stroke:#969696;stroke-opacity:1"><tspan
          x="10.654297"
          y="123.95312"
-         id="tspan8168">t+1</tspan></text>
+         id="tspan3589">t+1</tspan></text>
     <text
        xml:space="preserve"
        transform="matrix(0.26458333,0,0,0.26458333,245.11869,38.722856)"
@@ -3454,7 +3468,7 @@
        style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:40px;line-height:1.25;font-family:sans-serif;-inkscape-font-specification:'sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect41864-8-7);fill:#555555;fill-opacity:1;stroke:#969696;stroke-opacity:1"><tspan
          x="10.654297"
          y="123.95312"
-         id="tspan8170">t+2</tspan></text>
+         id="tspan3591">t+2</tspan></text>
     <rect
        id="rect191-4"
        width="78.31646"
@@ -3610,7 +3624,7 @@
        style="font-style:normal;font-weight:normal;font-size:40px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect61999);fill:#ad281b;fill-opacity:1;stroke:#ad281b;stroke-width:1.00157;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;-inkscape-font-specification:'sans-serif, Normal';font-stretch:normal;font-variant:normal;font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal"><tspan
          x="-714.70312"
          y="363.9668"
-         id="tspan8172">IPU 1</tspan></text>
+         id="tspan3593">IPU 1</tspan></text>
     <rect
        style="opacity:0.809438;fill:none;stroke:#ad281b;stroke-width:0.889021;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:2.66706, 2.66706;stroke-dashoffset:0;stroke-opacity:1"
        id="rect1376-1"
@@ -3626,7 +3640,7 @@
        style="font-style:normal;font-weight:normal;font-size:40px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect61999-1);fill:#ad281b;fill-opacity:1;stroke:#ad281b;stroke-width:1.00157;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"><tspan
          x="-714.70312"
          y="363.9668"
-         id="tspan8174">IPU 0</tspan></text>
+         id="tspan3595">IPU 0</tspan></text>
     <path
        style="opacity:0.374385;fill:none;stroke:#000000;stroke-width:0.79592;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:1.59184, 3.18368;stroke-dashoffset:0;stroke-opacity:1"
        d="m 227.76035,58.074301 0.16676,258.071119"
