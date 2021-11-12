@@ -4,7 +4,7 @@
 <svg
    width="210mm"
    height="60mm"
-   viewBox="-180 70 420 100"
+   viewBox="-120 70 420 100"
    version="1.1"
    id="svg5"
    inkscape:version="1.1.1 (1:1.1+202109281949+c3084ef5ed)"
@@ -23,17 +23,31 @@
      inkscape:pagecheckerboard="0"
      inkscape:document-units="mm"
      showgrid="false"
-     inkscape:zoom="0.64542298"
-     inkscape:cx="206.06642"
-     inkscape:cy="416.00626"
-     inkscape:window-width="3000"
-     inkscape:window-height="1664"
-     inkscape:window-x="1992"
-     inkscape:window-y="27"
+     inkscape:zoom="2.5816919"
+     inkscape:cx="398.57583"
+     inkscape:cy="151.45107"
+     inkscape:window-width="1920"
+     inkscape:window-height="1163"
+     inkscape:window-x="0"
+     inkscape:window-y="528"
      inkscape:window-maximized="1"
      inkscape:current-layer="layer1" />
   <defs
      id="defs2">
+    <marker
+       style="overflow:visible"
+       id="Arrow1Mstart"
+       refX="0.0"
+       refY="0.0"
+       orient="auto"
+       inkscape:stockid="Arrow1Mstart"
+       inkscape:isstock="true">
+      <path
+         transform="scale(0.4) translate(10,0)"
+         style="fill-rule:evenodd;fill:context-stroke;stroke:context-stroke;stroke-width:1.0pt"
+         d="M 0.0,0.0 L 5.0,-5.0 L -12.5,0.0 L 5.0,5.0 L 0.0,0.0 z "
+         id="path1328" />
+    </marker>
     <marker
        id="marker24241"
        refX="5.0"
@@ -357,11 +371,12 @@
          x="31.334415"
          y="139.1951">Linear/Conv</tspan></text>
     <path
-       style="fill:none;stroke:#4b4b4b;stroke-width:0.665;stroke-linecap:round;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-start:url(#ExperimentalArrow);opacity:1"
-       d="m 63.267036,120.9097 c 0.03488,6.04806 0.03513,6.09161 0.03513,6.09161 v 0 0 l -2.17e-4,-0.0376 v 0"
+       style="opacity:1;fill:none;stroke:#4b4b4b;stroke-width:0.665;stroke-linecap:round;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-start:url(#Arrow2Mstart-7)"
+       d="m 63.321806,119.1783 c 0.03488,6.04806 -0.01964,7.82301 -0.01964,7.82301 v 0 0 l -2.17e-4,-0.0376 v 0"
        id="path19487"
        inkscape:transform-center-x="0.27848908"
-       inkscape:transform-center-y="3.5757534" />
+       inkscape:transform-center-y="3.5757534"
+       sodipodi:nodetypes="cccccc" />
     <path
        style="opacity:1;fill:none;stroke:#4b4b4b;stroke-width:0.983535;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:1.96707, 0.983535;stroke-dashoffset:0;stroke-opacity:1;marker-start:url(#Arrow2Mstart)"
        d="m 122.89297,108.48294 c -23.183485,0.1894 -23.18293,0.22651 -23.18293,0.22651"
@@ -371,12 +386,13 @@
        d="M 23.770173,108.59128 C 0.48168162,108.78036 0.48223839,108.81741 0.48223839,108.81741"
        id="path20345-8" />
     <path
-       style="fill:none;stroke:#232323;stroke-width:0.965;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-start:url(#marker24241)"
+       style="fill:none;stroke:#232323;stroke-width:0.96399998;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-start:url(#Arrow2Mstart-7)"
        d="m 64.683455,76.255554 c -0.0037,20.355578 -0.0037,20.355578 -0.0037,20.355578"
        id="path24058" />
     <path
-       style="fill:none;stroke:#232323;stroke-width:0.965;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-start:url(#marker24241-0)"
-       d="m 64.803241,152.33832 c -0.004,20.35569 -0.004,20.35569 -0.004,20.35569"
-       id="path24058-0" />
+       style="fill:none;stroke:#232323;stroke-width:0.965;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-start:url(#Arrow2Mstart-33)"
+       d="m 64.494261,149.27612 0.30498,23.41789"
+       id="path24058-0"
+       sodipodi:nodetypes="cc" />
   </g>
 </svg>
