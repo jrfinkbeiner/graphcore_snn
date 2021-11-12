@@ -24,7 +24,7 @@
      inkscape:document-units="mm"
      showgrid="false"
      inkscape:zoom="2.5816919"
-     inkscape:cx="366.2327"
+     inkscape:cx="496.18624"
      inkscape:cy="128.59784"
      inkscape:window-width="1920"
      inkscape:window-height="1163"
@@ -34,6 +34,20 @@
      inkscape:current-layer="layer1" />
   <defs
      id="defs2">
+    <marker
+       style="overflow:visible;"
+       id="Arrow2Mend"
+       refX="0.0"
+       refY="0.0"
+       orient="auto"
+       inkscape:stockid="Arrow2Mend"
+       inkscape:isstock="true">
+      <path
+         transform="scale(0.6) rotate(180) translate(0,0)"
+         d="M 8.7185878,4.0337352 L -2.2072895,0.016013256 L 8.7185884,-4.0017078 C 6.9730900,-1.6296469 6.9831476,1.6157441 8.7185878,4.0337352 z "
+         style="stroke:context-stroke;fill-rule:evenodd;fill:context-stroke;stroke-width:0.62500000;stroke-linejoin:round;"
+         id="path1388" />
+    </marker>
     <marker
        style="overflow:visible"
        id="marker2496"
@@ -665,7 +679,7 @@
        d="m 222.57363,108.26314 c -23.18348,0.1894 -23.18293,0.22651 -23.18293,0.22651"
        id="path20345-9" />
     <path
-       style="fill:none;stroke:#000000;stroke-width:0.852741;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#ExperimentalArrow-92-0)"
+       style="fill:none;stroke:#000000;stroke-width:0.85333334;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow2Mend)"
        d="M -13.106764,184.72834 C 343.89196,184.41453 343.89196,184.41453 343.89196,184.41453"
        id="path25366" />
     <text
@@ -675,7 +689,7 @@
        style="font-style:normal;font-weight:normal;font-size:40px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect27352);fill:#000000;fill-opacity:1;stroke:none"><tspan
          x="1225.5977"
          y="769.93164"
-         id="tspan2620">time</tspan></text>
+         id="tspan1747">time</tspan></text>
     <path
        style="opacity:0.374385;fill:none;stroke:#000000;stroke-width:0.718691;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:1.43738, 2.87476;stroke-dashoffset:0;stroke-opacity:1"
        d="m 110.29431,45.451233 0.25597,137.083607"
@@ -691,7 +705,7 @@
        style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:40px;line-height:1.25;font-family:sans-serif;-inkscape-font-specification:'sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect41864);fill:#555555;fill-opacity:1;stroke:#969696;stroke-opacity:1"><tspan
          x="10.654297"
          y="123.95312"
-         id="tspan2622">t</tspan></text>
+         id="tspan1749">t</tspan></text>
     <text
        xml:space="preserve"
        transform="matrix(0.26458333,0,0,0.26458333,118.04259,24.462784)"
@@ -699,7 +713,7 @@
        style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:40px;line-height:1.25;font-family:sans-serif;-inkscape-font-specification:'sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect41864-8);fill:#555555;fill-opacity:1;stroke:#969696;stroke-opacity:1"><tspan
          x="10.654297"
          y="123.95312"
-         id="tspan2624">t+1</tspan></text>
+         id="tspan1751">t+1</tspan></text>
     <text
        xml:space="preserve"
        transform="matrix(0.26458333,0,0,0.26458333,213.36849,24.25895)"
@@ -707,6 +721,6 @@
        style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:40px;line-height:1.25;font-family:sans-serif;-inkscape-font-specification:'sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect41864-8-7);fill:#555555;fill-opacity:1;stroke:#969696;stroke-opacity:1"><tspan
          x="10.654297"
          y="123.95312"
-         id="tspan2626">t+2</tspan></text>
+         id="tspan1753">t+2</tspan></text>
   </g>
 </svg>
