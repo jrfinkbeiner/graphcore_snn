@@ -8,10 +8,10 @@ The repository limits itself to a simple smallest building block consiting of a 
 The `LIFNeuron` implements the dynamics of simple leaky integrate and fire (LIF) neuron with two internal states
 
 <p align="center">
-<img src="https://render.githubusercontent.com/render/math?math=U^{t+1}_i = U^{t}_i %2B (1-\alpha) \cdot \left( I^t_{\mathrm{syn},i} %2B f(V^{t}_i) \right) ,">
+<img src="https://render.githubusercontent.com/render/math?math=U^{t %2B 1}_i = U^{t}_i %2B (1-\alpha) \cdot \left( I^t_{\mathrm{syn},i} %2B f(V^{t}_i) \right) ,">
 </p>
 <p align="center">
-<img src="https://render.githubusercontent.com/render/math?math=V^{t+1}_i = \beta V^t_i %2B (1-\beta) \gamma U^t_i.">
+<img src="https://render.githubusercontent.com/render/math?math=V^{t %2B 1}_i = \beta V^t_i %2B (1-\beta) \gamma U^t_i.">
 
 Here, the synaptic input current of neuron i is calcualted based on the spikes coming from connected pre-synaptic neurons j and the corresponding synaptic weights:
 
