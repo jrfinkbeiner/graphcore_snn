@@ -57,4 +57,9 @@ The following outlines the structure of the repository:
 2. `./sparse_snns/` builds on top of `dense_snns`, where now the `LIFNeuron`'s outputs are replaced with sparse instead of dense tensors. (Here, some workarounds are necessary as not the full functionality is supported in tensorflow, making the SNN implementation less efficient.)
 3. Lastly, in `./snns_as_gnn/` we want to highlight the similarity between SNNs and graph neural networks (GNNs). Eventually, `SNNBlock`s are not supposed to be stacked in a sequential manner, but to be connected in an arbitrary graph&reservoir like structure. At the moment, the easiest way to implement this, seems to be an approach based on the `tensorflow.keras.layers.RNN` with a single cell. This, however, as far as we understood, prevents parallization onto multiple IPUs.
 
-## Relevant Papers
+## Relevant Resources
+- Zenke, Friedemann, and Emre O. Neftci. "Brain-inspired learning on neuromorphic substrates." Proceedings of the IEEE 109.5 (2021): 935-950. (https://ieeexplore.ieee.org/abstract/document/9317744/)
+- Menick, Jacob, et al. "A practical sparse approximation for real time recurrent learning." arXiv preprint arXiv:2006.07232 (2020). (https://arxiv.org/abs/2006.07232)
+- Bellec, Guillaume, et al. "A solution to the learning dilemma for recurrent networks of spiking neurons." Nature communications 11.1 (2020): 1-15. (https://www.nature.com/articles/s41467-020-17236-y)
+- Kaiser, Jacques, Hesham Mostafa, and Emre Neftci. "Synaptic plasticity dynamics for deep continuous local learning (DECOLLE)." Frontiers in Neuroscience 14 (2020): 424 (https://www.frontiersin.org/articles/10.3389/fnins.2020.00424/full?report=reader) code: (https://github.com/nmi-lab/decolle-public)
+
