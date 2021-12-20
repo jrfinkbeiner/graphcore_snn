@@ -1,3 +1,6 @@
+# Graphcore/Poplar extensions
+*.gp
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
