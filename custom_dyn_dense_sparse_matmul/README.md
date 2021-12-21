@@ -27,7 +27,7 @@ In the following we summarize a few issues we encountered or caveats that should
 ### Restrictive Choices
 
 1. We restrict ourselves to a maximum number of non-zero elements. This number determines the amount of memory that has to be allocated (irrespective of the actual number of non-zero elements) for the sparse vector.
-2. Only non-zero elements in the sparse vector have non-zero gradients: The gradient tensor of the loss with respect to the sparse vector has the same size as the sparse vector itself. This may seem as an arbitrary limitation, but it is motivated but prior work on spiking neural networks.
+2. Only non-zero elements in the sparse vector have non-zero gradients: The gradient tensor of the loss with respect to the sparse vector has the same size as the sparse vector itself. This may seem as an arbitrary limitation, but it is motivated by prior work on spiking neural networks.
 
 ### Memory Allocation and other Optimizations
 
