@@ -28,7 +28,7 @@ def calc_result_and_gradient_ipu(matrix, sparse_vec, num_elements, loss_weights)
         grads = tf.gradients(sum, [matrix, sparse_vec])
         return result, grads
 
-def calc_result_and_gradient_manuel(matrix: np.ndarray, sparse_vec: np.ndarray, num_elements: np.ndarray, loss_weights: np.ndarray):
+def calc_result_and_gradient_manual(matrix: np.ndarray, sparse_vec: np.ndarray, num_elements: np.ndarray, loss_weights: np.ndarray):
     num_elements = num_elements[0]
     sparse_vec = sparse_vec.astype(np.int32)
     dense_vec = np.zeros(matrix.shape[1])
@@ -87,9 +87,9 @@ if __name__ == '__main__':
 
         result_ipu, grads_ipu = sess.run(xla_result, feed_dict={matrix: a, sparse_vec: b, num_elements: c, loss_weights: d})
 
-    result_man, grads_man = calc_result_and_gradient_manuel(a, b, c, d)
+    result_man, grads_man = calc_result_and_gradient_manual(a, b, c, d)
 
-    # Show result from the IPU and compare to the manuel/CPU implementation:
+    # Show result from the IPU and compare to the manual/CPU implementation:
     print(f"\nresults identical: {np.allclose(result_ipu, result_man, rtol=1e-5)}")
     print("IPU:", result_ipu)
     print("MAN:", result_man)
