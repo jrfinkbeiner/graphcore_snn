@@ -6,7 +6,7 @@ Files:
 
 * `custom_codelet.cpp` constains the vertex code for the forward matmul and for the gradient computation of the loss with respect to the dense matrix and sparse vector during the backward phase.
 * `poplar_code.cpp` contains the poplar code to perform the forward matmul and gradient computations.
-* `tf_code.py` contains tensorflow code that performs a dense matrix times sparse vector matmul and the respective gradient calculation and compares the reults to a manuel numpy implementation
+* `tf_code.py` contains tensorflow code that performs a dense matrix times sparse vector matmul and the respective gradient calculation and compares the reults to a manual numpy implementation
 
 In order to run the code execute the following steps:
 
