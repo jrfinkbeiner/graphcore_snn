@@ -299,7 +299,7 @@ void selectLIFInpSpikeGrads(poplar::Graph &graph, BatchedSparseSpikes &fwdInpSpi
                               {{"fwd_inp_spike_ids", fwdInpSpikes.spike_ids[ibatch]},
                                {"fwd_num_inp_spikes", fwdInpSpikes.num_spikes[ibatch][0]},
                                {"dLdx", dLdx[ibatch]},
-                               {"dLdInpSpikes", dLdx[ibatch]}});
+                               {"dLdInpSpikes", dLdInpSpikes[ibatch]}});
     // !!! TODO !!! totally bogus tile mapping, must be improved
     // should be based on state mapping
     graph.setTileMapping(v, ibatch); 
@@ -628,8 +628,7 @@ poplar::program::Program Build_grad(
     BatchedSparseSpikes fwdOutSpikes{slice.inputs[2], slice.inputs[3]};
     poplar::Tensor fwdState{slice.inputs[4]};
     poplar::Tensor dLdfwdOutSpikes{slice.inputs[5]};
-    poplar::Tensor dLdInpSpikes{slice.outputs[0]};
-
+    poplar::Tensor dLdInpSpikes{slice.outputs[0].squeeze({0})};
 
     // BatchedSparseSpikes fwdOutSpikes{slice.inputs[0].squeeze({0}), slice.inputs[1].squeeze({0})};
 
@@ -640,7 +639,7 @@ poplar::program::Program Build_grad(
     return loop;
   };
     
-  auto updatedState =
+  auto dLdfirstState =
       popnn::rnn::Rnn(graph, params.rnn, true, {init_reverse_state.expand({0})}, stateSequence, rnnInputs,
                nullptr, nullptr, {dLdinp_spike_ids}, {}, bwdProg, loopBwd,
                numShards, rnnOptions, {dnai, "rnn"});
@@ -678,7 +677,8 @@ poplar::program::Program Build_grad(
   // graph.setPerfEstimate(vtx, 1);
 
   outputs.push_back(dLdweights);
-  outputs.push_back(dLdinit_state); // only placeholder for now, could easily be calculated from `updatedState` though
+  outputs.push_back(dLdfirstState[0].squeeze({0})); // TODO change to dLdinit_state
+  // outputs.push_back(dLdinit_state); // only placeholder for now, could easily be calculated from `updatedState` though
   outputs.push_back(dLdinp_spike_ids);
   outputs.push_back(dLdnum_inp_spikes); // placeholder
   outputs.push_back(dLddecay_constatns); // only placeholder for now

@@ -45,7 +45,7 @@ def calc_result_and_gradient_ipu(weights, init_state, inp_spike_ids, num_inp_spi
         result = custom_lif_layer(weights, init_state, inp_spike_ids, num_inp_spikes, decay_constants, thresholds)
         out_spikes_ids, num_out_spikes, states = result
         sum = tf.math.reduce_sum(out_spikes_ids)
-        grads = tf.gradients(sum, [weights, inp_spike_ids])
+        grads = tf.gradients(sum, [weights, init_state, inp_spike_ids])
         return result, grads
 
 # def calc_result_and_gradient_manuel(matrix: np.ndarray, sparse_vec: np.ndarray, num_elements: np.ndarray, loss_weights: np.ndarray):
@@ -82,7 +82,7 @@ def check_fwd_results_self_consistent(out_spikes_ids_ipu, num_out_spikes_ipu, st
     # print(result_checks)
     # print(np.all(result_checks))
     if np.all(result_checks):
-        print("Sucess! Spikes match state results.")
+        print("Success! Spikes match state results.")
     else:
         raise AssertionError("Wrong results! Spikes do not match state results.")
 
@@ -127,10 +127,32 @@ if __name__ == '__main__':
 
         results_ipu, grads_ipu = sess.run(xla_result, feed_dict={weights: a, init_state: b, inp_spike_ids: c, num_inp_spikes: d, decay_constants: e, thresholds: f})
 
-    print(len(grads_ipu))
-    print(grads_ipu[0].shape)
+
 
     out_spikes_ids_ipu, num_out_spikes_ipu, states_ipu = results_ipu
+    dLdweights, dLdInitState, dLdInpSpikes = grads_ipu
+
+
+    print("\n--------------------------------------------------------------------\n")
+    print(dLdweights)
+    print("\n--------------------------------------------------------------------\n")
+    print(dLdInitState)
+    print("\n--------------------------------------------------------------------\n")
+    print(dLdInpSpikes)
+    print("\n--------------------------------------------------------------------\n")
+    print(out_spikes_ids_ipu)
+    print("\n--------------------------------------------------------------------\n")
+    print(num_out_spikes_ipu)
+    print("\n--------------------------------------------------------------------\n")
+    print(states_ipu)
+    print("\n--------------------------------------------------------------------\n")
+
+    print(len(grads_ipu))
+    print(dLdweights.shape)
+    print(dLdInitState.shape)
+    print(dLdInpSpikes.shape)
+
+    
     check_fwd_results_self_consistent(*results_ipu)
 
 
