@@ -19,3 +19,5 @@
 
 * only int32 supported on ipu?
 * in rnn outputs are created with respect to RnnParams.dataType and not with the respect to the datatype of the corresponding tensor. This prevents ouputs of different data types... -> solve by just using the input field!
+* weird values appearing in arrays when used in vertex. see issue with dLdweights, (preliminary) solved by creating temporary tensor and copying values...
+* `+=` not save to use in vertex code? even if same address is not written to multiple times? -> How to handle inplace add in vertex code ? Use it as both input and output?

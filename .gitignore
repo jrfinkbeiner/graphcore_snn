@@ -1,3 +1,5 @@
+.vscode
+
 # Graphcore/Poplar extensions
 *.gp
 

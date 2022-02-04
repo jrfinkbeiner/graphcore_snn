@@ -1,4 +1,6 @@
+#include <iostream>
 #include <vector>
+#include <boost/optional.hpp>
 #include <cmath> // ceil
 #include <poplar/Graph.hpp>
 #include <poplar/Tensor.hpp>
@@ -6,16 +8,17 @@
 #include <poputil/VertexTemplates.hpp>
 #include <poputil/exceptions.hpp>
 #include <popops/Zero.hpp>
+#include <popops/Fill.hpp>
 // #include <poplibs_support/logging.hpp> // TODO no logging file...
 #include <popnn/Rnn.hpp>
 #include <popnn/NonLinearityDef.hpp> // TODO delete after sigmoid non-lin was replaced by custom non-lin
 // #include "RnnUtil.hpp"
 #include <popops/ElementWise.hpp>
+#include <popops/TopK.hpp>
+#include <popops/SortOrder.hpp>
 
-#include <boost/optional.hpp>
 // #include "RnnUtil.hpp" // only for boost::optional
 
-#include <iostream>
 
 
 // TODO use dim and dtype info like `batchsize` or `dtype` from LIFParams 
@@ -67,7 +70,6 @@ struct LIFOpts {
     , partialsType{partialsType}
     {};
 };
-
 
 
 // TODO this function might need further (slight) reworking/adjustments
@@ -191,7 +193,7 @@ poplar::Tensor performBatchedLIFStateUpdate(poplar::Graph &graph, poplar::Tensor
 }
 
 
-void genBatchedLIFOutSpikes(poplar::Graph &graph, poplar::Tensor &state, poplar::Tensor &thresholds, BatchedSparseSpikes &out_spikes, 
+void genBatchedLIFOutSpikesOnlySpikes(poplar::Graph &graph, poplar::Tensor &state, poplar::Tensor &thresholds, BatchedSparseSpikes &out_spikes, 
                             poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai = {}) {
 
   auto cs = graph.addComputeSet({dnai, "genBatchedLIFOutSpikes"});
@@ -215,12 +217,47 @@ void genBatchedLIFOutSpikes(poplar::Graph &graph, poplar::Tensor &state, poplar:
 }                    
 
 
+void genBatchedLIFOutSpikesTopK(poplar::Graph &graph, poplar::Tensor &state, poplar::Tensor &thresholds, BatchedSparseSpikes &out_spikes, 
+                            poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai = {}) {
+
+  // popops::SortOrder sortOrder = None;
+  // popops::SortOrder sortOrder = popops::SortOrder::NONE;
+  auto numSparseOutSpikes = out_spikes.spike_ids.dim(1);
+  // popops::TopKParams topKparams(numSparseOutSpikes, true, popops::SortOrder::DESCENDING);
+  popops::TopKParams topKparams(numSparseOutSpikes, true, popops::SortOrder::NONE);
+
+  std::pair<poplar::Tensor, poplar::Tensor> topKStatesPair{popops::topKWithPermutation(graph, prog, state, topKparams, dnai)};
+  poplar::Tensor topKStateVals = topKStatesPair.first;
+  poplar::Tensor topKStateIds = topKStatesPair.second;
+
+  auto cs = graph.addComputeSet({dnai, "genBatchedLIFOutSpikesFromTopK"});
+  auto dtype = state.elementType();
+  size_t batchsize = state.dim(0);
+  for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
+    auto v = graph.addVertex(cs, poputil::templateVertex("LIFOutSpikesFromTopK", dtype),
+                              {{"topKStateVals", topKStateVals[ibatch]},
+                               {"topKStateIds", topKStateIds[ibatch]},
+                               {"thresholds", thresholds},
+                               {"out_spikes_ids", out_spikes.spike_ids[ibatch]},
+                               {"num_out_spikes", out_spikes.num_spikes[ibatch][0]}});
+    // !!! TODO !!! totally bogus tile mapping, must be improved
+    // most likely should be based on out_spikes mapping
+    graph.setTileMapping(v, ibatch);
+    // Provide a cycle count estimate for the profiler. // TODO make educated guess/provide equation
+    graph.setPerfEstimate(v, 1);
+  }
+
+  prog.add(poplar::program::Execute(cs));
+}                    
+
+
 poplar::Tensor performLIFStepFworwardPass(poplar::Graph &graph, poplar::Tensor &weights, poplar::Tensor &state, BatchedSparseSpikes &inp_spikes, 
                             poplar::Tensor &decay_constants, poplar::Tensor &thresholds, BatchedSparseSpikes &out_spikes,
                             poplar::program::Sequence &prog, const LIFOpts &opt, const LIFParams &params, const poplar::DebugNameAndId &dnai = {}) {
   
   poplar::Tensor new_state{performBatchedLIFStateUpdate(graph, weights, state, inp_spikes, decay_constants, thresholds, prog, dnai)};
-  genBatchedLIFOutSpikes(graph, new_state, thresholds, out_spikes, prog, dnai);
+  genBatchedLIFOutSpikesTopK(graph, new_state, thresholds, out_spikes, prog, dnai);
+  // genBatchedLIFOutSpikesOnlySpikes(graph, new_state, thresholds, out_spikes, prog, dnai);
   return new_state;
 }
 
@@ -229,25 +266,59 @@ poplar::Tensor performLIFStepFworwardPass(poplar::Graph &graph, poplar::Tensor &
 //---------------------------------------------- backward -----------------------------------------
 
 
-poplar::Tensor calcLIFStateGrad(poplar::Graph &graph, poplar::Tensor &weights, poplar::Tensor &fwdState, 
+// void calcLIFStateGrad(poplar::Graph &graph, poplar::Tensor &weights, poplar::Tensor &fwdState, 
+//                             poplar::Tensor &decay_constants, poplar::Tensor &thresholds, BatchedSparseSpikes &fwdOutSpikes,
+//                             poplar::Tensor &dLdState, poplar::Tensor &dLdoutSpikes, 
+//                             poplar::program::Sequence &prog, const LIFOpts &opt, const LIFParams &params, const poplar::DebugNameAndId &dnai) {
+
+//   auto dtype = weights.elementType();
+//   size_t batchsize = fwdState.dim(0);
+
+//   popops::mulInPlace(graph, dLdState, decay_constants.expand({0}).upsample(batchsize, 0, poplar::UpsampleMethod::REPEAT), prog, dnai);
+
+//   poplar::Tensor dLdState_clone = graph.clone(dLdState, {dnai, "dLdweights_clone"});
+//   popops::zero(graph, dLdState_clone, prog, dnai);
+
+//   auto cs = graph.addComputeSet({dnai, "calcLIFStateOutGrad"});
+//   for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
+//     auto v = graph.addVertex(cs, poputil::templateVertex("LIFStateOutGrad", dtype),
+//                               {{"fwdState", fwdState[ibatch]},
+//                                {"thresholds", thresholds},
+//                                {"dLdoutSpikes", dLdoutSpikes[ibatch]},
+//                                {"fwd_out_spikes_ids", fwdOutSpikes.spike_ids[ibatch]},
+//                               //  {"fwd_num_out_spikes", fwdOutSpikes.num_spikes[ibatch][0]},
+//                               //  {"dLdState", dLdState[ibatch]}});
+//                                {"dLdState", dLdState_clone[ibatch]}});
+//     // !!! TODO !!! totally bogus tile mapping, must be improved
+//     // should be based on state mapping
+//     graph.setTileMapping(v, ibatch); 
+//     // Provide a cycle count estimate for the profiler. // TODO make educated guess/provide equation
+//     graph.setPerfEstimate(v, 1);
+//   }
+//   prog.add(poplar::program::Execute(cs));
+//   popops::addInPlace(graph, dLdState, dLdState_clone, prog, dnai);
+// }
+
+void calcLIFStateGrad(poplar::Graph &graph, poplar::Tensor &weights, poplar::Tensor &fwdState, 
                             poplar::Tensor &decay_constants, poplar::Tensor &thresholds, BatchedSparseSpikes &fwdOutSpikes,
-                            poplar::Tensor &dLdnextState, poplar::Tensor &dLdoutSpikes, 
+                            poplar::Tensor &dLdState, poplar::Tensor &dLdoutSpikes, 
                             poplar::program::Sequence &prog, const LIFOpts &opt, const LIFParams &params, const poplar::DebugNameAndId &dnai) {
 
   auto dtype = weights.elementType();
   size_t batchsize = fwdState.dim(0);
 
-  // TODO could be done in place...
-  poplar::Tensor dLdState{popops::mul(graph, decay_constants.expand({0}).upsample(batchsize, 0, poplar::UpsampleMethod::REPEAT), dLdnextState, prog, dnai)};
+  popops::mulInPlace(graph, dLdState, decay_constants.expand({0}).upsample(batchsize, 0, poplar::UpsampleMethod::REPEAT), prog, dnai);
 
-  auto cs = graph.addComputeSet({dnai, "calcLIFStateGrad"});
+  auto cs = graph.addComputeSet({dnai, "calcLIFStateOutGrad"});
   for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
     auto v = graph.addVertex(cs, poputil::templateVertex("LIFStateOutGrad", dtype),
                               {{"fwdState", fwdState[ibatch]},
                                {"thresholds", thresholds},
                                {"dLdoutSpikes", dLdoutSpikes[ibatch]},
                                {"fwd_out_spikes_ids", fwdOutSpikes.spike_ids[ibatch]},
-                               {"fwd_num_out_spikes", fwdOutSpikes.num_spikes[ibatch][0]},
+                               {"dLdState_inp", dLdState[ibatch]},
+                              //  {"fwd_num_out_spikes", fwdOutSpikes.num_spikes[ibatch][0]},
+                              //  {"dLdState", dLdState[ibatch]}});
                                {"dLdState", dLdState[ibatch]}});
     // !!! TODO !!! totally bogus tile mapping, must be improved
     // should be based on state mapping
@@ -256,27 +327,31 @@ poplar::Tensor calcLIFStateGrad(poplar::Graph &graph, poplar::Tensor &weights, p
     graph.setPerfEstimate(v, 1);
   }
   prog.add(poplar::program::Execute(cs));
-
-  return dLdState;
 }
 
 
-
-void calcLIFWeightGrad(poplar::Graph &graph, poplar::Tensor &dLdweights, BatchedSparseSpikes &fwdInpSpikes, poplar::Tensor &dLdState, 
+void calcLIFWeightGrad(poplar::Graph &graph, poplar::Tensor &dLdweights, BatchedSparseSpikes &fwdInpSpikes, poplar::Tensor &decay_constants, poplar::Tensor &dLdState, 
                             poplar::program::Sequence &prog, const LIFOpts &opt, const LIFParams &params, const poplar::DebugNameAndId &dnai) {
 
   auto dtype = dLdweights.elementType();
   size_t num_rows = dLdweights.dim(0);
+  size_t sparse_out_dim = fwdInpSpikes.spike_ids.dim(1);
   auto cs = graph.addComputeSet({dnai, "calcLIFWeightGrad"});
+  
+  poplar::Tensor dLdweights_clone = graph.clone(dLdweights, {dnai, "dLdweights_clone"});
+  popops::zero(graph, dLdweights_clone, prog, dnai);
+
+  // !!! TODO !!! really row wise or just column wise as in `calcLIFInpSpikesGrad` case ?
   // TODO include batch-loop here when figured out how to be thread/parallel safe
   // parallelisms might intruduce probelms due to the += operation...
   for (unsigned irow = 0; irow < num_rows; ++irow) {
     auto v = graph.addVertex(cs, poputil::templateVertex("LIFWeightsGrad", dtype),
                               {{"dLdState", dLdState.dimShuffle({1,0})[irow]},
+                              {"decay_constant", decay_constants[irow]},
                               {"fwd_inp_spikes_ids", fwdInpSpikes.spike_ids.flatten()}, // TODO flatten here or does a Tneosr structure exist for vertex Input ?
                               {"fwd_num_inp_spikes", fwdInpSpikes.num_spikes.dimShuffle({1,0})[0]},
-                              {"sparse_out_dim", fwdInpSpikes.spike_ids.dim(1)},
-                              {"dLdweights_row", dLdweights[irow]}});
+                              {"sparse_out_dim", sparse_out_dim},
+                              {"dLdweights_row", dLdweights_clone[irow]}});
     // !!! TODO !!! totally bogus tile mapping, must be improved
     // should be based on state mapping
     graph.setTileMapping(v, irow); 
@@ -284,6 +359,9 @@ void calcLIFWeightGrad(poplar::Graph &graph, poplar::Tensor &dLdweights, Batched
     graph.setPerfEstimate(v, 1);
   }
   prog.add(poplar::program::Execute(cs));
+
+  popops::addInPlace(graph, dLdweights, dLdweights_clone, prog, dnai);
+  // prog.add(poplar::program::Copy(dLdweights_clone, dLdweights, false, {dnai}));
 }
 
 
@@ -297,7 +375,7 @@ void selectLIFInpSpikeGrads(poplar::Graph &graph, BatchedSparseSpikes &fwdInpSpi
   for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
     auto v = graph.addVertex(cs, poputil::templateVertex("LIFSelectInpSpikesGrad", dtype),
                               {{"fwd_inp_spike_ids", fwdInpSpikes.spike_ids[ibatch]},
-                               {"fwd_num_inp_spikes", fwdInpSpikes.num_spikes[ibatch][0]},
+                              //  {"fwd_num_inp_spikes", fwdInpSpikes.num_spikes[ibatch][0]},
                                {"dLdx", dLdx[ibatch]},
                                {"dLdInpSpikes", dLdInpSpikes[ibatch]}});
     // !!! TODO !!! totally bogus tile mapping, must be improved
@@ -310,7 +388,7 @@ void selectLIFInpSpikeGrads(poplar::Graph &graph, BatchedSparseSpikes &fwdInpSpi
 }
 
 
-void calcLIFInpSpikesGrad(poplar::Graph &graph, poplar::Tensor &weights, BatchedSparseSpikes &fwdInpSpikes, 
+void calcLIFInpSpikesGrad(poplar::Graph &graph, poplar::Tensor &weights, BatchedSparseSpikes &fwdInpSpikes, poplar::Tensor &decay_constants,
                             poplar::Tensor &dLdState, poplar::Tensor &dLdInpSpikes,
                             poplar::program::Sequence &prog, const LIFOpts &opt, const LIFParams &params, const poplar::DebugNameAndId &dnai) {  
   // TODO IMPORTANT: For backwards bass, weight matrix schould be distributed column-wise to different tiles
@@ -328,8 +406,9 @@ void calcLIFInpSpikesGrad(poplar::Graph &graph, poplar::Tensor &weights, Batched
       auto v = graph.addVertex(cs, poputil::templateVertex("LIFInpSpikesGrad", dtype),
                                 {{"weights_column", weights.dimShuffle({1,0})[icol]},
                                 {"dLdState", dLdState[ibatch]},
+                                {"decay_constants", decay_constants},
                                 {"fwd_inp_spike_ids", fwdInpSpikes.spike_ids[ibatch]},
-                                {"fwd_num_inp_spikes", fwdInpSpikes.num_spikes[ibatch][0]},
+                                // {"fwd_num_inp_spikes", fwdInpSpikes.num_spikes[ibatch][0]},
                                 {"col_id", icol},
                                 {"dLdx", dLdx[ibatch][icol]}});
       // !!! TODO !!! totally bogus tile mapping, must be improved
@@ -346,16 +425,14 @@ void calcLIFInpSpikesGrad(poplar::Graph &graph, poplar::Tensor &weights, Batched
 }
 
 
-poplar::Tensor performLIFStepBackwardPass(poplar::Graph &graph, poplar::Tensor &weights, poplar::Tensor &fwdState, BatchedSparseSpikes &fwdInpSpikes, 
+void performLIFStepBackwardPass(poplar::Graph &graph, poplar::Tensor &weights, poplar::Tensor &fwdState, BatchedSparseSpikes &fwdInpSpikes, 
                             poplar::Tensor &decay_constants, poplar::Tensor &thresholds, BatchedSparseSpikes &fwdOutSpikes,
-                            poplar::Tensor &dLdweights, poplar::Tensor &dLdnextState, poplar::Tensor &dLdOutSpikes, poplar::Tensor &dLdInpSpikes,
+                            poplar::Tensor &dLdweights, poplar::Tensor &dLdState, poplar::Tensor &dLdOutSpikes, poplar::Tensor &dLdInpSpikes,
                             poplar::program::Sequence &prog, const LIFOpts &opt, const LIFParams &params, const poplar::DebugNameAndId &dnai = {}) {
   
-  poplar::Tensor dLdState{calcLIFStateGrad(graph, weights, fwdState, decay_constants, thresholds, fwdOutSpikes, dLdnextState, dLdOutSpikes, 
-                                            prog, opt, params, dnai)};
-  calcLIFWeightGrad(graph, dLdweights, fwdInpSpikes, dLdState, prog, opt, params, dnai);
-  calcLIFInpSpikesGrad(graph, weights, fwdInpSpikes, dLdState, dLdInpSpikes,  prog, opt, params, dnai);
-  return dLdState;
+  calcLIFStateGrad(graph, weights, fwdState, decay_constants, thresholds, fwdOutSpikes, dLdState, dLdOutSpikes, prog, opt, params, dnai);
+  calcLIFWeightGrad(graph, dLdweights, fwdInpSpikes, decay_constants, dLdState, prog, opt, params, dnai);
+  calcLIFInpSpikesGrad(graph, weights, fwdInpSpikes, decay_constants, dLdState, dLdInpSpikes,  prog, opt, params, dnai);
 }
 
 
@@ -583,6 +660,7 @@ poplar::program::Program Build_grad(
   auto dtype = weights.elementType();
 
   poplar::Tensor dLdweights = graph.clone(weights, {dnai, "dLdweights"});
+  popops::zero(graph, dLdweights, bwdProg, dnai);
   poplar::Tensor dLdinit_state = graph.clone(init_state, {dnai, "dLdinit_state"});
   poplar::Tensor dLdinp_spike_ids = graph.clone(inp_spike_ids, {dnai, "dLdinp_spike_ids"});
   poplar::Tensor dLdnum_inp_spikes = graph.clone(num_inp_spikes, {dnai, "dLdnum_inp_spikes"});
@@ -594,6 +672,8 @@ poplar::program::Program Build_grad(
   // poplar::Tensor dLdfwd_states_seq = gradients[2]; // Ignore this possibility for now. Essentially assume 0
 
   poplar::Tensor init_reverse_state = graph.clone(init_state, {dnai, "init_reverse_state"});
+  // float one = 1.0;
+  // popops::fill(graph, init_reverse_state, bwdProg, one, dnai); // !!! TODO !!! uncomment  
   popops::zero(graph, init_reverse_state, bwdProg, dnai); // set reverse init state to zero
   std::vector<poplar::Tensor> rnnInputs{inp_spike_ids, num_inp_spikes, out_spike_ids, num_out_spikes, fwd_states_seq, dLdout_spike_ids};
 
@@ -632,19 +712,21 @@ poplar::program::Program Build_grad(
 
     // BatchedSparseSpikes fwdOutSpikes{slice.inputs[0].squeeze({0}), slice.inputs[1].squeeze({0})};
 
-    poplar::Tensor dLdcurrentState{performLIFStepBackwardPass(
-        graph, weights, fwdState, fwdInpSpikes, decay_constatns, thresholds, fwdOutSpikes, dLdweights, dLdnextState, dLdfwdOutSpikes, dLdInpSpikes, loop, opt, params, {dnai})};
-    loop.add(poplar::program::Copy(dLdcurrentState, dLdnextState, false, {dnai}));
+    performLIFStepBackwardPass(
+        graph, weights, fwdState, fwdInpSpikes, decay_constatns, thresholds, fwdOutSpikes, dLdweights, dLdnextState, dLdfwdOutSpikes, dLdInpSpikes, loop, opt, params, {dnai});
+    // poplar::Tensor dLdcurrentState{performLIFStepBackwardPass(
+    //     graph, weights, fwdState, fwdInpSpikes, decay_constatns, thresholds, fwdOutSpikes, dLdweights, dLdnextState, dLdfwdOutSpikes, dLdInpSpikes, loop, opt, params, {dnai})};
+    // loop.add(poplar::program::Copy(dLdcurrentState, dLdnextState, false, {dnai}));
 
     return loop;
   };
-    
+
   auto dLdfirstState =
       popnn::rnn::Rnn(graph, params.rnn, true, {init_reverse_state.expand({0})}, stateSequence, rnnInputs,
                nullptr, nullptr, {dLdinp_spike_ids}, {}, bwdProg, loopBwd,
                numShards, rnnOptions, {dnai, "rnn"});
 
-
+  
 
 
   // for (unsigned irow = 0; irow < weights.dim(0); ++irow) {
