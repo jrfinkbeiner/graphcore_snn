@@ -479,7 +479,7 @@ extern "C" poplar::program::Program Build(
   }
 
   if (init_state.rank() != 2) {
-    throw poputil::poplibs_error("Input 'inputs[2]' must be tensor of rank 2, (batch_size, size_out)).");
+    throw poputil::poplibs_error("Input 'inputs[1]' must be tensor of rank 2, (batch_size, size_out)).");
   }
 
   if (inp_spike_ids.rank() != 3) {

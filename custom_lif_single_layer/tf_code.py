@@ -11,6 +11,7 @@ from pure_tf_snn import pure_tf_lif_layer
 from jax_snn import calc_result_and_gradient_jax
 
 
+NUM_LAYERS = 4
 BATCHSIZE = 32 # breaks at 15 for SEQ_LEN=1, breaks at 2 for SEQ_LEN>1, irrespective of seed (therefore of input and output)
 SEQ_LEN = 35 # still good for 1000 with BATCHSIZE=1, 
 SIZE_IN = 6
@@ -142,26 +143,26 @@ def custom_lif_layer(weights, init_state, inp_spike_ids, num_inp_spikes, decay_c
                                               attributes=f"{SIZE_SPARSE_OUT}",
                                             )
 
-def calc_result_and_gradient_ipu(weights, init_state, inp_spike_ids, num_inp_spikes, decay_constants, thresholds):
+def calc_result_and_gradient_ipu(weights, init_states, inp_spike_ids, num_inp_spikes, decay_constants, thresholds):
     with tf.variable_scope(f"some_name", reuse=tf.AUTO_REUSE) as scope:
-        result = custom_lif_layer(weights, init_state, inp_spike_ids, num_inp_spikes, decay_constants, thresholds)
-        out_spikes_ids, num_out_spikes, states = result
-        
-        # sum = tf.math.reduce_sum(out_spikes_ids)
-        num_out_spikes = tf.cast(num_out_spikes, tf.int32)
-        dense_out_spikes = sparse2dense_ipu(out_spikes_ids, num_out_spikes, weights.shape[0])[0]
+        spike_ids, num_spikes = inp_spike_ids, num_inp_spikes
+        for ws, decay_consts, threshs, init_stat in zip(weights, decay_constants, thresholds, init_states):
+            spike_ids, num_spikes, states = custom_lif_layer(ws, init_stat, spike_ids, num_spikes, decay_consts, threshs)
+            num_spikes = tf.cast(num_spikes, tf.int32)
+        dense_out_spikes = sparse2dense_ipu(spike_ids, num_spikes, weights[-1].shape[0])[0]
         sum = tf.math.reduce_sum((dense_out_spikes-1.0)**2)
-        grads = tf.gradients(sum, [weights, init_state, inp_spike_ids, out_spikes_ids])
-        return (out_spikes_ids, num_out_spikes, states, dense_out_spikes) , grads
+        grads = tf.gradients(sum, [*weights, init_state[0], inp_spike_ids, spike_ids])
+        return (spike_ids, num_spikes, states, dense_out_spikes) , grads
 
 
-def calc_result_and_gradient_pure_tf(weights, init_state, inp_spikes, decay_constants, thresholds):
+def calc_result_and_gradient_pure_tf(weights, init_states, inp_spikes, decay_constants, thresholds):
     with tf.variable_scope(f"some_name", reuse=tf.AUTO_REUSE) as scope:
-        result = pure_tf_lif_layer(weights, init_state, inp_spikes, decay_constants, thresholds)
-        out_spikes, states = result
-        sum = tf.math.reduce_sum((out_spikes-1.0)**2)
-        grads = tf.gradients(sum, [weights, init_state, inp_spikes])
-        return result, grads
+        spikes = inp_spikes
+        for ws, decay_consts, threshs, init_stat in zip(weights, decay_constants, thresholds, init_states):
+            spikes, states = pure_tf_lif_layer(ws, init_stat, spikes, decay_consts, threshs)
+        sum = tf.math.reduce_sum((spikes-1.0)**2)
+        grads = tf.gradients(sum, [*weights, init_state[0], inp_spikes])
+        return (spikes, states), grads
 
 
 # def calc_result_and_gradient_manuel(matrix: np.ndarray, sparse_vec: np.ndarray, num_elements: np.ndarray, loss_weights: np.ndarray):
@@ -223,14 +224,21 @@ if __name__ == '__main__':
     cfg.auto_select_ipus = 1
     cfg.configure_ipu_system()
 
+    # TODO adujst code below for arbitrary shapes
+    # TODO this, however, must also include the sparse sizes
+    # TODO especailly the hardcoded SIZE_SPARSE_OUT in the custom op
+    shapes = [SIZE_IN]
+    for i in range(NUM_LAYERS):
+        shapes.append(SIZE_OUT)
+
     with tf.device("cpu"):
-        weights = tf.placeholder(np.float32, [SIZE_OUT, SIZE_IN])
-        init_state = tf.placeholder(np.float32, [BATCHSIZE, SIZE_OUT])
+        weights = tuple(tf.placeholder(np.float32, [shapes[i+1], shapes[i]]) for i in range(NUM_LAYERS))
+        init_state = tuple(tf.placeholder(np.float32, [BATCHSIZE, SIZE_OUT]) for i in range(NUM_LAYERS))
         inp_spike_ids = tf.placeholder(np.float32, [SEQ_LEN, BATCHSIZE, SIZE_SPARSE_IN])
         num_inp_spikes = tf.placeholder(np.int32, [SEQ_LEN, BATCHSIZE, 1])
         inp_spikes = tf.placeholder(np.float32, [SEQ_LEN, BATCHSIZE, SIZE_IN])
-        decay_constants = tf.placeholder(np.float32, [SIZE_OUT])
-        thresholds = tf.placeholder(np.float32, [SIZE_OUT])
+        decay_constants = tuple(tf.placeholder(np.float32, [SIZE_OUT]) for i in range(NUM_LAYERS))
+        thresholds = tuple(tf.placeholder(np.float32, [SIZE_OUT]) for i in range(NUM_LAYERS))
 
         xla_result_puretf = calc_result_and_gradient_pure_tf(weights, init_state, inp_spikes, decay_constants, thresholds)
 
@@ -241,32 +249,38 @@ if __name__ == '__main__':
     with tf.Session() as sess:
         threshold = 1.0
 
-        a = rng.normal(size=(SIZE_OUT, SIZE_IN)).astype(np.float32)
-        b = rng.normal(size=(BATCHSIZE, SIZE_OUT)).astype(np.float32)
+        a = tuple(rng.normal(size=(shapes[i+1], shapes[i])).astype(np.float32) for i in range(NUM_LAYERS))
+        # a = []
+        # for i in range(NUM_LAYERS-1):
+        #     a.append(rng.normal(size=(SIZE_OUT, SIZE_OUT)).astype(np.float32))
+        # a = tuple(a)
+        b = tuple(rng.normal(size=(BATCHSIZE, SIZE_OUT)).astype(np.float32) for i in range(NUM_LAYERS))
         c = np.empty((SEQ_LEN, BATCHSIZE, SIZE_SPARSE_IN))
         for ibatch in range(BATCHSIZE):
             for iseq in range(SEQ_LEN):
                 c[iseq, ibatch, :] = rng.choice(SIZE_IN, SIZE_SPARSE_IN, replace=False)
         d = rng.choice(SIZE_SPARSE_IN, (SEQ_LEN, BATCHSIZE, 1), replace=True).astype(np.int32)
-        e = 0.95 * np.ones(SIZE_OUT, dtype=np.float32)
-        f = threshold  * np.ones(SIZE_OUT, dtype=np.float32)
+        es = tuple(0.95 * np.ones((SIZE_OUT), dtype=np.float32) for ilay in range(NUM_LAYERS))
+        fs = tuple(threshold * np.ones((SIZE_OUT), dtype=np.float32) for ilay in range(NUM_LAYERS))
         g = sparse2dense(c, d, SIZE_IN)
         # g = np.ones(1, dtype=np.int32)
 
         assert np.max(d) <= SIZE_SPARSE_IN
 
-        results_ipu, grads_ipu = sess.run(xla_result, feed_dict={weights: a, init_state: b, inp_spike_ids: c, num_inp_spikes: d, decay_constants: e, thresholds: f})
+        results_ipu, grads_ipu = sess.run(xla_result, feed_dict={weights: a, init_state: b, inp_spike_ids: c, num_inp_spikes: d, decay_constants: es, thresholds: fs})
 
-        results_puretf, grads_puretf = sess.run(xla_result_puretf, feed_dict={weights: a, init_state: b, inp_spikes: g, decay_constants: e, thresholds: f}) #, size_out_sparse: g})
+        results_puretf, grads_puretf = sess.run(xla_result_puretf, feed_dict={weights: a, init_state: b, inp_spikes: g, decay_constants: es, thresholds: fs}) #, size_out_sparse: g})
 
     out_spikes_ids_ipu, num_out_spikes_ipu, states_ipu, out_spikes_ipu = results_ipu
-    dLdweights_ipu, dLdInitState_ipu, dLdInpSpikes_ipu_sparse, dLdOutSpikes_ipu_sparse = grads_ipu
+    dLdweights_ipu = grads_ipu[:NUM_LAYERS]
+    dLdInitState_ipu, dLdInpSpikes_ipu_sparse, dLdOutSpikes_ipu_sparse = grads_ipu[NUM_LAYERS:]
     dLdInpSpikes_ipu = sparse2dense(c, None, SIZE_IN, dLdInpSpikes_ipu_sparse)
 
     out_spikes_puretf, states_puretf = results_puretf
-    dLdweights_puretf, dLdInitState_puretf, dLdInpSpikes_puretf = grads_puretf
+    dLdweights_puretf = grads_puretf[:NUM_LAYERS]
+    dLdInitState_puretf, dLdInpSpikes_puretf = grads_puretf[NUM_LAYERS:]
 
-    results_jax, grads_jax = calc_result_and_gradient_jax(weights=a, init_state=b, inp_spikes=g, decay_constants=e, thresholds=f)
+    results_jax, grads_jax = calc_result_and_gradient_jax(weights=a, init_state=b, inp_spikes=g, decay_constants=es, thresholds=fs)
     out_spikes_jax, states_jax = results_jax
     dLdweights_jax, dLdInitState_jax, dLdInpSpikes_jax = grads_jax
 
@@ -310,10 +324,11 @@ if __name__ == '__main__':
     check_values(out_spikes_ipu, out_spikes_puretf, "out_spikes - ipu-puretf")
     check_values(out_spikes_jax, out_spikes_puretf, "out_spikes - jax-puretf")
     print()
-    check_values(dLdweights_ipu, dLdweights_puretf, "dLdweights - ipu-puretf", rtol=1e-4, atol=1e-6)
-    check_values(dLdweights_jax, dLdweights_puretf, "dLdweights - jax-puretf", rtol=1e-4, atol=1e-6)
-    check_values(dLdweights_ipu, dLdweights_jax, "dLdweights - ipu-jax", rtol=1e-4, atol=1e-6)
-    print()
+    for i in range(NUM_LAYERS):
+        check_values(dLdweights_ipu[i], dLdweights_puretf[i], f"dLdweights[{i}] - ipu-puretf", rtol=1e-4, atol=1e-6)
+        check_values(dLdweights_jax[i], dLdweights_puretf[i], f"dLdweights[{i}] - jax-puretf", rtol=1e-4, atol=1e-6)
+        check_values(dLdweights_ipu[i], dLdweights_jax[i], f"dLdweights[{i}] - ipu-jax", rtol=1e-4, atol=1e-6)
+        print()
     check_values(dLdInpSpikes_ipu, dLdInpSpikes_puretf, "dLdInpSpikes - ipu-puretf", rtol=1e-4, atol=1e-6)
     check_values(dLdInpSpikes_jax, dLdInpSpikes_puretf, "dLdInpSpikes - jax-puretf", rtol=1e-4, atol=1e-6)
     check_values(dLdInpSpikes_ipu, dLdInpSpikes_jax, "dLdInpSpikes - ipu-jax", rtol=1e-4, atol=1e-6)

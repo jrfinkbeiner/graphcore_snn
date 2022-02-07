@@ -38,9 +38,11 @@ def lif_layer_jax(weights, init_state, inp_spikes, decay_constants, thresholds):
     return states, out_spikes
 
 
-def calc_loss(weights, init_state, inp_spikes, decay_constants, thresholds):
-    states, out_spikes = vmap(lif_layer_jax, in_axes=(None, 0, 1, None, None), out_axes=(1, 1))(weights, init_state, inp_spikes, decay_constants, thresholds)
-    return jnp.sum((out_spikes-1.0)**2), (states, out_spikes)
+def calc_loss(weights, init_states, inp_spikes, decay_constants, thresholds):
+    spikes = inp_spikes
+    for ws, decay_consts, threshs, init_stat in zip(weights, decay_constants, thresholds, init_states):
+        states, spikes = vmap(lif_layer_jax, in_axes=(None, 0, 1, None, None), out_axes=(1, 1))(ws, init_stat, spikes, decay_consts, threshs)
+    return jnp.sum((spikes-1.0)**2), (states, spikes)
 
 
 @jax.jit

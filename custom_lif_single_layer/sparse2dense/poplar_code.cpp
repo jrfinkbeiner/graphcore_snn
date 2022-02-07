@@ -67,8 +67,6 @@ extern "C" poplar::program::Program Build(
   sscanf(attributes.c_str(), "%zu", &size_dense);
   auto dtype = spike_ids.elementType();
 
-  std::cout << "size_dense " << size_dense << std::endl;
-
   if (size_dense < size_sparse) {
     throw poputil::poplibs_error("Dense size must be larger than sparse size.");
   }
