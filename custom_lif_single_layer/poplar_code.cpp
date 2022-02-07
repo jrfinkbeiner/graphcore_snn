@@ -316,7 +316,7 @@ void calcLIFStateGrad(poplar::Graph &graph, poplar::Tensor &weights, poplar::Ten
                                {"thresholds", thresholds},
                                {"dLdoutSpikes", dLdoutSpikes[ibatch]},
                                {"fwd_out_spikes_ids", fwdOutSpikes.spike_ids[ibatch]},
-                               {"dLdState_inp", dLdState[ibatch]},
+                              //  {"dLdState_inp", dLdState[ibatch]},
                               //  {"fwd_num_out_spikes", fwdOutSpikes.num_spikes[ibatch][0]},
                               //  {"dLdState", dLdState[ibatch]}});
                                {"dLdState", dLdState[ibatch]}});
@@ -337,9 +337,6 @@ void calcLIFWeightGrad(poplar::Graph &graph, poplar::Tensor &dLdweights, Batched
   size_t num_rows = dLdweights.dim(0);
   size_t sparse_out_dim = fwdInpSpikes.spike_ids.dim(1);
   auto cs = graph.addComputeSet({dnai, "calcLIFWeightGrad"});
-  
-  poplar::Tensor dLdweights_clone = graph.clone(dLdweights, {dnai, "dLdweights_clone"});
-  popops::zero(graph, dLdweights_clone, prog, dnai);
 
   // !!! TODO !!! really row wise or just column wise as in `calcLIFInpSpikesGrad` case ?
   // TODO include batch-loop here when figured out how to be thread/parallel safe
@@ -351,7 +348,7 @@ void calcLIFWeightGrad(poplar::Graph &graph, poplar::Tensor &dLdweights, Batched
                               {"fwd_inp_spikes_ids", fwdInpSpikes.spike_ids.flatten()}, // TODO flatten here or does a Tneosr structure exist for vertex Input ?
                               {"fwd_num_inp_spikes", fwdInpSpikes.num_spikes.dimShuffle({1,0})[0]},
                               {"sparse_out_dim", sparse_out_dim},
-                              {"dLdweights_row", dLdweights_clone[irow]}});
+                              {"dLdweights_row", dLdweights[irow]}});
     // !!! TODO !!! totally bogus tile mapping, must be improved
     // should be based on state mapping
     graph.setTileMapping(v, irow); 
@@ -359,9 +356,6 @@ void calcLIFWeightGrad(poplar::Graph &graph, poplar::Tensor &dLdweights, Batched
     graph.setPerfEstimate(v, 1);
   }
   prog.add(poplar::program::Execute(cs));
-
-  popops::addInPlace(graph, dLdweights, dLdweights_clone, prog, dnai);
-  // prog.add(poplar::program::Copy(dLdweights_clone, dLdweights, false, {dnai}));
 }
 
 

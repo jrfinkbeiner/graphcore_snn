@@ -118,9 +118,8 @@ public:
   poplar::Input<poplar::Vector<FPType>> thresholds;
   poplar::Input<poplar::Vector<FPType>> dLdoutSpikes;
   poplar::Input<poplar::Vector<FPType>> fwd_out_spikes_ids;
-  poplar::Input<poplar::Vector<FPType>> dLdState_inp;
     
-  poplar::Output<poplar::Vector<FPType>> dLdState;
+  poplar::InOut<poplar::Vector<FPType>> dLdState;
 
   bool compute() {
     FPType beta = 10.0; // TODO  don't hardcode here but give as input
@@ -128,8 +127,7 @@ public:
     size_t size_sparse_out = fwd_out_spikes_ids.size();
     for (unsigned i = 0; i < size_sparse_out; ++i) { 
       size_t idx = fwd_out_spikes_ids[i];
-      dLdState[idx] = dLdState_inp[idx] + dLdoutSpikes[i] * superspike_surrogate(fwdState[idx] - thresholds[idx], beta);
-      // dLdState[idx] += dLdoutSpikes[i] * superspike_surrogate(fwdState[idx] - thresholds[idx], beta);
+      dLdState[idx] += dLdoutSpikes[i] * superspike_surrogate(fwdState[idx] - thresholds[idx], beta);
     }
     return true;
   }
@@ -147,7 +145,7 @@ public:
   poplar::Input<poplar::Vector<int>> fwd_num_inp_spikes; // TODO to int when possible
   poplar::Input<unsigned> sparse_out_dim;
 
-  poplar::Output<poplar::Vector<FPType>> dLdweights_row;
+  poplar::InOut<poplar::Vector<FPType>> dLdweights_row;
   
 
   bool compute() {
