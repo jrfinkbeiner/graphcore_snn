@@ -75,13 +75,16 @@ extern "C" poplar::program::Program Build(
 
   // Get the target, which descibes properties of the hardware.
   auto target = graph.getTarget();
+  size_t numTiles = target.getNumTiles();
+  // TODO determine best mapping, use existing functions ?
+  size_t batchesPerTile = seq_len * batchsize / numTiles + 1;
 
   poplar::Tensor dense_spikes = graph.addVariable(dtype, {seq_len, batchsize, size_dense});
   outputs.push_back(dense_spikes);
 
   for (unsigned i = 0; i < seq_len; ++i) {
     for (unsigned j = 0; j < batchsize; ++j) {
-      graph.setTileMapping(dense_spikes[i][j], i*batchsize+j);
+      graph.setTileMapping(dense_spikes[i][j], i*batchsize/batchesPerTile+j/batchesPerTile);
     }
   }
 
@@ -98,7 +101,7 @@ extern "C" poplar::program::Program Build(
                                {"denseSpikes", dense_spikes[iseq][ibatch]}});
       // !!! TODO !!! totally bogus tile mapping, must be improved
       // should be based on state mapping
-      graph.setTileMapping(v, iseq*batchsize+ibatch); 
+      graph.setTileMapping(v, iseq*batchsize/batchesPerTile+ibatch/batchesPerTile); 
       // Provide a cycle count estimate for the profiler. // TODO make educated guess/provide equation
       graph.setPerfEstimate(v, 1);
     }
@@ -143,7 +146,6 @@ poplar::program::Program Build_grad(
   // if (input_grad_index != 0) {
   //   throw poputil::poplibs_error("Gradient calculation only defined for weight tensor ('inputs[0]').");
   // }
-
   poplar::program::Sequence bwdProg;
   poplar::DebugNameAndId dnai{debug_prefix};
 
@@ -154,6 +156,12 @@ poplar::program::Program Build_grad(
   size_t batchsize = spike_ids.dim(1);
   size_t size_sparse = spike_ids.dim(1);
   auto dtype = spike_ids.elementType();
+
+  // Get the target, which descibes properties of the hardware.
+  auto target = graph.getTarget();
+  size_t numTiles = target.getNumTiles();
+  // TODO determine best mapping, use existing functions ?
+  size_t batchesPerTile = seq_len * batchsize / numTiles + 1;
 
   poplar::Tensor dLdSpikeIds = graph.clone(spike_ids, {dnai, "dLdSpikeIds"});
   poplar::Tensor dLdNumSpikes = graph.clone(num_spikes, {dnai, "dLdNumSpikes"});
@@ -172,7 +180,7 @@ poplar::program::Program Build_grad(
                                {"dLdSpikeIds", dLdSpikeIds[iseq][ibatch]}});
       // !!! TODO !!! totally bogus tile mapping, must be improved
       // should be based on state mapping
-      graph.setTileMapping(v, iseq*batchsize+ibatch); 
+      graph.setTileMapping(v, iseq*batchsize/batchesPerTile+ibatch/batchesPerTile); 
       // Provide a cycle count estimate for the profiler. // TODO make educated guess/provide equation
       graph.setPerfEstimate(v, 1);
     }

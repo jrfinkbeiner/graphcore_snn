@@ -21,6 +21,7 @@ def get_heaviside_with_super_spike_surrogate(beta=10.):
 
     return heaviside_with_super_spike_surrogate
 
+
 def lif_step_jax(weights, decay_constants, thresholds, state, inp_spikes):
     syn_inp = weights @ inp_spikes
     state = state - jax.lax.stop_gradient(state * jnp.heaviside(state-thresholds, 0))
@@ -28,7 +29,6 @@ def lif_step_jax(weights, decay_constants, thresholds, state, inp_spikes):
     # new_state = state * decay_constants * jax.lax.stop_gradient(jnp.heaviside(thresholds-state, 1)) + (1 - decay_constants) * syn_inp
     out_spikes = get_heaviside_with_super_spike_surrogate()(new_state-thresholds)
     return new_state, (new_state, out_spikes)
-
 
 
 def lif_layer_jax(weights, init_state, inp_spikes, decay_constants, thresholds):

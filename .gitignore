@@ -1,4 +1,6 @@
 .vscode
+custom_lif_single_layer/experiments/figures/
+custom_lif_single_layer/experiments/timings/
 
 # Graphcore/Poplar extensions
 *.gp
