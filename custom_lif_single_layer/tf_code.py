@@ -7,8 +7,8 @@ import functools as ft
 from tensorflow.python import ipu
 tf.disable_v2_behavior()
 
-from pure_tf_snn import pure_tf_lif_layer
-from experiments.jax_snn import calc_result_and_gradient_jax
+from util_and_experiments.pure_tf_snn import pure_tf_lif_layer
+from util_and_experiments.jax_snn import calc_result_and_gradient_jax
 
 
 NUM_LAYERS = 4
@@ -89,8 +89,8 @@ def custom_lif_layer(weights, init_state, inp_spike_ids, num_inp_spikes, decay_c
     }
 
     base_path = os.path.realpath(os.path.dirname(__file__))
-    lib_path = os.path.join(base_path, "libcustom_op.so")
-    gp_path = os.path.join(base_path, "custom_codelet.gp")
+    lib_path = os.path.join(base_path, "custom_lif_layer", "libcustom_op.so")
+    gp_path = os.path.join(base_path, "custom_lif_layer", "custom_codelet.gp")
 
     return ipu.custom_ops.precompiled_user_op([weights, init_state, inp_spike_ids, num_inp_spikes, decay_constants, thresholds],
                                               lib_path,

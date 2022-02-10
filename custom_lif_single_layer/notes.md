@@ -18,12 +18,15 @@
 -> `Vector<Vector<>>`
 * how to turn poplar 2d tensor to `Vector<Vector<>>`for vertex input/output
 * custom op with tf 2 ?
+-> yes, see functional keras models
 * tradeoff/sweetspot between compute and communication? rule of thumb for parallelization?
+-> popvision/profiling will be helpful here, compare cycles spent for compute and communication
 
 ## Remaning Issues
 
 * in rnn outputs are created with respect to RnnParams.dataType and not with the respect to the datatype of the corresponding tensor. This prevents ouputs of different data types... -> solve by just using the input field?
 * how to parallize different batches of the weight tensor update ? access to identical tensor elements might happen... or just change structure of update in general (from row parallel to column parallel)?
+-> there is probably no way of achieving this
 
 ## Solved Issues
 

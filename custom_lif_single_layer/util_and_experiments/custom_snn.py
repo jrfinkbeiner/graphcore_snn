@@ -3,14 +3,14 @@ import numpy as np
 import tensorflow.compat.v1 as tf
 import functools as ft
 
-# import tensorflow.keras as keras
 from tensorflow.python import ipu
 tf.disable_v2_behavior()
 
+
 def snn_init_weights_func(rng, u_thresh, in_firing_rate, in_features, out_features):
-    mean = 0.0 #1.0 #0.5
-    thresh_dist_fac = 1. # TODO what to use ?
-    postsyn_pot_kernal_variance = 0.5 # TODO what to use ?
+    mean = 0.0
+    thresh_dist_fac = 1.
+    postsyn_pot_kernal_variance = 0.5
     variance = (u_thresh / thresh_dist_fac)**2 / (in_features * in_firing_rate * postsyn_pot_kernal_variance)
     weights = rng.normal(size=(out_features, in_features)).astype(np.float32)
     weights = variance**0.5 * weights + mean
@@ -68,8 +68,8 @@ def custom_lif_layer(weights, init_state, inp_spike_ids, num_inp_spikes, decay_c
     }
 
     base_path = os.path.realpath(os.path.dirname(__file__))
-    lib_path = os.path.join(base_path, "..", "libcustom_op.so")
-    gp_path = os.path.join(base_path, "..", "custom_codelet.gp")
+    lib_path = os.path.join(base_path, "..", "custom_lif_layer", "libcustom_op.so")
+    gp_path = os.path.join(base_path, "..", "custom_lif_layer", "custom_codelet.gp")
 
     return ipu.custom_ops.precompiled_user_op([weights, init_state, inp_spike_ids, num_inp_spikes, decay_constants, thresholds],
                                               lib_path,
@@ -93,3 +93,57 @@ def get_multi_layer_snn(sparse_out_sizes):
     return multi_layer_snn
 
 
+def get_calc_loss_and_grad(snn_func, loss_fn, reg_fn=None):
+
+    def calc_loss_and_grad(weights, init_states, inp_spike_ids, num_inp_spikes, decay_constants, thresholds, targets_one_hot):
+        pred_spike_ids, pred_num_spikes = snn_func(weights, init_states, inp_spike_ids, num_inp_spikes, decay_constants, thresholds)
+        pred_spikes_dense = sparse2dense_ipu(pred_spike_ids, pred_num_spikes, weights[-1].shape[0])[0]
+        loss_task = loss_fn(pred_spikes_dense, targets_one_hot)
+        loss_reg = reg_fn([pred_spikes_dense]) if reg_fn is not None else 0
+        loss = loss_task + loss_reg
+        grads = tf.gradients(loss, [*weights])
+        # return (loss, (pred_spike_ids, pred_num_spikes, pred_spikes_dense)), grads
+        return (loss_task, (pred_spike_ids, pred_num_spikes, pred_spikes_dense)), grads
+
+    return calc_loss_and_grad
+
+
+def get_update_func(loss_and_grad_func, optimizer):
+
+    def update_func(weights, init_states, inp_spike_ids, num_inp_spikes, decay_constants, thresholds, targets_one_hot, opt_state):
+        (loss, aux) , grads = loss_and_grad_func(weights, init_states, inp_spike_ids, num_inp_spikes, decay_constants, thresholds, targets_one_hot)
+        opt_state, updates = optimizer(opt_state, grads)
+        updated_weights = [ws+up for ws,up in zip(weights, updates)]
+        return (loss, aux), updated_weights, opt_state
+
+    return update_func
+
+
+def get_accuracy_func(snn_func, normalized=True):
+
+    def calc_accuracy(weights, init_state, inp_spike_ids, num_inp_spikes, decay_constants, thresholds, target):
+        pred_spike_ids, pred_num_spikes = snn_func(weights, init_state, inp_spike_ids, num_inp_spikes, decay_constants, thresholds)
+        pred_spikes_dense = sparse2dense_ipu(pred_spike_ids, pred_num_spikes, weights[-1].shape[0])[0]
+        pred_sum_spikes = tf.math.reduce_sum(pred_spikes_dense, axis=0)
+
+        pred = tf.math.argmax(pred_sum_spikes, axis=1)
+        target = tf.cast(target, pred.dtype)
+        comp = tf.cast(tf.math.equal(pred,target), tf.float32)
+        res = tf.math.reduce_mean(comp) if normalized else tf.math.reduce_sum(comp)
+        return res, pred, target, comp
+
+    return calc_accuracy
+
+
+def get_sgd(init_weights, learning_rate, alpha=None):
+
+    def sgd(state, grads):
+        return state, [-learning_rate*x for x in  grads]
+
+    def sgd_with_mom(state, grads):
+        update =  [alpha*st - learning_rate*gs for st,gs in zip(state, grads)]
+        return update, update
+
+    init_state = [np.zeros_like(x) for x in  init_weights]
+    method = sgd if alpha is None else sgd_with_mom
+    return init_state, method

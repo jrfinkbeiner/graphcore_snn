@@ -6,148 +6,13 @@ import matplotlib.pyplot as plt
 from typing import Optional
 import numpy as np
 import time
-import randman
 
 import tensorflow.compat.v1 as tf
 from tensorflow.python import ipu
 tf.disable_v2_behavior()
 
-from custom_snn import sparse2dense_ipu, get_multi_layer_snn, init_func_tf, init_func_np, snn_init_weights_func
-
-
-def convert_spike_times_to_sparse_raster(spike_times: np.ndarray, sparse_size: int, timestep: float = 1.0, max_time: Optional[float] = None, num_neurons: Optional[int] = None):
-    """
-    Convert spike times array to sparse spikes. 
-    For now, all neurons must have same number of spike times.
-    
-    Args:
-        spike_times: MoreArrays, spiketimes as array of shape batch_dim x spikes/neuron X 2
-            training dim: (times, neuron_id)
-    """
-    if num_neurons is None:
-        num_neurons = int(np.nanmax(spike_times[:,:,1]))+1
-    if max_time is None:
-        max_time = np.nanmax(spike_times[:,:,0])
-    num_bins = int(max_time / timestep + 1)
-
-    num_samples = spike_times.shape[0]
-    spike_times_bins = (spike_times[:, :, 0] / timestep).astype(np.int32)
-    spike_neuron_ids = spike_times[:, :, 1].astype(np.int32)
-    spike_ids = np.empty((num_bins, num_samples, sparse_size), dtype=np.float32)
-    num_spikes = np.empty((num_bins, num_samples, 1), dtype=np.int32)
-
-    occurances = np.zeros(num_neurons+1)
-
-    reshaped_int_spike_times = spike_times_bins.reshape((num_samples, -1, num_neurons))
-    # reshaped_ids = spike_neuron_ids.reshape((num_samples, -1, num_neurons))
-
-    num_spikes_per_neuron = reshaped_int_spike_times.shape[1]
-    for i in range(num_spikes_per_neuron-1):
-        for j in range(i+1, num_spikes_per_neuron):
-            assert not np.any(reshaped_int_spike_times[:, i, :] == reshaped_int_spike_times[:, j, :]), "Time resolution too low. At least one neuron spikes twice in the same time-step."
-    for isam in range(num_samples):
-        for t in range(num_bins):
-            arg_ids = np.argwhere(spike_times_bins[isam, :] == t).flatten()
-            ids = spike_neuron_ids[isam, arg_ids]
-            nspikes = len(ids)
-            occurances[nspikes] += 1
-            if nspikes > sparse_size:
-                # print("more spikes than sparse")
-                np.random.shuffle(ids) 
-                nspikes = sparse_size
-            spike_ids[t, isam, :nspikes] = ids[:nspikes]
-            num_spikes[t, isam, 0] = nspikes
-    return spike_ids, num_spikes, occurances
-
-
-def check_spike_distribution(inp_num_spikes, occurence, inp_sparse_size, show = True):
-    plt.figure()
-    plt.hist(inp_num_spikes.flatten(), bins=inp_sparse_size)
-
-    plt.figure()
-    plt.yscale("log")
-    plt.plot(occurence/(np.prod(inp_num_spikes.shape)), "x-")
-    if show:
-        plt.show()
-
-
-
-def standardize(x,eps=1e-7):
-    mi,_ = x.min(0)
-    ma,_ = x.max(0)
-    return (x-mi)/(ma-mi+eps)
-
-
-def make_spiking_dataset(nb_classes=10, nb_units=100, nb_steps=100, step_frac=1.0, dim_manifold=2, nb_spikes=1, 
-                            nb_samples=1000, alpha=2.0, shuffle=True, classification=True, seed=None):
-    """ Generates event-based generalized spiking randman classification/regression dataset. 
-    In this dataset each unit fires a fixed number of spikes. So ratebased or spike count based decoding won't work. 
-    All the information is stored in the relative timing between spikes.
-    For regression datasets the intrinsic manifold coordinates are returned for each target.
-    Args: 
-        nb_classes: The number of classes to generate
-        nb_units: The number of units to assume
-        nb_steps: The number of time steps to assume
-        step_frac: Fraction of time steps from beginning of each to contain spikes (default 1.0)
-        nb_spikes: The number of spikes per unit
-        nb_samples: Number of samples from each manifold per class
-        alpha: Randman smoothness parameter
-        shuffe: Whether to shuffle the dataset
-        classification: Whether to generate a classification (default) or regression dataset
-        seed: The random seed (default: None)
-    Returns: 
-        A tuple of data,labels. The data is structured as numpy array 
-        (sample x event x 2 ) where the last dimension contains 
-        the relative [0,1] (time,unit) coordinates and labels.
-    """
-
-    data = []
-    labels = []
-    targets = []
-
-    if seed is not None:
-        np.random.seed(3)
-
-    max_value = np.iinfo(np.int).max
-    randman_seeds = np.random.randint(max_value, size=(nb_classes,nb_spikes) )
-
-    for k in range(nb_classes):
-        x = np.random.rand(nb_samples,dim_manifold)
-        submans = [ randman.Randman(nb_units, dim_manifold, alpha=alpha, seed=randman_seeds[k,i]) for i in range(nb_spikes) ]
-        units = []
-        times = []
-        for i,rm in enumerate(submans):
-            y = rm.eval_manifold(x)
-            y = standardize(y)
-            units.append(np.repeat(np.arange(nb_units).reshape(1,-1),nb_samples,axis=0))
-            times.append(y.numpy())
-
-        units = np.concatenate(units,axis=1)
-        times = np.concatenate(times,axis=1)
-        events = np.stack([times,units],axis=2)
-        data.append(events)
-        labels.append(k*np.ones(len(units)))
-        targets.append(x)
-
-    data = np.concatenate(data, axis=0)
-    labels = np.array(np.concatenate(labels, axis=0), dtype=np.int)
-    targets = np.concatenate(targets, axis=0)
-
-    if shuffle:
-        idx = np.arange(len(data))
-        np.random.shuffle(idx)
-        data = data[idx]
-        labels = labels[idx]
-        targets = targets[idx]
-
-    data[:,:,0] *= nb_steps*step_frac
-    # data = np.array(data, dtype=int)
-
-    if classification:
-        return data, labels
-    else:
-        return data, targets
-
+from custom_snn import sparse2dense_ipu, get_multi_layer_snn, init_func_tf, init_func_np, snn_init_weights_func, get_sgd, get_update_func, get_calc_loss_and_grad, get_accuracy_func
+from util_randman import make_spiking_dataset, convert_spike_times_to_sparse_raster, check_spike_distribution
 
 def calc_loss(out_spikes_dense, targets_one_hot):
     sum_spikes = tf.math.reduce_sum(out_spikes_dense, axis=0)
@@ -158,32 +23,6 @@ def calc_loss(out_spikes_dense, targets_one_hot):
 
     return tf.math.reduce_sum((sum_spikes-targets_one_hot)**2) / float(out_spikes_dense.shape[0])
     # return tf.math.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(logits=sum_spikes, labels=targets_one_hot))
-
-
-def get_calc_loss_and_grad(snn_func, loss_fn, reg_fn=None):
-
-    def calc_loss_and_grad(weights, init_states, inp_spike_ids, num_inp_spikes, decay_constants, thresholds, targets_one_hot):
-        pred_spike_ids, pred_num_spikes = snn_func(weights, init_states, inp_spike_ids, num_inp_spikes, decay_constants, thresholds)
-        pred_spikes_dense = sparse2dense_ipu(pred_spike_ids, pred_num_spikes, weights[-1].shape[0])[0]
-        loss_task = loss_fn(pred_spikes_dense, targets_one_hot)
-        loss_reg = reg_fn([pred_spikes_dense]) if reg_fn is not None else 0
-        loss = loss_task + loss_reg
-        grads = tf.gradients(loss, [*weights])
-        # return (loss, (pred_spike_ids, pred_num_spikes, pred_spikes_dense)), grads
-        return (loss_task, (pred_spike_ids, pred_num_spikes, pred_spikes_dense)), grads
-
-    return calc_loss_and_grad
-
-
-def get_update_func(loss_and_grad_func, optimizer):
-
-    def update_func(weights, init_states, inp_spike_ids, num_inp_spikes, decay_constants, thresholds, targets_one_hot, opt_state):
-        (loss, aux) , grads = loss_and_grad_func(weights, init_states, inp_spike_ids, num_inp_spikes, decay_constants, thresholds, targets_one_hot)
-        opt_state, updates = optimizer(opt_state, grads)
-        updated_weights = [ws+up for ws,up in zip(weights, updates)]
-        return (loss, aux), updated_weights, opt_state
-
-    return update_func
 
 def activity_reg_lower(lambda_lower, nu_lower, spikes):
     return lambda_lower * tf.math.reduce_mean( tf.nn.relu(nu_lower - spikes)**2 )
@@ -205,39 +44,6 @@ def get_reg_function(lambda_lower, nu_lower, lambda_upper, nu_upper):
         return loss_reg
 
     return reg_func
-
-
-
-def get_accuracy_func(snn_func, normalized=True):
-
-    def calc_accuracy(weights, init_state, inp_spike_ids, num_inp_spikes, decay_constants, thresholds, target):
-        pred_spike_ids, pred_num_spikes = snn_func(weights, init_state, inp_spike_ids, num_inp_spikes, decay_constants, thresholds)
-        pred_spikes_dense = sparse2dense_ipu(pred_spike_ids, pred_num_spikes, weights[-1].shape[0])[0]
-        pred_sum_spikes = tf.math.reduce_sum(pred_spikes_dense, axis=0)
-
-        pred = tf.math.argmax(pred_sum_spikes, axis=1)
-        target = tf.cast(target, pred.dtype)
-        comp = tf.cast(tf.math.equal(pred,target), tf.float32)
-        res = tf.math.reduce_mean(comp) if normalized else tf.math.reduce_sum(comp)
-        return res, pred, target, comp
-
-    return calc_accuracy
-
-
-def get_sgd(init_weights, learning_rate, alpha=None):
-
-    def sgd(state, grads):
-        return state, [-learning_rate*x for x in  grads]
-
-    def sgd_with_mom(state, grads):
-        update =  [alpha*st - learning_rate*gs for st,gs in zip(state, grads)]
-        return update, update
-
-    init_state = [np.zeros_like(x) for x in  init_weights]
-
-    method = sgd if alpha is None else sgd_with_mom
-
-    return init_state, method
 
 
 def main():
@@ -311,7 +117,7 @@ def main():
         _, init_states_pl_val, inp_spike_ids_pl_val, num_inp_spikes_pl_val, _, _ = init_func_tf(sizes_dense, batchsize_val, seq_len, sizes_sparse[0])
         targets_pl_val = tf.placeholder(tf.int32, [batchsize_val])
 
-    init_weight_func = ft.partial(snn_init_weights_func, rng, decay_constant, threshold)
+    init_weight_func = ft.partial(snn_init_weights_func, rng, threshold, num_spikes_per_inp_neuron/seq_len)
     weights, init_states, decay_constants, thresholds = init_func_np(sizes_dense, batchsize, decay_constant, threshold, init_weight_func)
     _, init_states_val, _, _ = init_func_np(sizes_dense, num_samples_val, decay_constant, threshold, init_weight_func)
 

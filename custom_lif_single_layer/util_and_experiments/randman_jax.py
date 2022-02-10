@@ -9,7 +9,7 @@ from jax.tree_util import tree_map, tree_multimap
 import matplotlib.pyplot as plt
 
 from jax_snn import lif_layer_jax
-from randman_training import make_spiking_dataset
+from util_randman import make_spiking_dataset
 from custom_snn import init_func_np, snn_init_weights_func
 
 def create_one_hot(x, k, dtype=jnp.float32):
@@ -163,7 +163,7 @@ def main():
     
 
 
-    init_weight_func = ft.partial(snn_init_weights_func, rng, decay_constant, threshold)
+    init_weight_func = ft.partial(snn_init_weights_func, rng, threshold, num_spikes_per_inp_neuron/seq_len)
     weights, init_states, decay_constants, thresholds = init_func_np(sizes_dense, batchsize, decay_constant, threshold, init_weight_func)
     _, init_states_val, _, _ = init_func_np(sizes_dense, num_samples_val, decay_constant, threshold, init_weight_func)
 

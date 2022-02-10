@@ -407,7 +407,7 @@ void calcLIFInpSpikesGrad(poplar::Graph &graph, poplar::Tensor &weights, Batched
                                 {"dLdx", dLdx[ibatch][icol]}});
       // !!! TODO !!! totally bogus tile mapping, must be improved
       // should be based on state mapping
-      graph.setTileMapping(dLdx[ibatch][icol], icol); 
+      graph.setTileMapping(dLdx[ibatch][icol], icol);
       graph.setTileMapping(v, icol); 
       // Provide a cycle count estimate for the profiler. // TODO make educated guess/provide equation
       graph.setPerfEstimate(v, 1);
@@ -447,6 +447,72 @@ extern "C" void Build_metadata(
   std::uint32_t num_inputs) {
   is_elementwise = false;
   is_stateless = true;
+}
+
+
+poplar::Tensor alloc_perneuron_1d(poplar::Graph& graph, const std::vector<size_t>& shape, poplar::Type type, const poplar::DebugNameAndId &dnai = {}) {
+  poplar::Tensor allocTensor = graph.addVariable(type, shape, dnai);
+  size_t numNeurons = shape[0];
+  size_t numTiles = graph.getTarget().getNumTiles();
+  size_t neuronsPerTile = numNeurons / numTiles + 1;
+
+  for (unsigned ineuron = 0; ineuron < numNeurons; ++ineuron) {
+    graph.setTileMapping(allocTensor[ineuron], ineuron/neuronsPerTile);
+  }
+  return allocTensor;
+}
+
+poplar::Tensor alloc_perneuron_2d(poplar::Graph& graph, const std::vector<size_t>& shape, poplar::Type type, const poplar::DebugNameAndId &dnai = {}) {
+  poplar::Tensor allocTensor = graph.addVariable(type, shape, dnai);
+  size_t numRows = shape[0];
+  size_t numTiles = graph.getTarget().getNumTiles();
+  size_t rowsPerTile = numRows / numTiles + 1;
+
+  for (unsigned irow = 0; irow < numRows; ++irow) {
+    graph.setTileMapping(allocTensor[irow], irow / rowsPerTile);
+  }
+  return allocTensor;
+}
+
+poplar::Tensor alloc_perneuron_3d(poplar::Graph& graph, const std::vector<size_t>& shape, poplar::Type type, const poplar::DebugNameAndId &dnai = {}) {
+  poplar::Tensor allocTensor = graph.addVariable(type, shape, dnai);
+  size_t seq_len = shape[0];
+  size_t batchsize = shape[1];
+  size_t numNeurons = shape[2];
+  size_t numTiles = graph.getTarget().getNumTiles();
+  size_t neuronsPerTile = numNeurons / numTiles + 1;
+
+  for (unsigned iseq = 0; iseq < seq_len; ++iseq) {
+    for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
+      for (unsigned ineuron = 0; ineuron < numNeurons; ++ineuron) {
+        graph.setTileMapping(allocTensor[iseq][ibatch][ineuron], ineuron/neuronsPerTile);
+      }
+    }
+  }
+  return allocTensor;
+}
+
+
+extern "C" poplar::Tensor Build_allocator(
+    poplar::Graph& graph,
+    std::uint32_t operand,
+    const std::vector<size_t>& shape,
+    poplar::Type type,
+    const std::string& attributes,
+    const std::string& debug_prefix) {
+  
+  poplar::DebugNameAndId dnai{debug_prefix};
+
+  poplar::Tensor allocTensor;
+  switch (operand) {
+    case 0: allocTensor = alloc_perneuron_3d(graph, shape, type, {dnai, "weights"});
+    case 1: allocTensor = alloc_perneuron_2d(graph, shape, type, {dnai, "init_state"});
+    case 2: allocTensor = alloc_perneuron_2d(graph, shape, type, {dnai, "inp_spike_ids"});
+    case 3: allocTensor = alloc_perneuron_2d(graph, shape, type, {dnai, "num_inp_spikes"});
+    case 4: allocTensor = alloc_perneuron_1d(graph, shape, type, {dnai, "decay_constatns"});
+    case 5: allocTensor = alloc_perneuron_1d(graph, shape, type, {dnai, "thresholds"});
+  }
+  return allocTensor;
 }
 
 
@@ -719,38 +785,6 @@ poplar::program::Program Build_grad(
       popnn::rnn::Rnn(graph, params.rnn, true, {init_reverse_state.expand({0})}, stateSequence, rnnInputs,
                nullptr, nullptr, {dLdinp_spike_ids}, {}, bwdProg, loopBwd,
                numShards, rnnOptions, {dnai, "rnn"});
-
-  
-
-
-  // for (unsigned irow = 0; irow < weights.dim(0); ++irow) {
-  //   graph.setTileMapping(dLdW[irow], 1+irow);
-  //   auto vtx = graph.addVertex(cs, poputil::templateVertex("DynDenseBinarySparseProductGradWeight", dtype),
-  //                             {{"dLdyi", dLdy[irow]},
-  //                              {"sparse_vec", sparse_vec},
-  //                              {"num_nzelements", num_nzelements[0]},
-  //                              {"dLdW_row", dLdW[irow]}});
-
-
-  //   // Map the vertex onto the appropriate tile.
-  //   graph.setTileMapping(vtx, 1+irow);
-  //   // Provide a bogus cycle count estimate for the profiler.
-  //   graph.setPerfEstimate(vtx, 1);
-  // }
-
-  // graph.setTileMapping(dLdx, 0);
-  // auto vtx = graph.addVertex(cs, poputil::templateVertex("DynDenseBinarySparseProductGradInputs", dtype),
-  //                             {{"dLdy", dLdy},
-  //                              {"weights", weights.flatten()},
-  //                              {"num_cols", weights.dim(1)},
-  //                              {"sparse_vec", sparse_vec},
-  //                              {"num_nzelements", num_nzelements[0]},
-  //                              {"dLdx", dLdx}});
-
-  // // Map the vertex onto the appropriate tile.
-  // graph.setTileMapping(vtx, 0);
-  // // Provide a bogus cycle count estimate for the profiler.
-  // graph.setPerfEstimate(vtx, 1);
 
   outputs.push_back(dLdweights);
   outputs.push_back(dLdfirstState[0].squeeze({0})); // TODO change to dLdinit_state
