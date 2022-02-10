@@ -505,12 +505,18 @@ extern "C" poplar::Tensor Build_allocator(
 
   poplar::Tensor allocTensor;
   switch (operand) {
-    case 0: allocTensor = alloc_perneuron_3d(graph, shape, type, {dnai, "weights"});
-    case 1: allocTensor = alloc_perneuron_2d(graph, shape, type, {dnai, "init_state"});
-    case 2: allocTensor = alloc_perneuron_2d(graph, shape, type, {dnai, "inp_spike_ids"});
-    case 3: allocTensor = alloc_perneuron_2d(graph, shape, type, {dnai, "num_inp_spikes"});
+    case 0: allocTensor = alloc_perneuron_2d(graph, shape, type, {dnai, "weights"}); 
+            break;
+    case 1: allocTensor = alloc_perneuron_3d(graph, shape, type, {dnai, "init_state"});
+            break;
+    case 2: allocTensor = alloc_perneuron_3d(graph, shape, type, {dnai, "inp_spike_ids"}); // TODO just do this for now...
+            break;  
+    case 3: allocTensor = alloc_perneuron_3d(graph, shape, type, {dnai, "num_inp_spikes"}); // TODO just do this for now...
+            break;
     case 4: allocTensor = alloc_perneuron_1d(graph, shape, type, {dnai, "decay_constatns"});
+            break;
     case 5: allocTensor = alloc_perneuron_1d(graph, shape, type, {dnai, "thresholds"});
+            break;
   }
   return allocTensor;
 }
