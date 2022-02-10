@@ -45,8 +45,8 @@ def sparse2dense_ipu(spike_ids, num_spikes, dense_size: int):
     }
 
     base_path = os.path.realpath(os.path.dirname(__file__))
-    lib_path = os.path.join(base_path, "sparse2dense", "libcustom_op.so")
-    gp_path = os.path.join(base_path, "sparse2dense", "custom_codelet.gp")
+    lib_path = os.path.join(base_path, "..", "sparse2dense", "libcustom_op.so")
+    gp_path = os.path.join(base_path, "..", "sparse2dense", "custom_codelet.gp")
 
     return ipu.custom_ops.precompiled_user_op([spike_ids, num_spikes],
                                               lib_path,
@@ -68,8 +68,8 @@ def custom_lif_layer(weights, init_state, inp_spike_ids, num_inp_spikes, decay_c
     }
 
     base_path = os.path.realpath(os.path.dirname(__file__))
-    lib_path = os.path.join(base_path, "libcustom_op.so")
-    gp_path = os.path.join(base_path, "custom_codelet.gp")
+    lib_path = os.path.join(base_path, "..", "libcustom_op.so")
+    gp_path = os.path.join(base_path, "..", "custom_codelet.gp")
 
     return ipu.custom_ops.precompiled_user_op([weights, init_state, inp_spike_ids, num_inp_spikes, decay_constants, thresholds],
                                               lib_path,
