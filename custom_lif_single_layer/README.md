@@ -17,4 +17,4 @@ In order to run code first you have to compile both the custom lif layer as well
 
 ```make all```
 
-in both the `custom_lif_layer` as well as the `sparse2dense` directory.
+in both subdirectories called `custom_lif_layer` as well as `sparse2dense`.
