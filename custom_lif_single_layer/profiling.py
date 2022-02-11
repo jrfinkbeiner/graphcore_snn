@@ -13,7 +13,7 @@ from util_and_experiments.custom_snn import init_func_tf, init_func_np, snn_init
 def calc_loss(out_spikes_dense, targets_one_hot):
     sum_spikes = tf.math.reduce_sum(out_spikes_dense, axis=0)
     norm_sum_spikes = tf.nn.softmax(sum_spikes, axis=1)
-    return tf.math.reduce_sum((norm_sum_spikes-targets_one_hot)**2) / float(out_spikes_dense.shape[0])
+    return tf.math.reduce_sum((norm_sum_spikes-targets_one_hot)**2) / out_spikes_dense.shape[0].value
 
 def gen_sparse_spikes(rng, seq_len, batchsize, size_dense, size_sparse):
     sparse_spike_ids = np.empty((seq_len, batchsize, size_sparse))
