@@ -445,8 +445,11 @@ extern "C" void Build_metadata(
   bool& is_stateless,
   bool& is_hashable,
   std::uint32_t num_inputs) {
+  // std::cout << "Build_metadata" << std::endl;
+  allocating_indices = {0, 1, 2, 3, 4, 5};
   is_elementwise = false;
   is_stateless = true;
+  num_inputs = 6;
 }
 
 
