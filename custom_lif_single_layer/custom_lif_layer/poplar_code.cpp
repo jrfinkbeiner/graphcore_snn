@@ -445,36 +445,54 @@ extern "C" void Build_metadata(
   bool& is_stateless,
   bool& is_hashable,
   std::uint32_t num_inputs) {
+  // std::cout << "Build_metadata" << std::endl;
+  allocating_indices = {0, 1, 2, 3, 4, 5};
   is_elementwise = false;
   is_stateless = true;
+  num_inputs = 6;
 }
 
 
-poplar::Tensor alloc_perneuron_1d(poplar::Graph& graph, const std::vector<size_t>& shape, poplar::Type type, const poplar::DebugNameAndId &dnai = {}) {
+poplar::Tensor alloc_perneuron_1d(poplar::Graph& graph, const std::vector<size_t>& shape, poplar::Type type, size_t start_id, const poplar::DebugNameAndId &dnai = {}) {
   poplar::Tensor allocTensor = graph.addVariable(type, shape, dnai);
   size_t numNeurons = shape[0];
   size_t numTiles = graph.getTarget().getNumTiles();
   size_t neuronsPerTile = numNeurons / numTiles + 1;
 
   for (unsigned ineuron = 0; ineuron < numNeurons; ++ineuron) {
-    graph.setTileMapping(allocTensor[ineuron], ineuron/neuronsPerTile);
+    graph.setTileMapping(allocTensor[ineuron], start_id+ineuron/neuronsPerTile);
   }
   return allocTensor;
 }
 
-poplar::Tensor alloc_perneuron_2d(poplar::Graph& graph, const std::vector<size_t>& shape, poplar::Type type, const poplar::DebugNameAndId &dnai = {}) {
+poplar::Tensor alloc_rowwise_2d(poplar::Graph& graph, const std::vector<size_t>& shape, poplar::Type type, size_t start_id, const poplar::DebugNameAndId &dnai = {}) {
   poplar::Tensor allocTensor = graph.addVariable(type, shape, dnai);
   size_t numRows = shape[0];
   size_t numTiles = graph.getTarget().getNumTiles();
   size_t rowsPerTile = numRows / numTiles + 1;
 
   for (unsigned irow = 0; irow < numRows; ++irow) {
-    graph.setTileMapping(allocTensor[irow], irow / rowsPerTile);
+    graph.setTileMapping(allocTensor[irow], start_id + irow / rowsPerTile);
   }
   return allocTensor;
 }
 
-poplar::Tensor alloc_perneuron_3d(poplar::Graph& graph, const std::vector<size_t>& shape, poplar::Type type, const poplar::DebugNameAndId &dnai = {}) {
+poplar::Tensor alloc_perneuron_2d(poplar::Graph& graph, const std::vector<size_t>& shape, poplar::Type type, size_t start_id, const poplar::DebugNameAndId &dnai = {}) {
+  poplar::Tensor allocTensor = graph.addVariable(type, shape, dnai);
+  size_t batchsize = shape[0];
+  size_t numNeurons = shape[1];
+  size_t numTiles = graph.getTarget().getNumTiles();
+  size_t neuronsPerTile = numNeurons / numTiles + 1;
+
+  for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
+    for (unsigned ineuron = 0; ineuron < numNeurons; ++ineuron) {
+      graph.setTileMapping(allocTensor[ibatch][ineuron], start_id+ineuron/neuronsPerTile);
+    }
+  }
+  return allocTensor;
+}
+
+poplar::Tensor alloc_perneuron_3d(poplar::Graph& graph, const std::vector<size_t>& shape, poplar::Type type, size_t start_id, const poplar::DebugNameAndId &dnai = {}) {
   poplar::Tensor allocTensor = graph.addVariable(type, shape, dnai);
   size_t seq_len = shape[0];
   size_t batchsize = shape[1];
@@ -485,7 +503,7 @@ poplar::Tensor alloc_perneuron_3d(poplar::Graph& graph, const std::vector<size_t
   for (unsigned iseq = 0; iseq < seq_len; ++iseq) {
     for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
       for (unsigned ineuron = 0; ineuron < numNeurons; ++ineuron) {
-        graph.setTileMapping(allocTensor[iseq][ibatch][ineuron], ineuron/neuronsPerTile);
+        graph.setTileMapping(allocTensor[iseq][ibatch][ineuron], start_id+ineuron/neuronsPerTile);
       }
     }
   }
@@ -505,17 +523,17 @@ extern "C" poplar::Tensor Build_allocator(
 
   poplar::Tensor allocTensor;
   switch (operand) {
-    case 0: allocTensor = alloc_perneuron_2d(graph, shape, type, {dnai, "weights"}); 
+    case 0: allocTensor = alloc_rowwise_2d(graph, shape, type, 0, {dnai, "weights"}); 
             break;
-    case 1: allocTensor = alloc_perneuron_3d(graph, shape, type, {dnai, "init_state"});
+    case 1: allocTensor = alloc_perneuron_2d(graph, shape, type, 0, {dnai, "init_state"});
             break;
-    case 2: allocTensor = alloc_perneuron_3d(graph, shape, type, {dnai, "inp_spike_ids"}); // TODO just do this for now...
+    case 2: allocTensor = alloc_perneuron_3d(graph, shape, type, 0, {dnai, "inp_spike_ids"}); // TODO just do this for now...
             break;  
-    case 3: allocTensor = alloc_perneuron_3d(graph, shape, type, {dnai, "num_inp_spikes"}); // TODO just do this for now...
+    case 3: allocTensor = alloc_perneuron_3d(graph, shape, type, 0, {dnai, "num_inp_spikes"}); // TODO just do this for now...
             break;
-    case 4: allocTensor = alloc_perneuron_1d(graph, shape, type, {dnai, "decay_constatns"});
+    case 4: allocTensor = alloc_perneuron_1d(graph, shape, type, 0, {dnai, "decay_constatns"});
             break;
-    case 5: allocTensor = alloc_perneuron_1d(graph, shape, type, {dnai, "thresholds"});
+    case 5: allocTensor = alloc_perneuron_1d(graph, shape, type, 0, {dnai, "thresholds"});
             break;
   }
   return allocTensor;
