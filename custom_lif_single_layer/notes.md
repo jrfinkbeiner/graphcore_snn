@@ -2,7 +2,6 @@
 
 ## TODO
 
-* write tensor allocation code for weights and inputs
 * improve tile mapping (also for sparse2dense operation)
 * implement tf + custom sparse matmul snn for comparison
 
@@ -36,3 +35,21 @@
 -> InOut<> type
 * `+=` not save to use in vertex code? even if same address is not written to multiple times? -> How to handle inplace add in vertex code ? Use it as both input and output? Possible to do multiple in place add on the same element in single vertex call?
 -> InOut<> type
+
+
+## Profiling
+
+### General
+
+* how to prevent cody-copy for man loop? or alternitavely: how to implement my own loop/repeat function?
+* why does choosing different tiles impact CopyCopy ? (changing tiles from {0, 1} to {32, 64} for `genBatchedLIFOutSpikes` in case of batchsize=2)
+* how to reduce communication time? Is bandwidth or latency the issue? Could it actually be faster to just send the dense tensors to every tile?
+
+### Forward
+
+
+### Backward
+
+* why does `popops::mulInPlace` take so many cycles? elements should already be on the correct tiles.
+
+
