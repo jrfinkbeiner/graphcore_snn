@@ -1,6 +1,6 @@
 .vscode
 custom_lif_single_layer/util_and_experiments/figures/
-custom_lif_single_layer/util_and_experiments/timings/
+custom_lif_single_layer/reports/
 
 # Graphcore/Poplar extensions
 *.gp
