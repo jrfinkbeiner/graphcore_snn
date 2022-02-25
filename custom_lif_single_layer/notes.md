@@ -20,6 +20,8 @@
 -> yes, see functional keras models
 * tradeoff/sweetspot between compute and communication? rule of thumb for parallelization?
 -> popvision/profiling will be helpful here, compare cycles spent for compute and communication
+* how does parallization to multiple IPUs work for GNNs?
+* how to execute compute-sets in parallel ? (instead of program::Sequence, program::Parallel or sth)
 
 ## Remaning Issues
 
@@ -41,12 +43,17 @@
 
 ### General
 
-* how to prevent cody-copy for man loop? or alternitavely: how to implement my own loop/repeat function?
-* why does choosing different tiles impact CopyCopy ? (changing tiles from {0, 1} to {32, 64} for `genBatchedLIFOutSpikes` in case of batchsize=2)
+
+* is there a way to choose whether to send spikes or not based on data? control communication at a lower level? or simply poplar::program::If ?
+* how does communication work? can comminication to and from tile happen at the same time? or do they block eaach other ?
 * how to reduce communication time? Is bandwidth or latency the issue? Could it actually be faster to just send the dense tensors to every tile?
+* how to prevent code-copy for man loop? or alternitavely: how to implement my own loop/repeat function?
+* why does choosing different tiles impact CopyCopy ? (changing tiles from {0, 1} to {32, 64} for `genBatchedLIFOutSpikes` in case of batchsize=2)
+
 
 ### Forward
 
+* 
 
 ### Backward
 
