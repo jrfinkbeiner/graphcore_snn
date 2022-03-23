@@ -206,7 +206,7 @@ def model_fn_sparse(seq_len, dense_shapes, sparse_shapes, decay_constant, thresh
         )(spike_ids, num_spikes, init_states)
     spike_ids, num_spikes, states = out[:num_layers], out[num_layers:2*num_layers], out[2*num_layers:]    
     dense_out_spikes_last_layer = sparse2dense_ipu(spike_ids[-1], tf.cast(num_spikes[-1], tf.int32), dense_shapes[-1])[0]
-    return (inp_spike_ids, num_inp_spikes), dense_out_spikes_last_layer[-1]
+    return (inp_spike_ids, num_inp_spikes), tf.transpose(dense_out_spikes_last_layer, perm=[1, 0, 2])
 
 def model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step):
     num_layers = len(dense_shapes)-1
@@ -323,7 +323,7 @@ def train_gpu(
 
 def main():
 
-    sparse_comp = False
+    sparse_comp = True
     if sparse_comp:
         os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
 
@@ -333,8 +333,8 @@ def main():
     batchsize = 2
     batchsize_per_step = 2
     seq_len = 12
-    dense_sizes = [512, 512, 128]
-    sparse_sizes = [32, 32, 12]
+    dense_sizes = [512, 512]
+    sparse_sizes = [32, 32]
     decay_constant = 0.9
     threshold = 1.0
 

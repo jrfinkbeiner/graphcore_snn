@@ -584,12 +584,13 @@ extern "C" poplar::Tensor Build_allocator(
   poplar::DebugNameAndId dnai{debug_prefix};
 
   // std::cout << "Build_allocator" << std::endl;
-  size_t num_layers = inputs.size() / 6;
+  // size_t num_layers = inputs.size() / 6;
 
   // TODO improve allocation! and figure out ideal mapping right here!
 
   poplar::Tensor allocTensor;
-  switch (operand/num_layers) {
+  // switch (operand/num_layers) {
+  switch (operand) {
     case 0: allocTensor = alloc_rowwise_2d(graph, shape, type, 1, {dnai, "weights"}); 
             break;
     case 1: allocTensor = alloc_perneuron_2d(graph, shape, type, 1, {dnai, "init_state"});
@@ -613,7 +614,7 @@ extern "C" poplar::program::Program Build(
     std::vector<poplar::Tensor>& outputs, const std::string& attributes, const std::string& debug_prefix) {
 
 
-  if ((inputs.size() % 6) =! 0) {
+  if ((inputs.size() % 6) != 0) {
     throw poputil::poplibs_error("LIFMultiLayer requires that the number of inputs is divisible by 6.");
   }
   size_t num_layers = inputs.size() / 6;
@@ -621,13 +622,20 @@ extern "C" poplar::program::Program Build(
 
   poplar::DebugNameAndId dnai{debug_prefix};
 
-  std::vector<poplar::Tensor> weights(inputs.begin(),inputs.begin()+num_layers);
-  std::vector<poplar::Tensor> init_state(inputs.begin()+1*num_layers,inputs.begin()+2*num_layers);
-  std::vector<poplar::Tensor> inp_spike_ids_fptype(inputs.begin()+2*num_layers,inputs.begin()+3*num_layers);
-  std::vector<poplar::Tensor> num_inp_spikes_int(inputs.begin()+3*num_layers,inputs.begin()+4*num_layers);
-  std::vector<poplar::Tensor> decay_constatns(inputs.begin()+4*num_layers,inputs.begin()+5*num_layers);
-  std::vector<poplar::Tensor> thresholds(inputs.begin()+5*num_layers,inputs.begin()+6*num_layers);
+  // std::vector<poplar::Tensor> weights(inputs.begin(),inputs.begin()+num_layers);
+  // std::vector<poplar::Tensor> init_state(inputs.begin()+1*num_layers,inputs.begin()+2*num_layers);
+  // std::vector<poplar::Tensor> inp_spike_ids_fptype(inputs.begin()+2*num_layers,inputs.begin()+3*num_layers);
+  // std::vector<poplar::Tensor> num_inp_spikes_int(inputs.begin()+3*num_layers,inputs.begin()+4*num_layers);
+  // std::vector<poplar::Tensor> decay_constatns(inputs.begin()+4*num_layers,inputs.begin()+5*num_layers);
+  // std::vector<poplar::Tensor> thresholds(inputs.begin()+5*num_layers,inputs.begin()+6*num_layers);
   
+  poplar::Tensor weights = inputs[0];
+  poplar::Tensor init_state = inputs[1];
+  poplar::Tensor inp_spike_ids_fptype = inputs[2];
+  poplar::Tensor num_inp_spikes_int = inputs[3];
+  poplar::Tensor decay_constatns = inputs[4];
+  poplar::Tensor thresholds = inputs[5];
+
   // poplar::Tensor weights = alloc_rowwise_2d(graph, weights_inp.shape(), weights_inp.elementType(), 0, {dnai, "weights_alloc"});
   // poplar::Tensor init_state = alloc_perneuron_2d(graph, init_state_inp.shape(), init_state_inp.elementType(), 0, {dnai, "init_state_alloc"});
   // poplar::Tensor inp_spike_ids = alloc_perneuron_3d(graph, inp_spike_ids_inp.shape(), inp_spike_ids_inp.elementType(), 0, {dnai, "inp_spike_ids_alloc"});
