@@ -9,6 +9,7 @@ import time
 # import tensorflow.keras as keras
 from tensorflow.python import ipu
 # tf.disable_v2_behavior()
+from tensorflow.python.framework.tensor_shape import TensorShape
 
 def gen_sparse_spikes(rng, seq_len, batchsize, size_dense, size_sparse):
     sparse_spike_ids = np.empty((seq_len, batchsize, size_sparse))
@@ -66,7 +67,7 @@ def sparse2dense_ipu(spike_ids, num_spikes, dense_size: int):
 
 
 # TODO could also implement a self-recurrent version
-def custom_multi_lif_layer(sparse_sizes, weights, init_state, inp_spike_ids, num_inp_spikes, decay_constants, thresholds):
+def custom_multi_lif_layer_sparse(sparse_sizes, weights, init_state, inp_spike_ids, num_inp_spikes, decay_constants, thresholds):
 
     # TODO check that batch and seq_lens are consitent for all states, inp_spike_ids, num_inp_spikes
     assert isinstance(weights, (list, tuple))
@@ -108,15 +109,12 @@ def custom_multi_lif_layer(sparse_sizes, weights, init_state, inp_spike_ids, num
                                               attributes=sparse_sizes_str,
                                             )
 
-
-class KerasMultiLIFLayerSparse(keras.layers.Layer):
-    def __init__(self, dense_shapes, sparse_shapes, decay_constant, threshold):
+class KerasMultiLIFLayerBase(keras.layers.Layer):
+    def __init__(self, dense_shapes, decay_constant, threshold):
         super().__init__()
-        assert len(dense_shapes) == len(sparse_shapes), "`dense_shapes` and `sparse_shapes` must have the same nmber of elements."
         assert len(dense_shapes) > 1, "`dense_shapes` must be of at least length 2, generating a network with no hidden layers."
         self.num_layers = len(dense_shapes)-1
         self.dense_shapes = dense_shapes
-        self.sparse_shapes = sparse_shapes
         self.decay_constant_value = decay_constant
         self.threshold_value = threshold
 
@@ -136,15 +134,69 @@ class KerasMultiLIFLayerSparse(keras.layers.Layer):
             trainable=False,
         ) for ilay in range(1, self.num_layers+1)]
 
+    def call(self):
+        raise NotImplementedError
+
+
+class KerasMultiLIFLayerSparse(KerasMultiLIFLayerBase):
+    def __init__(self, dense_shapes, sparse_shapes, decay_constant, threshold):
+        super().__init__(dense_shapes, decay_constant, threshold)
+        assert len(dense_shapes) == len(sparse_shapes), "`dense_shapes` and `sparse_shapes` must have the same nmber of elements."
+        self.sparse_shapes = sparse_shapes
+
     def call(self, inp_spike_ids, num_inp_spikes, init_states):
-        return custom_multi_lif_layer(self.sparse_shapes, self.ws, init_states, inp_spike_ids, num_inp_spikes, self.decay_constants, self.thresholds)
+        return custom_multi_lif_layer_sparse(self.sparse_shapes, self.ws, init_states, inp_spike_ids, num_inp_spikes, self.decay_constants, self.thresholds)
 
 
-def model_fn_ipu(seq_len, dense_shapes, sparse_shapes, decay_constant, threshold, batchsize_per_step):
+@tf.custom_gradient
+def heaviside_with_super_spike_surrogate(x):
+  spikes = tf.experimental.numpy.heaviside(x, 1)
+  beta = 10.0
+  
+  def grad(upstream):
+    return upstream * 1/(beta*tf.math.abs(x)+1)
+  return spikes, grad
+
+def pure_tf_lif_step(weights, state, inp_, decay_constants, thresholds):
+    syn_inp = tf.matmul(inp_, weights, transpose_b=True)
+    state = state - tf.stop_gradient(state * tf.experimental.numpy.heaviside(state-thresholds, 0))
+    new_state = state * decay_constants + (1 - decay_constants) * syn_inp
+    # new_state = decay_constants*state * tf.experimental.numpy.heaviside(thresholds-state, 1) + (1-decay_constants)*syn_inp
+    spikes_out = heaviside_with_super_spike_surrogate(new_state-thresholds)
+    return spikes_out, new_state
+
+class KerasMultiLIFLayerDenseCell(KerasMultiLIFLayerBase):
+    def __init__(self, dense_shapes, decay_constant, threshold):
+        super().__init__(dense_shapes, decay_constant, threshold)
+        state_shapes = dense_shapes[1:]*2
+        self.state_size = [TensorShape((dim,)) for dim in state_shapes]
+        self.output_size = [TensorShape((shape_,)) for shape_ in dense_shapes[1:]]
+        # self.output_size = dense_shapes[-1]
+
+    def call(self, inp_spikes, state):
+        neuron_states = state[:self.num_layers]
+        outs = state[self.num_layers:]
+        all_out_spikes = []
+        all_neuron_states = []
+
+        for ilay in range(self.num_layers):
+            inp_ = inp_spikes if ilay==0 else outs[ilay-1]
+            spikes_out, neuron_stat = pure_tf_lif_step(self.ws[ilay], neuron_states[ilay], inp_, self.decay_constants[ilay], self.thresholds[ilay])
+            all_neuron_states.append(neuron_stat)
+            all_out_spikes.append(spikes_out)
+            
+        state_new = [*all_neuron_states, *all_out_spikes]
+        return all_out_spikes, state_new
+
+def KerasMultiLIFLayerDense(dense_shapes, decay_constant, threshold, **kwargs):
+    return tf.keras.layers.RNN(KerasMultiLIFLayerDenseCell(dense_shapes, decay_constant, threshold), **kwargs)
+
+
+def model_fn_sparse(seq_len, dense_shapes, sparse_shapes, decay_constant, threshold, batchsize_per_step):
     num_layers = len(dense_shapes)-1
+
     inp_spike_ids = keras.Input(shape=(seq_len, sparse_shapes[0]), batch_size=batchsize_per_step, dtype=tf.float32)
     num_inp_spikes = keras.Input(shape=(seq_len, 1), batch_size=batchsize_per_step, dtype=tf.int32) 
-
     spike_ids = [tf.transpose(inp_spike_ids, perm=[1, 0, 2]), *[tf.zeros((sparse_shapes[ilay]), dtype=inp_spike_ids.dtype ) for ilay in range(1, num_layers)]]
     num_spikes = [tf.transpose(num_inp_spikes, perm=[1, 0, 2]), *[tf.zeros((batchsize_per_step,), dtype=num_inp_spikes.dtype ) for ilay in range(1, num_layers)]]
 
@@ -152,23 +204,46 @@ def model_fn_ipu(seq_len, dense_shapes, sparse_shapes, decay_constant, threshold
     out = KerasMultiLIFLayerSparse(
             dense_shapes, sparse_shapes, decay_constant, threshold
         )(spike_ids, num_spikes, init_states)
+    spike_ids, num_spikes, states = out[:num_layers], out[num_layers:2*num_layers], out[2*num_layers:]    
+    dense_out_spikes_last_layer = sparse2dense_ipu(spike_ids[-1], tf.cast(num_spikes[-1], tf.int32), dense_shapes[-1])[0]
+    return (inp_spike_ids, num_inp_spikes), dense_out_spikes_last_layer[-1]
 
-    spike_ids, num_spikes, states = out[:num_layers], out[num_layers:2*num_layers], out[2*num_layers:]
+def model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step):
+    num_layers = len(dense_shapes)-1
+    inp_spikes = keras.Input(shape=(seq_len, dense_shapes[0]), batch_size=batchsize_per_step, dtype=tf.float32)
+    # inp_spikes_transp = [tf.transpose(inp_spikes, perm=[1, 0, 2]), *[tf.zeros((dense_shapes[ilay]), dtype=inp_spikes.dtype ) for ilay in range(1, num_layers)]]
 
-    dense_out_spikes = sparse2dense_ipu(spike_ids[-1], tf.cast(num_spikes[-1], tf.int32), dense_shapes[-1])[0]
-    return (inp_spike_ids, num_inp_spikes), dense_out_spikes[-1]
+    # init_out_spikes = [tf.zeros((dense_shapes[ilay]), dtype=inp_spikes.dtype ) for ilay in range(num_layers)]
+    # init_states = [tf.zeros((batchsize_per_step, dense_shapes[i+1]), dtype=tf.float32) for i in range(num_layers)]
+    # comb_init_state = [*init_states, *init_out_spikes]
 
-def loss_fn(y_pred, y_target):
-    return tf.math.reduce_sum((y_pred-y_target)**2)/y_target.shape[-1]
+    out_spikes = KerasMultiLIFLayerDense(
+            dense_shapes, decay_constant, threshold, return_sequences=True
+        )(inp_spikes) #, comb_init_state)
+    # out_spikes, final_internal_states = out 
+    return inp_spikes, out_spikes[-1]
+
+def simple_loss_fn(y_target, y_pred):
+    sum_spikes = tf.reduce_sum(y_pred, axis=1) # (batch, seq, neurons)
+    return tf.math.reduce_sum((sum_spikes-y_target)**2)/y_target.shape[-1]
 
 
-def create_dataset(inp_spike_ids, num_inp_spikes, targets, batchsize):
+def create_dataset_sparse(inp_spike_ids, num_inp_spikes, targets, batchsize):
     dataset = tf.data.Dataset.from_tensor_slices(({"input_1": inp_spike_ids, "input_2": num_inp_spikes}, targets))
     # dataset = tf.data.Dataset.from_tensor_slices((inp_spike_ids, targets))
     dataset = dataset.batch(batchsize, drop_remainder=True)
     dataset = dataset.shuffle(targets.shape[0])
     dataset = dataset.prefetch(16) # TODO why 16 ?
     return dataset
+
+def create_dataset_dense(inp_spikes, targets, batchsize):
+    # dataset = tf.data.Dataset.from_tensor_slices(({"input_1": inp_spike_ids, "input_2": num_inp_spikes}, targets))
+    dataset = tf.data.Dataset.from_tensor_slices((inp_spikes, targets))
+    dataset = dataset.batch(batchsize, drop_remainder=True)
+    dataset = dataset.shuffle(targets.shape[0])
+    dataset = dataset.prefetch(16) # TODO why 16 ?
+    return dataset
+
 
 
 def train_ipu(
@@ -181,6 +256,7 @@ def train_ipu(
         sparse_shapes, 
         decay_constant, 
         threshold,
+        loss_fn,
     ):
 
     print(train_steps_per_execution)
@@ -198,7 +274,7 @@ def train_ipu(
 
     with strategy.scope():
         # init model
-        model = keras.Model(*model_fn_ipu(seq_len, dense_shapes, sparse_shapes, decay_constant, threshold, batchsize_per_step))
+        model = keras.Model(*model_fn_sparse(seq_len, dense_shapes, sparse_shapes, decay_constant, threshold, batchsize_per_step))
         # model.set_pipelining_options(
         #     gradient_accumulation_steps_per_replica=2*num_ipus #train_steps_per_execution
         # )
@@ -218,12 +294,38 @@ def train_ipu(
         model.summary()
 
 
+def train_gpu(
+        num_epochs, 
+        batchsize,
+        dataset,
+        seq_len, 
+        dense_shapes, 
+        decay_constant, 
+        threshold,
+        loss_fn,
+    ):
+
+    # init model
+    model = keras.Model(*model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize))
+
+    # Compile our model with Stochastic Gradient Descent as an optimizer
+    # and Categorical Cross Entropy as a loss.
+    model.compile('sgd', loss_fn,
+                # metrics=["accuracy"],
+    )
+
+    print('\nTraining')
+    model.fit(dataset, epochs=num_epochs)
+    model.summary()
+
 
 
 
 def main():
 
-    os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
+    sparse_comp = False
+    if sparse_comp:
+        os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
 
     rng = np.random.default_rng(1)
     num_epochs = 10
@@ -231,8 +333,8 @@ def main():
     batchsize = 2
     batchsize_per_step = 2
     seq_len = 12
-    dense_sizes = [512, 512]
-    sparse_sizes = [32, 32]
+    dense_sizes = [512, 512, 128]
+    sparse_sizes = [32, 32, 12]
     decay_constant = 0.9
     threshold = 1.0
 
@@ -242,23 +344,34 @@ def main():
 
     targets = rng.uniform(1.0, size=(num_sequences, dense_sizes[-1])).astype(np.float32)
     inp_spike_ids, num_inp_spikes = gen_sparse_spikes(rng, seq_len, num_sequences, dense_sizes[0], sparse_sizes[0])
-    # init_states = [np.zeros((num_sequences, nneurons), dtype=np.float32) for nneurons in dense_sizes[1:]]
 
-    # dataset = SNNDataset(inp_spike_ids, num_inp_spikes, targets, batchsize, rng)
-    dataset = create_dataset(inp_spike_ids.transpose(1, 0, 2), num_inp_spikes.transpose(1, 0, 2), targets, batchsize)
-
-
-    train_ipu(
-        num_epochs, 
-        train_steps_per_execution, 
-        batchsize,
-        dataset,
-        seq_len, 
-        dense_sizes, 
-        sparse_sizes, 
-        decay_constant, 
-        threshold
-    )
+    if sparse_comp:
+        dataset = create_dataset_sparse(inp_spike_ids.transpose(1, 0, 2), num_inp_spikes.transpose(1, 0, 2), targets, batchsize)
+        train_ipu(
+            num_epochs, 
+            train_steps_per_execution, 
+            batchsize_per_step,
+            dataset,
+            seq_len, 
+            dense_sizes, 
+            sparse_sizes, 
+            decay_constant, 
+            threshold,
+            simple_loss_fn
+        )
+    else:
+        inp_spikes = sparse2dense(inp_spike_ids, num_inp_spikes, dense_sizes[0])
+        dataset = create_dataset_dense(inp_spikes.transpose(1, 0, 2), targets, batchsize)
+        train_gpu(
+            num_epochs,  
+            batchsize,
+            dataset,
+            seq_len, 
+            dense_sizes, 
+            decay_constant, 
+            threshold,
+            simple_loss_fn
+        )
 
 
 if __name__ == '__main__':
