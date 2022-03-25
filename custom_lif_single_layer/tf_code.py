@@ -89,8 +89,8 @@ def custom_lif_layer(weights, init_state, inp_spike_ids, num_inp_spikes, decay_c
     }
 
     base_path = os.path.realpath(os.path.dirname(__file__))
-    lib_path = os.path.join(base_path, "custom_lif_layer", "libcustom_op.so")
-    gp_path = os.path.join(base_path, "custom_lif_layer", "custom_codelet.gp")
+    lib_path = os.path.join(base_path, "custom_lif_layer_vectorize", "libcustom_op.so")
+    gp_path = os.path.join(base_path, "custom_lif_layer_vectorize", "custom_codelet.gp")
 
     return ipu.custom_ops.precompiled_user_op([weights, init_state, inp_spike_ids, num_inp_spikes, decay_constants, thresholds],
                                               lib_path,
@@ -109,7 +109,7 @@ def calc_result_and_gradient_ipu(weights, init_states, inp_spike_ids, num_inp_sp
         dense_out_spikes = sparse2dense_ipu(spike_ids, num_spikes, weights[-1].shape[0])[0]
         sum = tf.math.reduce_sum((dense_out_spikes-1.0)**2)
         grads = tf.gradients(sum, [*weights, init_states[0], inp_spike_ids, spike_ids])
-        return (spike_ids, num_spikes, states, dense_out_spikes) , grads
+        return (spike_ids, num_spikes, states, dense_out_spikes), grads
 
 
 def calc_result_and_gradient_pure_tf(weights, init_states, inp_spikes, decay_constants, thresholds):
@@ -192,7 +192,7 @@ if __name__ == '__main__':
     with tf.Session() as sess:
         threshold = 1.0
 
-        a = tuple(rng.normal(size=(shapes[i+1], shapes[i])).astype(np.float32) for i in range(NUM_LAYERS))
+        a = tuple(rng.normal(0.0, 1.0, size=(shapes[i+1], shapes[i])).astype(np.float32) for i in range(NUM_LAYERS))
         # a = []
         # for i in range(NUM_LAYERS-1):
         #     a.append(rng.normal(size=(SIZE_OUT, SIZE_OUT)).astype(np.float32))

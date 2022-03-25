@@ -103,7 +103,7 @@ template class MulInPlaceCustom<float>;
 template <typename FPType>
 FPType superspike_surrogate(FPType x, FPType beta) {
   FPType one{1.0};
-  return one / (beta * std::abs(x) + one);
+  return one / std::pow((beta * std::abs(x) + one), 2);
 }
 
 template <typename FPType>

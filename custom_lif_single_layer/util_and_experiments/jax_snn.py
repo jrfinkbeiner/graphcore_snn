@@ -16,7 +16,7 @@ def get_heaviside_with_super_spike_surrogate(beta=10.):
         x, = primals
         x_dot, = tangents
         primal_out = heaviside_with_super_spike_surrogate(x)
-        tangent_out = 1/(beta*jnp.abs(x)+1) * x_dot
+        tangent_out = 1/(beta*jnp.abs(x)+1)**2 * x_dot
         return primal_out, tangent_out
 
     return heaviside_with_super_spike_surrogate

@@ -7,7 +7,7 @@ def heaviside_with_super_spike_surrogate(x):
   beta = 10.0
   
   def grad(upstream):
-    return upstream * 1/(beta*tf.math.abs(x)+1)
+    return upstream * 1/(beta*tf.math.abs(x)+1)**2
   return spikes, grad
 
 def pure_tf_lif_step(weights, state, inp_, decay_constants, thresholds):
