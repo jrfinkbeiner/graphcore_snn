@@ -38,7 +38,9 @@ In order to run code that uses the IPU, first you have to compile both the custo
 
 First, source the Poplar SDK by running
 
-```source /<storage_path>/poplar_sdk-<sdk_version>/poplar-<poplar_version>/enable.sh```
+```bash
+source /<storage_path>/poplar_sdk-<sdk_version>/poplar-<poplar_version>/enable.sh
+```
 
 Then compile the custom codelets in both subdirectories called `sparse2dense` as well as `custom_lif_layer_vectorize` by running:
 
@@ -66,13 +68,15 @@ pip install /<storage_path>/poplar_sdk-<sdk_version>/tensorflow-<tf_version>+gc<
 
 Source the IPU-tensorflow env if not already done.
 
-```source /<envs_root_path>/<env_name>/bin/activate```
+```bash
+source /<envs_root_path>/<env_name>/bin/activate
+```
 
-and run your ipu python application of your choice. If you want to use the `IPUModel`, which simulates the IPU using CPUs, set the environemnt variable `TF_POPLAR_FLAGS` with `--use_ipu_model` before running your script, or just add the line 
+and run your ipu python application of your choice. If you want to use the `IPUModel`, which simulates the IPU using CPUs, set the environemnt variable `TF_POPLAR_FLAGS` with `--use_ipu_model` before running your script, or just add the line
 
-```python3
+```python
 os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
 ```
 
-in your python script. For additional information on how to target the poplar xla (tensorflow) device see https://docs.graphcore.ai/projects/tensorflow1-user-guide/en/latest/tensorflow/device_selection.html or for mor einformation on the IPU Model see https://docs.graphcore.ai/projects/poplar-user-guide/en/latest/poplar_programs.html.
+to your python script. For additional information on how to target the poplar xla (tensorflow) device see https://docs.graphcore.ai/projects/tensorflow1-user-guide/en/latest/tensorflow/device_selection.html or for mor einformation on the IPU Model see https://docs.graphcore.ai/projects/poplar-user-guide/en/latest/poplar_programs.html.
 
