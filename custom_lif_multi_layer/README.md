@@ -72,7 +72,7 @@ Source the IPU-tensorflow env if not already done.
 source /<envs_root_path>/<env_name>/bin/activate
 ```
 
-and run your ipu python application of your choice. If you want to use the `IPUModel`, which simulates the IPU using CPUs, set the environemnt variable `TF_POPLAR_FLAGS` with `--use_ipu_model` before running your script, or just add the line
+and run the ipu python application of your choice. If you want to use the `IPUModel`, which simulates the IPU using CPUs, set the environemnt variable `TF_POPLAR_FLAGS` with `--use_ipu_model` before running your script, or just add the line
 
 ```python
 os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
