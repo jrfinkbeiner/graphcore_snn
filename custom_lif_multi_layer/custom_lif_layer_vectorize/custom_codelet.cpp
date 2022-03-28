@@ -130,8 +130,10 @@ template class LIFStateOutGrad<float>;
 // template class LIFStateOutGrad<half>;
 
 
+// TODO maybe not most efficient usage of MultiVertex 
 template <typename FPType>
-class LIFWeightsGrad : public poplar::Vertex {
+// class LIFWeightsGrad : public poplar::MultiVertex {
+  class LIFWeightsGrad : public poplar::Vertex {
 public:
   poplar::Input<poplar::Vector<FPType>> dLdState;
   poplar::Input<FPType> decay_constant;
@@ -140,10 +142,11 @@ public:
   poplar::Input<unsigned> sparse_out_dim;
 
   poplar::InOut<poplar::Vector<FPType>> dLdweights_row;
-  
 
+  // bool compute(unsigned workerId) {
   bool compute() {
     size_t batchsize = dLdState.size();
+    // unsigned numWorkers = MultiVertex::numWorkers();
     FPType one{1.0};
     FPType decay_const{decay_constant};
     FPType decay_val{one-decay_const};
@@ -153,6 +156,7 @@ public:
       start_idx = sparse_out_dim*ibatch;
       const auto end{fwd_num_inp_spikes[ibatch]};
       // TODO this loop could use multiple threads: It is guarantted that a single elemnent is only touched once!
+      // for (unsigned i = workerId; i < end; i+=numWorkers) {
       for (unsigned i = 0; i < end; ++i) {
         dLdweights_row[fwd_inp_spikes_ids[start_idx+i]] += decay_val * dLdS;
       }

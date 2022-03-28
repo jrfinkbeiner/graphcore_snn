@@ -74,8 +74,9 @@ def custom_multi_lif_layer_sparse(sparse_sizes, weights, init_state, inp_spike_i
     assert isinstance(weights, (list, tuple))
     num_layers = len(weights)
 
-    batch_and_seq_size = num_inp_spikes[0].shape[:2]
+    seq_and_batch_size = num_inp_spikes[0].shape[:2]
     seq_len = num_inp_spikes[0].shape[0]
+    batch_size = num_inp_spikes[0].shape[1]
 
     output_types = [
         *[inp_spike_ids[ilay].dtype for ilay in range(num_layers)],
@@ -83,8 +84,8 @@ def custom_multi_lif_layer_sparse(sparse_sizes, weights, init_state, inp_spike_i
         *[init_state[ilay].dtype for ilay in range(num_layers)],
     ]
     output_shapes = [
-        *[tf.TensorShape([*batch_and_seq_size, sparse_sizes[ilay]]) for ilay in range(1, num_layers+1)], 
-        *[tf.TensorShape([*batch_and_seq_size, 1]) for ilay in range(1, num_layers+1)],
+        *[tf.TensorShape([*seq_and_batch_size, sparse_sizes[ilay]]) for ilay in range(1, num_layers+1)], 
+        *[tf.TensorShape([*seq_and_batch_size, 1]) for ilay in range(1, num_layers+1)],
         *[tf.TensorShape([seq_len, *init_state[ilay].shape]) for ilay in range(num_layers)],
     ]
 
@@ -101,13 +102,16 @@ def custom_multi_lif_layer_sparse(sparse_sizes, weights, init_state, inp_spike_i
     gp_path = os.path.join(base_path, "custom_lif_layer_vectorize", "custom_codelet.gp")
 
     inputs = [*weights, *init_state, *inp_spike_ids, *num_inp_spikes, *decay_constants, *thresholds]
-    sparse_sizes_str = "_".join([str(val) for val in sparse_sizes])
+    # sparse_sizes_str = "_".join([str(val) for val in sparse_sizes])
+    dense_sizes = [w.shape[0] for w in weights]
+    dense_sizes = [weights[0].shape[1], *dense_sizes]
+    sizes_str = "_".join([str(val) for val in [*dense_sizes, *sparse_sizes, batch_size]])
     return ipu.custom_ops.precompiled_user_op(inputs,
                                               lib_path,
                                               gp_path,
                                               outs=outputs,
                                               separate_gradients=False, # to calculate gradients separately. Allows to only calculate weight gradient without implementing the others
-                                              attributes=sparse_sizes_str,
+                                              attributes=sizes_str,
                                             )
 
 class KerasMultiLIFLayerBase(keras.layers.Layer):
@@ -264,19 +268,11 @@ def train_ipu(
         threshold,
         loss_fn,
     ):
-
-    print(train_steps_per_execution)
-    
     # set ipu config and strategy 
     ipu_config = ipu.config.IPUConfig()
     ipu_config.auto_select_ipus = 1
     ipu_config.configure_ipu_system()
     strategy = ipu.ipu_strategy.IPUStrategy()
-
-    # inp_spike_ids = tf.convert_to_tensor(inp_spike_ids.transpose(1,0,2))
-    # num_inp_spikes = tf.convert_to_tensor(num_inp_spikes.transpose(1,0,2))
-    # init_states = [tf.convert_to_tensor(stat) for stat in init_states]
-    # targets = tf.convert_to_tensor(targets)
 
     with strategy.scope():
         # init model
@@ -355,7 +351,7 @@ def test_sparse_vs_dense():
     batchsize = num_sequences
     batchsize_per_step = batchsize
     seq_len = 50
-    dense_sizes = [102, 101, 100]
+    dense_sizes = [102, 801, 799]
     sparse_sizes = dense_sizes
     decay_constant = 0.9
     threshold = 1.0
