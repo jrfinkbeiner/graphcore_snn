@@ -5,7 +5,7 @@ This directory (and its subdirectories) contain code for the implementation of m
 It is structured as follows:
 
 * `custom_lif_layer_vectorize` contains the custom op code for a single LIF layer.
-* `sparse2dense` contains custom op code that implements a transformation from a dense tensor (seq_len, batchsize, num_neurons) to the sparse tensor construct chosen in this project.
+* `sparse2dense` contains custom op code that implements a transformation from a dense tensor (`seq_len`, `batchsize`, `num_neurons`) to the sparse tensor construct chosen in this project.
 
 Files:
 
@@ -26,7 +26,7 @@ or specifically for tensorflow on the IPU https://docs.graphcore.ai/projects/ten
 
 ### 1. Download
 
-Download the Poplar SDK form https://downloads.graphcore.ai/ for your operationg system and extract/unzip the file structure. This contains the Poplar SDK and pre-built wheels that allow the integration of various machine learning frameworks (including tensorflow) with the IPU.
+Download the Poplar SDK from https://downloads.graphcore.ai/ for your operationg system and extract/unzip the file structure. This contains the Poplar SDK and pre-built wheels that allow the integration of various machine learning frameworks (including tensorflow) with the IPU.
 
 Note that for the download a Graphcore account is required.
 
