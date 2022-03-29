@@ -1,6 +1,6 @@
 #include <iostream>
 #include <vector>
-#include <boost/optional.hpp>
+// #include <boost/optional.hpp>
 #include <cmath> // ceil
 #include <poplar/Graph.hpp>
 #include <poplar/Tensor.hpp>

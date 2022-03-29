@@ -1,7 +1,7 @@
 #include <iostream>
 #include <algorithm>
 #include <vector>
-#include <boost/optional.hpp>
+// #include <boost/optional.hpp>
 #include <cmath> // ceil
 #include <poplar/Graph.hpp>
 #include <poplar/Tensor.hpp>
@@ -127,19 +127,19 @@ struct LIFParams {
     {};
 };
 
-struct LIFOpts {
-  bool inferenceOnly;
-  poplar::Type partialsType;
-  boost::optional<double> availableMemoryProportion;
-  boost::optional<std::size_t> numShards;
-  boost::optional<bool> rnnCodeReuse;
+// struct LIFOpts {
+//   bool inferenceOnly;
+//    poplar::Type partialsType;
+//    boost::optional<double> availableMemoryProportion;
+//    boost::optional<std::size_t> numShards;
+//    boost::optional<bool> rnnCodeReuse;
 
-  LIFOpts();
-  LIFOpts(bool inferenceOnly, poplar::Type &partialsType)
-    : inferenceOnly{inferenceOnly}
-    , partialsType{partialsType}
-    {};
-};
+//    LIFOpts();
+//    LIFOpts(bool inferenceOnly, poplar::Type &partialsType)
+//      : inferenceOnly{inferenceOnly}
+//      , partialsType{partialsType}
+//      {};
+//  };
 
 
 //---------------------------------------------- forward -----------------------------------------
