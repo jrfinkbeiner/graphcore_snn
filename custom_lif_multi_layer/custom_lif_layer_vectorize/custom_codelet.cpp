@@ -39,6 +39,39 @@ template class LIFStateUpdateInPlace<float>;
 
 
 template <typename FPType>
+class LIFOutSpikesFromTopK : public poplar::Vertex {
+public:
+
+  poplar::Input<poplar::Vector<FPType>> topKStateVals;
+  poplar::Input<poplar::Vector<unsigned>> topKStateIds;
+  poplar::Input<poplar::Vector<FPType>> thresholds;
+
+  poplar::Output<poplar::Vector<unsigned>> out_spikes_ids;
+  poplar::Output<unsigned> num_out_spikes;
+  // poplar::Output<int> num_out_spikes; // TODO uncomment this should be int longterm...
+
+  bool compute() {
+    unsigned numSpikesCounter{0};
+    size_t sizeSparseOut = out_spikes_ids.size();
+    for (unsigned i = 0; i < topKStateVals.size(); ++i) {
+      unsigned origId = topKStateIds[i];
+      if (topKStateVals[i] > thresholds[origId]) { // TODO order and slice thersholds in poplar_code.cpp, not here?
+        out_spikes_ids[numSpikesCounter] = origId;
+        ++numSpikesCounter;
+      } else {
+        // Fill up the array with non-spike values in reverse from behind 
+        out_spikes_ids[sizeSparseOut-1-i+numSpikesCounter] = origId;
+      }
+    }
+    *num_out_spikes = numSpikesCounter;
+
+    return true;
+  }
+};
+template class LIFOutSpikesFromTopK<float>;
+// template class LIFOutSpikesFromTopK<half>;
+
+template <typename FPType>
 class LIFOutSpikes2Threshs : public poplar::Vertex {
 public:
 

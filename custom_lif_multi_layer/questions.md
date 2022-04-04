@@ -8,6 +8,10 @@
 
 * could it be beneficial to combine states into one tensor ? How big is the overhead of looping over all the tensors ?
 
+## Random
+
+* is there a `shuffle` or random choice function in poplar that let's you randomly rearrange tensors or generate random indices for that?
+
 ## Tile mapping and tensor splitting
 
 * if the input spikes are called for mulitiple vertices on one tile, does that move the tensors for every vertex operation or once for all vertices on the tile?
