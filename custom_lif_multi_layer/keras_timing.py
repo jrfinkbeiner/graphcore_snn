@@ -7,8 +7,10 @@ import tensorflow.keras as keras
 import functools as ft
 import time
 
-# import tensorflow.keras as keras
 from tensorflow.python import ipu
+
+# import tensorflow.keras as keras
+
 # tf.disable_v2_behavior()
 # from tensorflow.python.framework.tensor_shape import TensorShape
 
@@ -202,7 +204,7 @@ def model_fn_sparse(seq_len, dense_shapes, sparse_shapes, decay_constant, thresh
     num_layers = len(dense_shapes)-1
 
     inp_spike_ids = keras.Input(shape=(seq_len, sparse_shapes[0]), batch_size=batchsize_per_step, dtype=tf.float32)
-    num_inp_spikes = keras.Input(shape=(seq_len, 1), batch_size=batchsize_per_step, dtype=tf.int32) 
+    num_inp_spikes = keras.Input(shape=(seq_len, 1), batch_size=batchsize_per_step, dtype=tf.int32)
     
     
     spike_ids = [tf.transpose(inp_spike_ids, perm=[1, 0, 2]), *[tf.zeros((batchsize_per_step, sparse_shapes[ilay]), dtype=inp_spike_ids.dtype ) for ilay in range(1, num_layers)]]
@@ -216,7 +218,7 @@ def model_fn_sparse(seq_len, dense_shapes, sparse_shapes, decay_constant, thresh
     dense_out_spikes_last_layer = sparse2dense_ipu(out_spike_ids[-1], tf.cast(num_out_spikes[-1], tf.int32), dense_shapes[-1])[0]
     return (inp_spike_ids, num_inp_spikes), tf.transpose(dense_out_spikes_last_layer, perm=[1, 0, 2])
 
-def model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, seed=None):
+def model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, seed=None, return_all=False):
     num_layers = len(dense_shapes)-1
     inp_spikes = keras.Input(shape=(seq_len, dense_shapes[0]), batch_size=batchsize_per_step, dtype=tf.float32)
     # inp_spikes_transp = [tf.transpose(inp_spikes, perm=[1, 0, 2]), *[tf.zeros((dense_shapes[ilay]), dtype=inp_spikes.dtype ) for ilay in range(1, num_layers)]]
@@ -229,7 +231,11 @@ def model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize_p
             dense_shapes, decay_constant, threshold, seed, return_sequences=True
         )(inp_spikes) #, comb_init_state)
     # out_spikes, final_internal_states = out 
-    return inp_spikes, out_spikes[-1]
+    # return inp_spikes, out_spikes[-1]
+    if return_all:
+        return inp_spikes, out_spikes
+    else:
+        return inp_spikes, out_spikes[-1]
 
 def simple_loss_fn(y_target, y_pred):
     sum_spikes = tf.reduce_sum(y_pred, axis=1) # (batch, seq, neurons)
@@ -257,7 +263,7 @@ def create_dataset_dense(inp_spikes, targets, batchsize, shuffle=True):
 
 
 def train_ipu(
-        num_epochs, 
+        num_epochs,
         train_steps_per_execution,
         batchsize_per_step,
         dataset,
@@ -267,6 +273,9 @@ def train_ipu(
         decay_constant, 
         threshold,
         loss_fn,
+        metrics=None,
+        steps_per_epoch=None,
+        callbacks=None,
     ):
     # set ipu config and strategy 
     ipu_config = ipu.config.IPUConfig()
@@ -283,21 +292,23 @@ def train_ipu(
 
         # Compile our model with Stochastic Gradient Descent as an optimizer
         # and Categorical Cross Entropy as a loss.
-        model.compile('sgd', loss_fn,
-                    # metrics=["accuracy"],
+        # optim = tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.5, nesterov=False, name="SGD")
+        optim = tf.keras.optimizers.SGD(learning_rate=1e-1, momentum=0.9, nesterov=False, name="SGD")
+        model.compile(optim, loss_fn,
+                    metrics=metrics,
                     steps_per_execution=train_steps_per_execution,
-                    # run_eagerly=False,
         )
 
-        print('\nTraining')
-        model.fit(dataset, epochs=num_epochs)
-        # model.fit([inp_spike_ids, num_inp_spikes, init_states], targets, epochs=num_epochs, batch_size=batchsize, shuffle=False)
-
         model.summary()
+
+        print('\nTraining')
+        model.fit(dataset, epochs=num_epochs, steps_per_epoch=steps_per_epoch, workers=batchsize_per_step, callbacks=callbacks)
+        # model.fit([inp_spike_ids, num_inp_spikes, init_states], targets, epochs=num_epochs, batch_size=batchsize, shuffle=False)
 
 
 def train_gpu(
         num_epochs, 
+        train_steps_per_execution,
         batchsize,
         dataset,
         seq_len, 
@@ -305,20 +316,31 @@ def train_gpu(
         decay_constant, 
         threshold,
         loss_fn,
+        metrics=None,
+        steps_per_epoch=None,
+        callbacks=None,
+        return_all=False,
     ):
 
     # init model
-    model = keras.Model(*model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize))
+    model = keras.Model(*model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize, return_all=return_all))
 
     # Compile our model with Stochastic Gradient Descent as an optimizer
     # and Categorical Cross Entropy as a loss.
-    model.compile('sgd', loss_fn,
+    optim = tf.keras.optimizers.SGD(learning_rate=1e-1, momentum=0.9, nesterov=False, name="SGD")
+    model.compile(optim, loss_fn,
                 # metrics=["accuracy"],
+                metrics=metrics,
+                # steps_per_execution=train_steps_per_execution,
+                # jit_compile=True
     )
 
-    print('\nTraining')
-    model.fit(dataset, epochs=num_epochs)
     model.summary()
+
+    print('\nTraining')
+    model.fit(dataset, epochs=num_epochs, steps_per_epoch=steps_per_epoch, workers=batchsize, callbacks=callbacks) #, use_multiprocessing=True) #, 
+                # validation_steps=1, validation_batch_size=10*batchsize)
+
 
 
 @tf.function(experimental_compile=True)  # Make it fast.
@@ -379,7 +401,7 @@ def test_sparse_vs_dense():
         out_sparse, grad_sparse =  strategy.run(value_and_grad_on_batch, args=[model_sparse, *data_sparse])
 
 
-    model_dense = keras.Model(*model_fn_dense(seq_len, dense_sizes, decay_constant, threshold, batchsize, model_seed))
+    model_dense = keras.Model(*model_fn_dense(seq_len, dense_sizes, decay_constant, threshold, batchsize, model_seed, return_all=False))
     data_dense = iter(dataset_dense).next()
     out_dense, grad_dense = value_and_grad_on_batch(model_dense, *data_dense)
     
@@ -430,7 +452,7 @@ def main():
     threshold = 1.0
 
     assert batchsize % batchsize_per_step == 0
-    train_steps_per_execution = int(batchsize / batchsize_per_step)
+    train_steps_per_execution = int(num_sequences / batchsize) # TODO or batchsize_per_step ?
 
     targets = rng.uniform(1.0, size=(num_sequences, dense_sizes[-1])).astype(np.float32)
     inp_spike_ids, num_inp_spikes = gen_sparse_spikes(rng, seq_len, num_sequences, dense_sizes[0], sparse_sizes[0])
