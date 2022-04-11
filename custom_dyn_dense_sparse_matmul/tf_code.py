@@ -13,8 +13,8 @@ def dyn_dense_binary_sparse_matmul_op(matrix, sparse_vec, num_elements):
     }
 
     base_path = os.path.realpath(os.path.dirname(__file__))
-    lib_path = os.path.join(base_path, "libcustom_op.so")
-    gp_path = os.path.join(base_path, "custom_codelet.gp")
+    lib_path = os.path.join(base_path, "unbatched", "libcustom_op.so")
+    gp_path = os.path.join(base_path, "unbatched", "custom_codelet.gp")
 
     return ipu.custom_ops.precompiled_user_op([matrix, sparse_vec, num_elements],
                                               lib_path,

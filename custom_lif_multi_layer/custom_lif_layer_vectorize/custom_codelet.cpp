@@ -18,8 +18,8 @@ public:
   bool compute() {
     FPType sum{0.0};
     FPType state_{state};
-    FPType threshold_{threshold};
-    FPType one{1.0};
+    const FPType threshold_{threshold};
+    const FPType one{1.0};
     const auto end{num_inp_spikes};
     for (unsigned i = 0; i < end; ++i) {
       sum += weights[inp_spikes_ids[i]];
@@ -52,7 +52,7 @@ public:
 
   bool compute() {
     unsigned numSpikesCounter{0};
-    size_t sizeSparseOut = out_spikes_ids.size();
+    const size_t sizeSparseOut = out_spikes_ids.size();
     for (unsigned i = 0; i < topKStateVals.size(); ++i) {
       unsigned origId = topKStateIds[i];
       if (topKStateVals[i] > thresholds[origId]) { // TODO order and slice thersholds in poplar_code.cpp, not here?
@@ -85,12 +85,12 @@ public:
   bool compute() {
     unsigned numSpikesCounter{0};
     unsigned numGradsCounter{0};
-    FPType secThreshMul{0.9};
-    size_t numStates = state.size();
-    size_t sizeSparseOut = out_spikes_ids.size();
+    const FPType secThreshMul{0.9};
+    const size_t numStates = state.size();
+    const size_t sizeSparseOut = out_spikes_ids.size();
     for (unsigned i = 0; i < numStates; ++i) {
       // TODO reformulate to only use +
-      if ((state[i] > thresholds[i]*secThreshMul) || (numStates - i >= (sizeSparseOut-(numSpikesCounter+numGradsCounter)))) {
+      if ((state[i] > thresholds[i]*secThreshMul) || (numStates - i <= (sizeSparseOut-(numSpikesCounter+numGradsCounter)))) {
         if (state[i] > thresholds[i]) {
           out_spikes_ids[numSpikesCounter] = i;
           ++numSpikesCounter;
@@ -149,11 +149,12 @@ public:
   poplar::InOut<poplar::Vector<FPType>> dLdState;
 
   bool compute() {
-    FPType beta = 10.0; // TODO  don't hardcode here but give as input
+    const FPType beta = 10.0; // TODO  don't hardcode here but give as input
     int sum{0};
-    size_t size_sparse_out = fwd_out_spikes_ids.size();
+    const size_t size_sparse_out = fwd_out_spikes_ids.size();
     for (unsigned i = 0; i < size_sparse_out; ++i) { 
       unsigned idx = fwd_out_spikes_ids[i];
+      // TODO is += here correct ?
       dLdState[idx] += dLdoutSpikes[i] * superspike_surrogate(fwdState[idx] - thresholds[idx], beta);
     }
     return true;
@@ -178,11 +179,11 @@ public:
 
   // bool compute(unsigned workerId) {
   bool compute() {
-    size_t batchsize = dLdState.size();
+    const size_t batchsize = dLdState.size();
     // unsigned numWorkers = MultiVertex::numWorkers();
-    FPType one{1.0};
-    FPType decay_const{decay_constant};
-    FPType decay_val{one-decay_const};
+    const FPType one{1.0};
+    const FPType decay_const{decay_constant};
+    const FPType decay_val{one-decay_const};
     unsigned start_idx;
     for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
       auto dLdS = dLdState[ibatch];
@@ -239,9 +240,9 @@ public:
   // TODO this could use multiple threads: It is guarantted that a single elemnent is only touched once!
   bool compute() {
     FPType one{1.0};
-    FPType decay_const{decay_constant};
-    FPType decay_val{one-decay_const};
-    FPType dLdStat{dLdState};
+    const FPType decay_const{decay_constant};
+    const FPType decay_val{one-decay_const};
+    const FPType dLdStat{dLdState};
     const auto end{fwd_inp_spike_ids.size()};
     // TODO this sneakily use `dLdinp_spike_ids` tensor as intermediate storage for relevant weights
     // TODO should probably be removed for readibility and correct future behaviour when `weights_row`
