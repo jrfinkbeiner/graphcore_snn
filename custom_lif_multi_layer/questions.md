@@ -1,5 +1,27 @@
 # Questions
 
+## Important
+
+* Stream Copy 
+    - why does stream copy only act on so few tiles ? Where is the bottleneck ? in writeToTile or in bandwidth betweeen IPU and host ?
+    - why is there stream copy before the backkward pass in the first place ?
+    - is the stream copy that the popvison tool shows applicable to all epochs? different to later epochs (because no more code and parameter transfer necessary) ? 
+
+* parallelize poplar ops for multiple layers:\\
+    - dynamic slice op
+    - reduce op
+    - there is no way to execute them as compute sets in parallel. Just using sequence.add(Execute(computeSet))
+
+* How to make vertices run faster?\\
+    - is there a way to have vectorization in our case, where we don't have 8 byte aligned memory ?
+    - any other way to spped up the look up and write process ? (parallel read and execute mentioned in doc when (when writing assembler?))
+
+* Multivertex\\
+    - what happens if there are multiple mutlivertices on one tile? are the mutlivertices executed sequentially with 6 workers each, or are the 6 workers split between the multivertices?
+    - how many cycles does 'read-add-write' take ? (If multiple workers access the same output memory, I'd like to estimate, how often I would overrwrite other computations. )
+
+
+
 ## Multi Ipu
 
 * possible to write multi-ipu code within a cusom op ?
@@ -37,9 +59,21 @@
 
 ## TODO Jan
 
+* fix sparse ops (even forward pass seems broken)
+
 * can the loop in `LIFWeightsGrad` really be used with MultiVertex? might touch same elements because of different batches -> can be done if batches are handled sequentially in sqquential compute sets! worth it/ is it really faster, especially if there are multiple/6 neurons on a tile...? (might help to balance workers, e.g. when there are 1 or 7 neurons per tile.)
 * think about reimplementing calcLIFStateGrad to not only make use of few tiles and copy over states.
 * use parallel Reduce Operation with compute set cevor for multi layer lif calcLICInpSpikeGrads
 * appply the (1-decay_constant) in the gradient calculation once to all state derivatives (not as currently both in inp spike grad and weights grad calculation.) a little bit more memory necessary, but should be negligable compared to state sequence
 
 * impelment checkpointing/recomputation ?
+
+* make tile mapping dependent of input spikes, output spikes, or both ? or independant ?
+
+* perform slicing and reduce operation in parallel for all layers
+
+## TODO less important Jan
+
+* implement loss for all layers
+* implement sparse loss
+* implement second threshold as variable and dynamically adjust it

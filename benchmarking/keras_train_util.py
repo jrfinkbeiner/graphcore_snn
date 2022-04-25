@@ -8,9 +8,6 @@ import tensorflow as tf
 import tensorflow.keras as keras
 import functools as ft
 
-class SparseBinaryVec(NamedTuple):
-    ids: Union[tf.Tensor, tf.TensorShape]
-    num_nzelements: Union[tf.Tensor, tf.TensorShape, int]
 
 def gen_sparse_spikes(rng, seq_len, batchsize, size_dense, size_sparse):
     sparse_spike_ids = np.empty((seq_len, batchsize, size_sparse)).astype(np.float32)
@@ -59,9 +56,15 @@ class KerasMultiLIFLayerBase(keras.layers.Layer):
         self.seed = seed
 
     def build(self, input_shape):
+
+        def custom_init(shape, dtype):
+            limit = (6/(shape[0]+shape[1]))**0.5
+            return tf.random.uniform(shape, minval=-limit, maxval=limit, dtype=dtype)
+
         w_init = tf.random_normal_initializer(0.0, 5.0, self.seed)
         self.ws = [tf.Variable(
             initial_value=w_init(shape=(self.dense_shapes[ilay+1], self.dense_shapes[ilay]), dtype=tf.float32),
+            # initial_value=custom_init(shape=(self.dense_shapes[ilay+1], self.dense_shapes[ilay]), dtype=tf.float32),
             trainable=True,
             name="weights",
         ) for ilay in range(self.num_layers)]

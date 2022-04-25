@@ -113,156 +113,6 @@ template class LIFOutSpikes2Threshs<float>;
 
 
 template <typename FPType>
-class LIFOutSpikes2ThreshsMultiVertex : public poplar::MultiVertex {
-public:
-
-  poplar::Input<poplar::Vector<FPType>> state;
-  poplar::Input<poplar::Vector<FPType>> thresholds;
-  poplar::Input<unsigned> sizeSparseOut;
-  poplar::Output<poplar::Vector<unsigned>> repeated_out_spikes_ids;
-  poplar::Output<poplar::Vector<unsigned>> repeated_num_out_spikes;
-  
-  // poplar::Output<int> num_out_spikes; // TODO uncomment this should be int longterm...
-
-  bool compute(unsigned workerId) {
-    const unsigned numWorkers = MultiVertex::numWorkers();
-    unsigned numSpikesCounter{0};
-    unsigned numGradsCounter{0};
-    const FPType secThreshMul{0.9};
-    const size_t numStatesThisWorker = state.size() / numWorkers + ((state.size() % numWorkers) > workerId);
-    unsigned i{0};
-    unsigned workerStartId{workerId*sizeSparseOut};
-    unsigned istat{0};
-    for (unsigned i = 0; i < numStatesThisWorker; ++i) {
-      // TODO reformulate to only use +
-    // while (numSpikesCounter+numGradsCounter < sizeSparseOut) {
-      if ((state[istat] > thresholds[istat]*secThreshMul) || (numStatesThisWorker - i <= (sizeSparseOut-(numSpikesCounter+numGradsCounter)))) {
-        if (state[istat] > thresholds[istat]) {
-          repeated_out_spikes_ids[workerStartId+numSpikesCounter] = istat;
-          ++numSpikesCounter;
-        } else {
-          // Fill up the array with non-spike values in reverse from behind 
-          repeated_out_spikes_ids[workerStartId+sizeSparseOut-1-numGradsCounter] = istat;
-          ++numGradsCounter;
-        }
-      }
-      // i+=numWorkers;
-      if (numSpikesCounter+numGradsCounter >= sizeSparseOut) break; // TODO just implement as while
-
-      istat+=numWorkers;
-    }
-    repeated_num_out_spikes[workerId] = numSpikesCounter;
-    
-    
-    
-
-    // for (unsigned i = 0; i < sizeSparseOut; ++i) {
-    //   repeated_out_spikes_ids[workerStartId+i] = workerStartId+i;
-    // }
-
-    // repeated_num_out_spikes[workerId] = sizeSparseOut / 4;
-
-    return true;
-  }
-};
-template class LIFOutSpikes2ThreshsMultiVertex<float>;
-// template class LIFOutSpikes2ThreshsMultiVertex<half>;
-
-
-template <typename FPType>
-class LIFOutSpikes2ThreshsSplitWorker : public poplar::Vertex {
-public:
-
-  poplar::Input<poplar::Vector<FPType>> state;
-  poplar::Input<poplar::Vector<FPType>> thresholds;
-  poplar::Input<unsigned> start_id;
-  poplar::Output<poplar::Vector<unsigned>> repeated_out_spikes_ids;
-  poplar::Output<unsigned> repeated_num_out_spikes;
-
-
-  bool compute() {
-    unsigned numSpikesCounter{0};
-    unsigned numGradsCounter{0};
-    const FPType secThreshMul{0.9};
-    const size_t numStates = state.size();
-    unsigned state_id{start_id};
-    auto sizeSparseOut = repeated_out_spikes_ids.size();
-
-    for (unsigned i = 0; i < numStates; ++i) {
-      if ((state[i] > thresholds[i]*secThreshMul) || (numStates - i <= (sizeSparseOut-(numSpikesCounter+numGradsCounter)))) {
-        if (state[i] > thresholds[i]) {
-          repeated_out_spikes_ids[numSpikesCounter] = state_id;
-          ++numSpikesCounter;
-        } else {
-          // Fill up the array with non-spike values in reverse from behind 
-          repeated_out_spikes_ids[sizeSparseOut-1-numGradsCounter] = state_id;
-          ++numGradsCounter;
-        }
-      }
-      if (numSpikesCounter+numGradsCounter >= sizeSparseOut) break; // TODO just implement as while
-      ++state_id;
-    }
-    *repeated_num_out_spikes = numSpikesCounter;
-    return true;
-  }
-};
-template class LIFOutSpikes2ThreshsSplitWorker<float>;
-// template class LIFOutSpikes2ThreshsSplitWorker<half>;
-
-template <typename FPType>
-class LIFOutSpikes2ThreshsCombine : public poplar::Vertex {
-public:
-
-  poplar::Input<poplar::Vector<unsigned>> repeated_out_spikes_ids;
-  poplar::Input<poplar::Vector<unsigned>> repeated_num_out_spikes;
-  poplar::Output<poplar::Vector<unsigned>> out_spikes_ids;
-  poplar::Output<unsigned> num_out_spikes;
-
-  bool compute() {
-
-    const size_t numWorkers = repeated_num_out_spikes.size();
-    const unsigned sparse_size = out_spikes_ids.size();
-    unsigned numSpikesCounter{0};
-
-    unsigned workerStartId{0};
-    for (unsigned iwor=0; iwor<numWorkers; ++iwor){
-      const unsigned num_out_spikes_ilay = repeated_num_out_spikes[iwor];
-      unsigned numIter = ((num_out_spikes_ilay+numSpikesCounter) <= sparse_size) ? num_out_spikes_ilay : (sparse_size-numSpikesCounter);
-      for (unsigned i=0; i<numIter; ++i){
-        out_spikes_ids[numSpikesCounter] = repeated_out_spikes_ids[workerStartId+i];
-        ++numSpikesCounter;
-      }
-      workerStartId+=sparse_size;
-    }
-    *num_out_spikes = numSpikesCounter;
-
-    unsigned restNumSpikesCounter = numSpikesCounter;
-    const unsigned numMissingSpikes = sparse_size-restNumSpikesCounter;
-    const unsigned numIters = numMissingSpikes / numWorkers;
-    const unsigned restVals = numMissingSpikes % numWorkers;
-
-    for (unsigned iiter=0; iiter<numIters; ++iiter){
-      for (unsigned i=0; i<numWorkers; ++i){
-        out_spikes_ids[numSpikesCounter] = repeated_out_spikes_ids[(i+1)*sparse_size-(iiter+1)];
-        ++numSpikesCounter;
-      }
-    }
-    unsigned restId = sparse_size-(numIters+1);
-    for (unsigned i=0; i<restVals; ++i){
-      out_spikes_ids[numSpikesCounter] = repeated_out_spikes_ids[restId];
-      ++numSpikesCounter;
-      restId += sparse_size;
-    }
-
-    return true;
-  }
-};
-template class LIFOutSpikes2ThreshsCombine<float>;
-// template class LIFOutSpikes2ThreshsCombine<half>;
-
-
-
-template <typename FPType>
 class MulInPlaceCustom : public poplar::Vertex {
 public:
   
@@ -320,8 +170,9 @@ template <typename FPType>
   class LIFWeightsGrad : public poplar::Vertex {
 public:
   poplar::Input<poplar::Vector<FPType>> dLdState;
+  poplar::Input<FPType> decay_constant;
   poplar::Input<poplar::Vector<unsigned>> fwd_inp_spikes_ids;
-  poplar::Input<poplar::Vector<unsigned>> fwd_num_inp_spikes;
+  poplar::Input<poplar::Vector<unsigned>> fwd_num_inp_spikes; // TODO to int when possible
   poplar::Input<unsigned> sparse_out_dim;
 
   poplar::InOut<poplar::Vector<FPType>> dLdweights_row;
@@ -330,16 +181,19 @@ public:
   bool compute() {
     const size_t batchsize = dLdState.size();
     // unsigned numWorkers = MultiVertex::numWorkers();
-    unsigned start_idx{0};
+    const FPType one{1.0};
+    const FPType decay_const{decay_constant};
+    const FPType decay_val{one-decay_const};
+    unsigned start_idx;
     for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
       auto dLdS = dLdState[ibatch];
+      start_idx = sparse_out_dim*ibatch;
       const auto end{fwd_num_inp_spikes[ibatch]};
       // TODO this loop could use multiple threads: It is guarantted that a single elemnent is only touched once!
       // for (unsigned i = workerId; i < end; i+=numWorkers) {
       for (unsigned i = 0; i < end; ++i) {
-        dLdweights_row[fwd_inp_spikes_ids[start_idx+i]] += dLdS;
+        dLdweights_row[fwd_inp_spikes_ids[start_idx+i]] += decay_val * dLdS;
       }
-      start_idx += sparse_out_dim;
     }
     return true;
   }
@@ -377,6 +231,7 @@ public:
   poplar::Input<poplar::Vector<FPType>> weights_row;
   // poplar::InOut<poplar::Vector<FPType>> relevant_weights;
   poplar::Input<FPType> dLdState;
+  poplar::Input<FPType> decay_constant;
   poplar::Input<poplar::Vector<unsigned>> fwd_inp_spike_ids;
  
   poplar::InOut<poplar::Vector<FPType>> dLdinp_spike_ids;
@@ -385,6 +240,8 @@ public:
   // TODO this could use multiple threads: It is guarantted that a single elemnent is only touched once!
   bool compute() {
     FPType one{1.0};
+    const FPType decay_const{decay_constant};
+    const FPType decay_val{one-decay_const};
     const FPType dLdStat{dLdState};
     const auto end{fwd_inp_spike_ids.size()};
     // TODO this sneakily use `dLdinp_spike_ids` tensor as intermediate storage for relevant weights
@@ -398,7 +255,7 @@ public:
     #pragma clang loop vectorize(enable) interleave(enable)
     for (unsigned i = 0; i < end; ++i) {
       //  dLdinp_spike_ids[i] = dLdStat * decay_val * weights_row[fwd_inp_spike_ids[i]];
-      dLdinp_spike_ids[i] = dLdStat * dLdinp_spike_ids[i];
+      dLdinp_spike_ids[i] = dLdStat * decay_val * dLdinp_spike_ids[i];
     }
     return true;
   }

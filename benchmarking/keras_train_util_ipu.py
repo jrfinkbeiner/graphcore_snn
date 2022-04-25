@@ -67,7 +67,7 @@ def sparse2dense_ipu(spikes: SparseBinaryVec, dense_size: int):
                                               lib_path,
                                               gp_path,
                                               outs=outputs,
-                                              separate_gradients=False, # to calculate gradients separately. Allows to only calculate weight gradient without implementing the others
+                                              separate_gradients=False, # to calculate gradients separately
                                               attributes=f"{dense_size}",
                                             )[0]
 
@@ -337,8 +337,8 @@ def train_ipu(
     ipu_config.configure_ipu_system()
     strategy = ipu.ipu_strategy.IPUStrategy()
 
-    if method is None:
-        method = "sparse_layer"
+    # if method is None:
+    #     method = "sparse_layer"
 
     assert method in ["dense", "sparse_ops", "sparse_layer"], f"`method` must be one of 'dense', 'sparse_ops', 'sparse_layer' or None, got '{method}'."
 
@@ -358,10 +358,18 @@ def train_ipu(
         # Compile our model with Stochastic Gradient Descent as an optimizer
         # optim = tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.5, nesterov=False, name="SGD")
         optim = tf.keras.optimizers.SGD(learning_rate=1e-1, momentum=0.9, nesterov=False, name="SGD")
+        # optim = tf.keras.optimizers.SGD(learning_rate=1e-1, momentum=0.0, nesterov=False, name="SGD")
+
+        print(outputs)
 
         model.add_loss(loss_fn(targets, outputs))
+        if metrics is not None:
+            if not isinstance(metrics, (list, tuple)):
+                metrics = [metrics]
+            for metric in metrics:
+                model.add_metric(metric(targets, outputs), metric.__name__)
         model.compile(optim, # loss_fn,
-                    metrics=metrics,
+                    # metrics=metrics,
                     steps_per_execution=train_steps_per_execution,
         )
 
@@ -399,7 +407,7 @@ def check_values(a, b, name, *,rtol=1e-4, **kwargs):
 
 def test_sparse_vs_dense():
 
-    os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
+    # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
 
     rng = np.random.default_rng(1)
     num_sequences = 2
@@ -407,8 +415,9 @@ def test_sparse_vs_dense():
     batchsize_per_step = batchsize
     seq_len = 200
     # dense_sizes = [102, 801, 799]
-    dense_sizes = [4, 4]
-    sparse_sizes = [3, 3] #dense_sizes
+    dense_sizes = [4, 4, 4]
+    sparse_sizes = dense_sizes
+    # sparse_sizes = [3, 3] #dense_sizes
     decay_constant = 0.9
     threshold = 1.0
     num_layers = len(dense_sizes)-1
@@ -430,7 +439,8 @@ def test_sparse_vs_dense():
     strategy = ipu.ipu_strategy.IPUStrategy()
 
     data_sparse = iter(dataset_sparse).next()
-    data_dense = iter(dataset_dense).next()
+    data_sparse = ((data_sparse["inp_spike_ids"], data_sparse["num_inp_spikes"]), data_sparse["targets"])
+    data_dense = iter(dataset_dense).next().values()
 
     with strategy.scope():
         model_dense_ipu = keras.Model(*model_fn_dense(seq_len, dense_sizes, decay_constant, threshold, batchsize, seed=model_seed, return_all=False))
@@ -481,15 +491,6 @@ def test_sparse_vs_dense():
     # print(f"{out_sparse_layer.numpy().sum()=}")
     # print()
     # print(f"{out_dense.numpy().sum()=}")
-
-
-    # for i in range(num_layers):
-    #     print(f"------------------- {i} ----------------------")
-    #     print(f"{grad_dense[i]=}")
-    #     print(f"{grad_sparse_ops[i]=}")
-    #     print(f"{grad_sparse_layer[i]=}")
-    #     print(tf.math.abs(grad_sparse_ops[i]-grad_sparse_layer[i]) > 1e-6)
-
 
     print()
     check_values(out_ipu_dense, out_dense, f"dense - out_spikes", rtol=1e-4, atol=1e-6)
