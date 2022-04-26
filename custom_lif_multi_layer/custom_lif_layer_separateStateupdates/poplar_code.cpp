@@ -70,17 +70,17 @@ std::vector<size_t> convert_vecOfStr_to_vecOfSizet(const std::string& s, char se
   return outputs; 
 }
 
-void clone_tensor_vector(poplar::Graph& graph, const std::vector<poplar::Tensor> &src, std::vector<poplar::Tensor> &dst, size_t offset, const poplar::DebugNameAndId &dnai = {}) {
+void clone_tensor_vector(poplar::Graph& graph, std::vector<poplar::Tensor> &src, std::vector<poplar::Tensor> &dst, size_t offset, const poplar::DebugNameAndId &dnai = {}) {
   std::transform(src.begin()+offset, src.end(), std::back_inserter(dst), [&graph, &dnai](const poplar::Tensor &t){return graph.clone(t, dnai);});
 }
 
-std::vector<poplar::Tensor> clone_tensor_vector(poplar::Graph& graph, const std::vector<poplar::Tensor> &src, const poplar::DebugNameAndId &dnai = {}) {
+std::vector<poplar::Tensor> clone_tensor_vector(poplar::Graph& graph, std::vector<poplar::Tensor> &src, const poplar::DebugNameAndId &dnai = {}) {
   std::vector<poplar::Tensor> dst;
   clone_tensor_vector(graph, src, dst, 0, dnai);
   return dst;
 }
 
-std::vector<poplar::Tensor> cast_tensor_vector(poplar::Graph& graph, const std::vector<poplar::Tensor> &src, poplar::Type &dtype, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai = {}) {
+std::vector<poplar::Tensor> cast_tensor_vector(poplar::Graph& graph, std::vector<poplar::Tensor> &src, poplar::Type &dtype, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai = {}) {
   std::vector<poplar::Tensor> dst;
   std::transform(src.begin(), src.end(), std::back_inserter(dst), [&graph, &dtype, &prog,  &dnai](const poplar::Tensor &t) -> poplar::Tensor {return popops::cast(graph, t, dtype, prog, dnai);});
   return dst;
@@ -271,134 +271,13 @@ void genBatchedLIFOutSpikes2Threshs(poplar::Graph &graph, std::vector<poplar::Te
   prog.add(poplar::program::Execute(cs));
 }     
 
-// TODO !!! think about tile mapping !!!
-void genBatchedLIFOutSpikes2ThreshsMutliWorker(poplar::Graph &graph, std::vector<poplar::Tensor> &state, std::vector<poplar::Tensor> &thresholds, 
-                            std::vector<BatchedSparseSpikes> &out_spikes, 
-                            poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai = {}) {
-
-  auto cs = graph.addComputeSet({dnai, "LIFOutSpikes2ThreshsMultiVertex"});
-  const size_t num_layers = state.size();
-  // std::vector<unsigned> indices;
-  // for( unsigned i = 0; i < numWorkers; ++i ) indices.push_back( i );
-  // printVector(indices);
-
-  std::vector<poplar::Tensor> repeated_out_spikes_ids;
-  std::vector<poplar::Tensor> repeated_num_out_spikes;
-
-
-  for (unsigned ilay=0; ilay<num_layers; ++ilay){
-
-    auto dtype = state[ilay].elementType();
-    const size_t batchsize = state[ilay].dim(0);
-    const size_t sparse_size = out_spikes[ilay].spike_ids.dim(1);
-
-    std::cout << "ilay: " << ilay << std::endl;
-    std::cout << "sparse_size: " << sparse_size << std::endl;
-    const size_t denseSpraseRatio = state[ilay].dim(1) / sparse_size;
-    const size_t numPossibleParallelThreads = graph.getTarget().getNumWorkerContexts();; // TODO get this from poplar ?
-    const size_t numWorkers = std::min(denseSpraseRatio, numPossibleParallelThreads); // TODO way to get this from poplar?
-    // const size_t numWorkers = 1;
-    std::cout << "numWorkers: " << numWorkers << std::endl;
-
-    repeated_out_spikes_ids.push_back(graph.addVariable(out_spikes[ilay].spike_ids.elementType(), {batchsize, numWorkers*sparse_size}));
-    repeated_num_out_spikes.push_back(graph.addVariable(out_spikes[ilay].num_spikes.elementType(), {batchsize, numWorkers}));
-
-    // for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
-    //   auto v = graph.addVertex(cs, poputil::templateVertex("LIFOutSpikes2ThreshsMultiVertex", dtype),
-    //                             {{"state", state[ilay][ibatch]},
-    //                             {"thresholds", thresholds[ilay]},
-    //                             {"sizeSparseOut", sparse_size},
-    //                             {"repeated_out_spikes_ids", repeated_out_spikes_ids[ilay][ibatch]},
-    //                             {"repeated_num_out_spikes", repeated_num_out_spikes[ilay][ibatch]}});
-    //   // !!! TODO !!! totally bogus tile mapping, must be improved
-    //   // most likely should be based on out_spikes mapping
-    //   // graph.setTileMapping(v, (ibatch+1)*32);
-    //   size_t tile{1471-ibatch-batchsize*ilay};
-    //   graph.setTileMapping(repeated_out_spikes_ids[ilay][ibatch], tile);
-    //   graph.setTileMapping(repeated_num_out_spikes[ilay][ibatch], tile);
-    //   graph.setTileMapping(v, tile);
-    //   // Provide a cycle count estimate for the profiler. // TODO make educated guess/provide equation
-    //   graph.setPerfEstimate(v, 1);
-    // }
-
-
-
-    size_t worker_start{0};
-    size_t worker_end{0};
-    for (unsigned iwor = 0; iwor < numWorkers; ++iwor) {
-      size_t numStatesThisWorker = state[ilay].dim(1) / numWorkers + ((state[ilay].dim(1) % numWorkers) > iwor);
-      worker_end += numStatesThisWorker;
-      std::cout << "state[ilay].dim(1): "<< state[ilay].dim(1) << std::endl;
-      std::cout << "worker_start: "<< worker_start << std::endl;
-      std::cout << "worker_end: "<< worker_end << std::endl;
-      std::cout << "numStatesThisWorker: "<< numStatesThisWorker << std::endl;
-
-      auto state_worker = state[ilay].slice(worker_start, worker_end, 1);
-      auto thresholds_worker = thresholds[ilay].slice(worker_start, worker_end, 0);
-      auto out_spike_ids_worker = repeated_out_spikes_ids[ilay].slice(iwor*sparse_size, (iwor+1)*sparse_size, 1);
-
-      printVector(state_worker.shape());
-      printVector(thresholds_worker.shape());
-      printVector(out_spike_ids_worker.shape());
-
-      for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
-        auto v = graph.addVertex(cs, poputil::templateVertex("LIFOutSpikes2ThreshsSplitWorker", dtype),
-                                  {{"state", state_worker[ibatch]},
-                                  {"thresholds", thresholds_worker},
-                                  {"start_id", worker_start},
-                                  {"repeated_out_spikes_ids", out_spike_ids_worker[ibatch]},
-                                  {"repeated_num_out_spikes", repeated_num_out_spikes[ilay][ibatch][iwor]}});
-
-        size_t tile{1471-ibatch-batchsize*ilay};
-        graph.setTileMapping(repeated_out_spikes_ids[ilay][ibatch], tile);
-        graph.setTileMapping(repeated_num_out_spikes[ilay][ibatch], tile);
-        graph.setTileMapping(v, tile);
-        // Provide a cycle count estimate for the profiler. // TODO make educated guess/provide equation
-        graph.setPerfEstimate(v, 1);
-      }
-      worker_start = worker_end;
-    }
-  }
-
-  prog.add(poplar::program::Execute(cs));
-
-  auto cs2 = graph.addComputeSet({dnai, "LIFOutSpikes2ThreshsCombine"});
-  for (unsigned ilay=0; ilay<num_layers; ++ilay){
-
-    // // popops::fill(poplar::Graph &graph, const poplar::Tensor &t, poplar::program::Sequence &prog, FillValueType fillValue)
-    // popops::fill(graph, repeated_num_out_spikes[ilay], prog, 1);
-
-
-    auto dtype = state[ilay].elementType();
-    const size_t batchsize = state[ilay].dim(0);
-
-    for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
-      auto v = graph.addVertex(cs2, poputil::templateVertex("LIFOutSpikes2ThreshsCombine", dtype),
-                                // {{"repeated_out_spikes_ids", repeated_out_spikes_ids[ilay][ibatch]},
-                                {{"repeated_out_spikes_ids", repeated_out_spikes_ids[ilay][ibatch]},
-                                {"repeated_num_out_spikes", repeated_num_out_spikes[ilay][ibatch]},
-                                {"out_spikes_ids", out_spikes[ilay].spike_ids[ibatch]},
-                                {"num_out_spikes", out_spikes[ilay].num_spikes[ibatch][0]}});
-      // !!! TODO !!! totally bogus tile mapping, must be improved
-      // most likely should be based on out_spikes mapping
-      // graph.setTileMapping(v, (ibatch+1)*32);
-      size_t tile{1471-ibatch-batchsize*ilay};
-      graph.setTileMapping(v, tile);
-      // Provide a cycle count estimate for the profiler. // TODO make educated guess/provide equation
-      graph.setPerfEstimate(v, 1);
-    }
-  }
-  prog.add(poplar::program::Execute(cs2));
-} 
-
 void performLIFStepFworwardPassInPlace(poplar::Graph &graph, std::vector<poplar::Tensor> &weights, std::vector<poplar::Tensor> &state, std::vector<BatchedSparseSpikes> &inp_spikes, 
                             std::vector<poplar::Tensor> &decay_constants, std::vector<poplar::Tensor> &thresholds, std::vector<BatchedSparseSpikes> &out_spikes,
                             poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai = {}) {
   
   performBatchedLIFStateUpdateInPlace(graph, weights, state, inp_spikes, decay_constants, thresholds, prog, dnai);
   // genBatchedLIFOutSpikesTopK(graph, state, thresholds, out_spikes, prog, dnai);
-  // genBatchedLIFOutSpikes2Threshs(graph, state, thresholds, out_spikes, prog, dnai);
-  genBatchedLIFOutSpikes2ThreshsMutliWorker(graph, state, thresholds, out_spikes, prog, dnai);
+  genBatchedLIFOutSpikes2Threshs(graph, state, thresholds, out_spikes, prog, dnai);
   // genBatchedLIFOutSpikesOnlySpikes(graph, state, thresholds, out_spikes, prog, dnai);
 }
 
@@ -468,8 +347,8 @@ void calcLIFStateGrad(poplar::Graph &graph, const std::vector<poplar::Tensor> &w
 }
 
 
-void calcLIFWeightGrad(poplar::Graph &graph, std::vector<poplar::Tensor> &dLdweights, const std::vector<BatchedSparseSpikes> &fwdInpSpikes, 
-                        const std::vector<poplar::Tensor> &dLdState, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai) {
+void calcLIFWeightGrad(poplar::Graph &graph, std::vector<poplar::Tensor> &dLdweights, std::vector<BatchedSparseSpikes> &fwdInpSpikes, 
+                        std::vector<poplar::Tensor> &decay_constants, std::vector<poplar::Tensor> &dLdState, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai) {
   
   auto cs = graph.addComputeSet({dnai, "calcLIFWeightGrad"});
   const size_t num_layers = dLdweights.size();
@@ -494,6 +373,7 @@ void calcLIFWeightGrad(poplar::Graph &graph, std::vector<poplar::Tensor> &dLdwei
         const auto numNeuronsThisThile = neuronRange.size();
         poplar::Tensor neuronDLdWeights = dLdweights[ilay].slice(neuronRange); // TODO does this create new tensors ?
         poplar::Tensor neuronDLdState = dLdState[ilay].slice(neuronRange, 1);
+        poplar::Tensor neuronDecay_constants = decay_constants[ilay].slice(neuronRange);
 
         // TODO ? should perform worker spilt and rewrite Vertex code to take multiple neurons ?
         // TODO ? does that reduce memory for code and potentially overhead for spawning vertices ?
@@ -503,6 +383,7 @@ void calcLIFWeightGrad(poplar::Graph &graph, std::vector<poplar::Tensor> &dLdwei
         for (unsigned ineuron = 0; ineuron < numNeuronsThisThile; ++ineuron){
           auto v = graph.addVertex(cs, poputil::templateVertex("LIFWeightsGrad", dtype),
                                     {{"dLdState", neuronDLdState.dimShuffle({1,0})[ineuron]},
+                                    {"decay_constant", neuronDecay_constants[ineuron]},
                                     {"fwd_inp_spikes_ids", fwdInpSpikes[ilay].spike_ids.flatten()}, // TODO flatten here or does a Tneosr structure exist for vertex Input ?
                                     {"fwd_num_inp_spikes", fwdInpSpikes[ilay].num_spikes.dimShuffle({1,0})[0]},
                                     {"sparse_out_dim", sparse_out_dim},
@@ -585,8 +466,8 @@ void calcLIFWeightGrad(poplar::Graph &graph, std::vector<poplar::Tensor> &dLdwei
 // }
 
 
-void calcLIFInpSpikesGradRowWise(poplar::Graph &graph, const std::vector<poplar::Tensor> &weights, const std::vector<BatchedSparseSpikes> &fwdInpSpikes, 
-                                  const std::vector<poplar::Tensor> &dLdState, std::vector<poplar::Tensor> &dLdInpSpikes,
+void calcLIFInpSpikesGradRowWise(poplar::Graph &graph, std::vector<poplar::Tensor> &weights, std::vector<BatchedSparseSpikes> &fwdInpSpikes, 
+                                  std::vector<poplar::Tensor> &decay_constants, std::vector<poplar::Tensor> &dLdState, std::vector<poplar::Tensor> &dLdInpSpikes,
                                   poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai) {  
   // TODO IMPORTANT: For backwards bass, weight matrix schould be distributed column-wise to different tiles
   
@@ -619,9 +500,10 @@ void calcLIFInpSpikesGradRowWise(poplar::Graph &graph, const std::vector<poplar:
 
       for (const auto &neuronRange: neuronTileMapping[tile]) {
         const auto numNeuronsThisThile = neuronRange.size();
-        // std::cout << tile << " " << numNeuronsThisThile << std::endl;
+        std::cout << tile << " " << numNeuronsThisThile << std::endl;
         poplar::Tensor neuronWeights = weights[ilay].slice(neuronRange); // TODO does this create new tensors ?
         poplar::Tensor neuronDLdState = dLdState[ilay].slice(neuronRange, 1);
+        poplar::Tensor neuronDecay_constants = decay_constants[ilay].slice(neuronRange);
         poplar::Tensor neuronDLdx = dLdx.slice(neuronRange);
         graph.setTileMapping(neuronDLdx, tile);
 
@@ -633,6 +515,7 @@ void calcLIFInpSpikesGradRowWise(poplar::Graph &graph, const std::vector<poplar:
                                       {{"weights_row", neuronWeights[ineuron]},
                                       // {"relevant_weights", relevantWeights[irow][ibatch]},
                                       {"dLdState", neuronDLdState[ibatch][ineuron]},
+                                      {"decay_constant", neuronDecay_constants[ineuron]},
                                       {"fwd_inp_spike_ids", fwdInpSpikes[ilay].spike_ids[ibatch]},
                                       {"dLdinp_spike_ids", neuronDLdx[ineuron][ibatch]}});
             // !!! TODO !!! totally bogus tile mapping, must be improved
@@ -661,37 +544,18 @@ void calcLIFInpSpikesGradRowWise(poplar::Graph &graph, const std::vector<poplar:
 }
 
 
-const std::vector<poplar::Tensor> preformSharedUpdate(poplar::Graph &graph, const std::vector<poplar::Tensor> &oneMinus_decay_constants, 
-                                                      std::vector<poplar::Tensor> &dLdState, poplar::program::Sequence &prog, 
-                                                      const poplar::DebugNameAndId &dnai = {}){
-
-  std::vector<poplar::Tensor> intermediate_dLdState = clone_tensor_vector(graph, dLdState, {dnai, "dLdweights"});
-
-  const auto num_lays{dLdState.size()};
-  for (unsigned ilay=0; ilay<num_lays; ++ilay){
-    const auto batchsize{dLdState[ilay].dim(0)};
-    prog.add(poplar::program::Copy(dLdState[ilay], intermediate_dLdState[ilay]));
-    popops::mulInPlace(graph, intermediate_dLdState[ilay], oneMinus_decay_constants[ilay].expand({0}).upsample(batchsize, 0, poplar::UpsampleMethod::REPEAT), prog, dnai);
-  }
-  return intermediate_dLdState;
-}
-
-
-
-void performLIFStepBackwardPass(poplar::Graph &graph, const std::vector<poplar::Tensor> &weights, const std::vector<poplar::Tensor> &fwdState, const std::vector<BatchedSparseSpikes> &fwdInpSpikes, 
-                            const std::vector<poplar::Tensor> &decay_constants, const std::vector<poplar::Tensor> &oneMinus_decay_constants, const std::vector<poplar::Tensor> &thresholds, const std::vector<BatchedSparseSpikes> &fwdOutSpikes,
+void performLIFStepBackwardPass(poplar::Graph &graph, std::vector<poplar::Tensor> &weights, std::vector<poplar::Tensor> &fwdState, std::vector<BatchedSparseSpikes> &fwdInpSpikes, 
+                            std::vector<poplar::Tensor> &decay_constants, std::vector<poplar::Tensor> &thresholds, std::vector<BatchedSparseSpikes> &fwdOutSpikes,
                             std::vector<poplar::Tensor> &dLdweights, std::vector<poplar::Tensor> &dLdState, poplar::Tensor &dLdOutSpikes, std::vector<poplar::Tensor> &dLdInpSpikes,
                             poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai = {}) {
   
   std::vector<poplar::Tensor> allDLdOutSpikes(dLdInpSpikes.begin(), dLdInpSpikes.end());
   allDLdOutSpikes.push_back(dLdOutSpikes);
   calcLIFStateGrad(graph, weights, fwdState, decay_constants, thresholds, fwdOutSpikes, dLdState, allDLdOutSpikes, prog, dnai);
- 
-  const std::vector<poplar::Tensor> intermediate_dLdState = preformSharedUpdate(graph, oneMinus_decay_constants, dLdState, prog, {dnai, "preformSharedUpdate"});
-
-  calcLIFWeightGrad(graph, dLdweights, fwdInpSpikes, intermediate_dLdState, prog, dnai);
+  
+  calcLIFWeightGrad(graph, dLdweights, fwdInpSpikes, decay_constants, dLdState, prog, dnai);
   // calcLIFInpSpikesGrad(graph, weights, fwdInpSpikes, decay_constants, dLdState, dLdInpSpikes,  prog, dnai);
-  calcLIFInpSpikesGradRowWise(graph, weights, fwdInpSpikes, intermediate_dLdState, dLdInpSpikes,  prog, dnai);
+  calcLIFInpSpikesGradRowWise(graph, weights, fwdInpSpikes, decay_constants, dLdState, dLdInpSpikes,  prog, dnai);
 }
 
 
@@ -789,7 +653,7 @@ std::vector<size_t> determine_neuron_mapping(size_t num_tiles, size_t layer_id, 
   //   weighted_num_neurons_total += dense_sizes[ilay]*sparse_sizes[ilay];
   // };
   for (unsigned int ilay=0; ilay < num_layers; ++ilay){
-    weighted_num_neurons_total += dense_sizes[ilay+1]*sparse_sizes[ilay]; // TODO should be based on num input spikes
+    weighted_num_neurons_total += dense_sizes[ilay]*sparse_sizes[ilay]; // TODO should be based on num input spikes
   };
   double weighted_num_neurons_total_fptype = (double)weighted_num_neurons_total;
  
@@ -864,8 +728,6 @@ extern "C" poplar::Tensor Build_allocator(
   std::string tensor_name;
   poplar::Tensor allocTensor;
 
-  std::cout << "\noperand: " << operand << ", operand/num_layers: " << operand/num_layers << std::endl;
-
   switch (operand/num_layers) {
     case 0: neuronDim = 0; 
             tensor_name = "weights";
@@ -914,7 +776,7 @@ extern "C" poplar::program::Program Build(
   std::vector<poplar::Tensor> init_state(inputs.begin()+1*num_layers,inputs.begin()+2*num_layers);
   std::vector<poplar::Tensor> inp_spike_ids_fptype(inputs.begin()+2*num_layers,inputs.begin()+3*num_layers);
   std::vector<poplar::Tensor> num_inp_spikes_int(inputs.begin()+3*num_layers,inputs.begin()+4*num_layers);
-  std::vector<poplar::Tensor> decay_constants(inputs.begin()+4*num_layers,inputs.begin()+5*num_layers);
+  std::vector<poplar::Tensor> decay_constatns(inputs.begin()+4*num_layers,inputs.begin()+5*num_layers);
   std::vector<poplar::Tensor> thresholds(inputs.begin()+5*num_layers,inputs.begin()+6*num_layers);
   
   for (unsigned ilay=0; ilay<num_layers; ++ilay){
@@ -944,7 +806,7 @@ extern "C" poplar::program::Program Build(
     }
 
 
-    if (decay_constants[ilay].rank() != 1) {
+    if (decay_constatns[ilay].rank() != 1) {
       throw poputil::poplibs_error("Input 'inputs[4]' must be vectors (size_out,).");
     }
 
@@ -1048,7 +910,7 @@ extern "C" poplar::program::Program Build(
                   [&graph, &dnai](poplar::Tensor &t) -> poplar::Tensor {return graph.clone(t, {dnai, "initial clone num_inp_spikes"});});
 
   //----------------------------------------- REPEAT -------------------------------------------------  
-  auto loopFwd = [&graph, &weights, &decay_constants, &thresholds, &currentState, &inp_spike_ids, &num_inp_spikes, &out_spike_ids, &num_out_spikes, 
+  auto loopFwd = [&graph, &weights, &decay_constatns, &thresholds, &currentState, &inp_spike_ids, &num_inp_spikes, &out_spike_ids, &num_out_spikes, 
                   &stateSeqOutput, &dnai, &slicedInpSpikeIds, &slicedNumInpSpikes, &slicedOutSpikeIds, &slicedNumOutSpikes] (
     poplar::Tensor itime
   ) {
@@ -1070,7 +932,7 @@ extern "C" poplar::program::Program Build(
     }
 
     performLIFStepFworwardPassInPlace(
-        graph, weights, currentState, inpSpikes, decay_constants, thresholds, outSpikes, loop, {dnai});
+        graph, weights, currentState, inpSpikes, decay_constatns, thresholds, outSpikes, loop, {dnai});
     // to record state sequence
     // loop.add(poplar::program::Copy(currentState, thisState, false, {dnai, "copy state"}));
 
@@ -1148,19 +1010,12 @@ poplar::program::Program Build_grad(
   poplar::DebugNameAndId dnai{debug_prefix};
 
   size_t num_layers = fwd_inputs.size() / 6;
-  const std::vector<poplar::Tensor> weights(fwd_inputs.begin(),fwd_inputs.begin()+num_layers);
-  const std::vector<poplar::Tensor> init_state(fwd_inputs.begin()+1*num_layers,fwd_inputs.begin()+2*num_layers);
-  const std::vector<poplar::Tensor> inp_spike_ids_fptype(fwd_inputs.begin()+2*num_layers,fwd_inputs.begin()+3*num_layers);
-  const std::vector<poplar::Tensor> num_inp_spikes_int(fwd_inputs.begin()+3*num_layers,fwd_inputs.begin()+4*num_layers);
-  const std::vector<poplar::Tensor> decay_constants(fwd_inputs.begin()+4*num_layers,fwd_inputs.begin()+5*num_layers);
-  const std::vector<poplar::Tensor> thresholds(fwd_inputs.begin()+5*num_layers,fwd_inputs.begin()+6*num_layers);
-
-  std::vector<poplar::Tensor> oneMinus_decay_constants;
-  for (unsigned i=0; i<num_layers ; ++i) {
-    auto ones = graph.addConstant(decay_constants[i].elementType(), decay_constants[i].shape(), 1.0, {dnai, "ones"});
-    graph.setTileMapping(ones, graph.getTileMapping(decay_constants[i]));
-    oneMinus_decay_constants.push_back(popops::sub(graph, ones, decay_constants[i], bwdProg, {dnai, "itime"}));
-  }
+  std::vector<poplar::Tensor> weights(fwd_inputs.begin(),fwd_inputs.begin()+num_layers);
+  std::vector<poplar::Tensor> init_state(fwd_inputs.begin()+1*num_layers,fwd_inputs.begin()+2*num_layers);
+  std::vector<poplar::Tensor> inp_spike_ids_fptype(fwd_inputs.begin()+2*num_layers,fwd_inputs.begin()+3*num_layers);
+  std::vector<poplar::Tensor> num_inp_spikes_int(fwd_inputs.begin()+3*num_layers,fwd_inputs.begin()+4*num_layers);
+  std::vector<poplar::Tensor> decay_constatns(fwd_inputs.begin()+4*num_layers,fwd_inputs.begin()+5*num_layers);
+  std::vector<poplar::Tensor> thresholds(fwd_inputs.begin()+5*num_layers,fwd_inputs.begin()+6*num_layers);
 
   std::vector<poplar::Tensor> out_spike_ids_fptype(fwd_outputs.begin(),fwd_outputs.begin()+num_layers);
   std::vector<poplar::Tensor> num_out_spikes_int(fwd_outputs.begin()+1*num_layers,fwd_outputs.begin()+2*num_layers);
@@ -1171,7 +1026,7 @@ poplar::program::Program Build_grad(
   std::vector<poplar::Tensor> dLdinit_state = clone_tensor_vector(graph, init_state, {dnai, "dLdinit_state"});
   std::vector<poplar::Tensor> dLdinp_spike_ids = clone_tensor_vector(graph, inp_spike_ids_fptype, {dnai, "dLdinp_spike_ids"}); // how to  set mapping in Reduce operation
   std::vector<poplar::Tensor> dLdnum_inp_spikes = clone_tensor_vector(graph, num_inp_spikes_int, {dnai, "dLdnum_inp_spikes"});
-  std::vector<poplar::Tensor> dLddecay_constatns = clone_tensor_vector(graph, decay_constants, {dnai, "dLddecay_constatns"});
+  std::vector<poplar::Tensor> dLddecay_constatns = clone_tensor_vector(graph, decay_constatns, {dnai, "dLddecay_constatns"});
   std::vector<poplar::Tensor> dLdthresholds = clone_tensor_vector(graph, thresholds, {dnai, "dLdthresholds"});
 
   // only account for gradients though last layers spikes (as it should be for feed forward network)
@@ -1206,7 +1061,7 @@ poplar::program::Program Build_grad(
   graph.setTileMapping(step, graph.getTileMapping(itime));
   bwdProg.add(poplar::program::Copy(SEQ_LEN, itime, false, dnai));
 
-  auto loopBwd = [&graph, &weights, &decay_constants, &oneMinus_decay_constants, &thresholds, &inp_spike_ids, &num_inp_spikes, &out_spike_ids, &num_out_spikes, &fwd_states_seq, 
+  auto loopBwd = [&graph, &weights, &decay_constatns, &thresholds, &inp_spike_ids, &num_inp_spikes, &out_spike_ids, &num_out_spikes, &fwd_states_seq, 
                   &dLdweights, &dLdinp_spike_ids, &dLdnum_inp_spikes, &dLdout_spike_ids, &dLdstate, &slicedDLdInpSpikes, &itime, &num_layers, &step, &dnai] () {
     
     auto loop = poplar::program::Sequence{{}, {dnai}};
@@ -1239,7 +1094,7 @@ poplar::program::Program Build_grad(
     }
 
     performLIFStepBackwardPass(
-        graph, weights, slicedFwdState, fwdInpSpikes, decay_constants, oneMinus_decay_constants, thresholds, fwdOutSpikes, dLdweights, dLdstate, slicedDLdOutSpikes, slicedDLdInpSpikes, loop, {dnai});
+        graph, weights, slicedFwdState, fwdInpSpikes, decay_constatns, thresholds, fwdOutSpikes, dLdweights, dLdstate, slicedDLdOutSpikes, slicedDLdInpSpikes, loop, {dnai});
 
     // TODO if gradient with respect to input spike tensors is desired uncomment this and funcs above and rewrite 
     // (also in `performLIFStepBackwardPass` first layer grad has to be calculated) 
@@ -1253,7 +1108,7 @@ poplar::program::Program Build_grad(
 
 
   //----------------------------------- this is just for the first timestep because inp_spikes can not be determined from out_spikes_tensor ----------------------------- 
-  auto loopBwdFirstTimestep = [&graph, &weights, &decay_constants, &oneMinus_decay_constants, &thresholds, &inp_spike_ids, &num_inp_spikes, &out_spike_ids, &num_out_spikes, &fwd_states_seq, 
+  auto loopBwdFirstTimestep = [&graph, &weights, &decay_constatns, &thresholds, &inp_spike_ids, &num_inp_spikes, &out_spike_ids, &num_out_spikes, &fwd_states_seq, 
                   &dLdweights, &dLdinp_spike_ids, &dLdnum_inp_spikes, &dLdout_spike_ids, &dLdstate, &slicedDLdInpSpikes, &itime, &num_layers, &step, &dnai] () {
     
     auto loop = poplar::program::Sequence{{}, {dnai}};
@@ -1284,7 +1139,7 @@ poplar::program::Program Build_grad(
     }
 
     performLIFStepBackwardPass(
-        graph, weights, slicedFwdState, fwdInpSpikes, decay_constants, oneMinus_decay_constants, thresholds, fwdOutSpikes, dLdweights, dLdstate, slicedDLdOutSpikes, slicedDLdInpSpikes, loop, {dnai});
+        graph, weights, slicedFwdState, fwdInpSpikes, decay_constatns, thresholds, fwdOutSpikes, dLdweights, dLdstate, slicedDLdOutSpikes, slicedDLdInpSpikes, loop, {dnai});
 
     // TODO if gradient with respect to input spike tensors is desired uncomment this and funcs above and rewrite 
     // (also in `performLIFStepBackwardPass` first layer grad has to be calculated) 
