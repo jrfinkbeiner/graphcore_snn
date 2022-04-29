@@ -1,4 +1,5 @@
 import functools as ft
+from typing import Optional, Callable
 import bisect
 import numpy as np
 import tensorflow as tf
@@ -36,18 +37,6 @@ def events_to_sparse_tensors(events,
     times = events["t"]
     addrs = np.stack((events["p"], events["x"], events["y"]), axis=1) # TODO which order ?
     # # addrs = events[:, ["x", "y", "p"]]
-
-
-    # print("events")
-    # print(events)
-    # print(times)
-    # print(events["x"])
-    # print(type(events))
-    # # print(events.names)
-    # print(events.shape)
-    # print(addrs.shape)
-    # import sys
-    # sys.exit()
 
     n_dims = addrs.shape[1]
     t_start = times[0]
@@ -113,24 +102,19 @@ def events_to_sparse_tensors(events,
 #     return dataset_train, dataset_test
 
 
-def create_nmnist_gener(root, sparse, seq_len=300, sparse_size=None, num_samples=None, dataset='train', shuffle=None):
+def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='train'):
     '''
     root: root directory of tonic datasets
     seq_len: maximum sequence length
     dataset: 'train', 'val', or 'test
     
-    returns a generator function with yields data, num_events, target
-    target: integer
-    data: flattened float32 array of dimension seq_len x prod(sersor_size) containing flattened event addresses
+    returns a `tonic.datasets.NMNIST` instance
     '''
     assert dataset in ['train','val','test']
     
     if sparse:
         assert sparse_size is not None, "For `sparse=True`, `sparse_size` must be given, got `None`."
 
-    if shuffle is None:
-        shuffle = True if dataset == 'train' else False
-    
     if dataset == 'val':
         raise NotImplementedError()
     
@@ -158,63 +142,188 @@ def create_nmnist_gener(root, sparse, seq_len=300, sparse_size=None, num_samples
                                 train=dataset == 'train',
                                 transform=transform_train,
                                 first_saccade_only=False) # TODO decide for first saccade... has to match sparse implementation...
+    return dataset
+
+
+def create_dense_batch(ids, dataset, batch_size):
+    batched_data = []
+    batched_labels = np.empty(batch_size, dtype=np.int32)
+    for i,idx in enumerate(ids):
+        data, label = dataset[idx]
+        data_flat = data.reshape(data.shape[0], -1).astype(np.float32)
+        # label = 0
+        # data_flat = np.empty((seq_len, np.prod(dataset.sensor_size))) #*data["x"][0]
+        batched_data.append(data_flat)
+        batched_labels[i] = label
+        # print(i, idx)
+    batched_data = np.stack(batched_data)
+    return {"inp_spikes": batched_data, "targets": batched_labels}        
+
+def create_sparse_batch(ids, dataset, batch_size): #, seq_len):
+    batched_inp_spike_ids = []
+    batched_num_inp_spikes = []
+    # batched_num_inp_spikes = np.empty((batch_size, seq_len, 1), dtype=np.int32)
+    batched_labels = np.empty(batch_size, dtype=np.int32)
+    for i,idx in enumerate(ids):
+        data, label = dataset[idx]
+        batched_inp_spike_ids.append(data[0])
+        batched_num_inp_spikes.append(data[1])
+        # batched_num_inp_spikes[i] = data[1]
+        batched_labels[i] = label
+    batched_inp_spike_ids = np.stack(batched_inp_spike_ids).astype(np.float32)
+    batched_num_inp_spikes = np.stack(batched_num_inp_spikes)
+    return {"inp_spike_ids": batched_inp_spike_ids, "num_inp_spikes": batched_num_inp_spikes, "targets": label}
+
+
+def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=None, num_samples=None, dataset='train', shuffle=None, batchsize=None):
+    '''
+    root: root directory of tonic datasets
+    seq_len: maximum sequence length
+    dataset: 'train', 'val', or 'test
+    
+    returns a generator function with yields data, num_events, target
+    target: integer
+    data: flattened float32 array of dimension seq_len x prod(sersor_size) containing flattened event addresses
+    '''
+
+    dataset = create_nmnist_dataset(root, sparse, seq_len=seq_len, sparse_size=sparse_size, dataset=dataset)
+
+    if shuffle is None:
+        shuffle = True if dataset == 'train' else False
 
     if num_samples is None:
         num_samples = len(dataset)
-    
+    if batchsize is not None:
+        num_batches = int((num_samples//batchsize) * num_epochs)
+
     # idx_samples = np.arange(num_samples) 
     # idx_samples = np.arange(num_samples) 
-    idx_samples = np.random.choice(len(dataset), num_samples, replace=False)
+    idx_samples_base = np.random.choice(len(dataset), num_samples, replace=False)
+    idx_samples = np.empty(num_samples*num_epochs, dtype=np.int64)
+    for iepoch in range(num_epochs):
+        if shuffle:
+            np.random.shuffle(idx_samples_base)
+        idx_samples[iepoch*num_samples:(iepoch+1)*num_samples] = idx_samples_base
     
-    def gen_dense():    
-        if shuffle: np.random.shuffle(idx_samples)
+    def gen_dense_batched():
+        for ibatch in range(num_batches):
+            inds = idx_samples[ibatch*batchsize:(ibatch+1)*batchsize]
+            ret_data = create_dense_batch(inds, dataset, batchsize)
+            # batched_data = []
+            # batched_labels = np.empty(batchsize, dtype=np.int32)
+            # for i,idx in enumerate(idx_samples[ibatch*batchsize:(ibatch+1)*batchsize]):
+            #     data, label = dataset[idx]
+            #     data_flat = data.reshape(data.shape[0], -1).astype(np.float32)
+            #     # label = 0
+            #     # data_flat = np.empty((seq_len, np.prod(dataset.sensor_size))) #*data["x"][0]
+            #     batched_data.append(data_flat)
+            #     batched_labels[i] = label
+            # batched_data = np.stack(batched_data)
+            # # batched_data = np.empty((batchsize, seq_len, 2*34*34), dtype=np.float32)
+            # # batched_labels = np.empty(batchsize, dtype=np.int32)
+            # ret_data = {"inp_spikes": batched_data, "targets": batched_labels}
+            yield ret_data
+
+    def gen_dense():
         for i in idx_samples:
             data, label = dataset[i]
-            data_flat = data.reshape(seq_len, -1).astype(np.float32)
-            # yield data_flat, label
+            data_flat = data.reshape(data.shape[0], -1).astype(np.float32)
             yield {"inp_spikes": data_flat, "targets": label}
-            # yield data_flat, label
+
+    def gen_sparse_batched():    
+        for ibatch in range(num_batches):
+            batched_inp_spike_ids = []
+            batched_num_inp_spikes = np.empty((batchsize, seq_len, 1), dtype=np.int32)
+            batched_labels = np.empty(batchsize, dtype=np.int32)
+            for i,idx in enumerate(idx_samples[ibatch*batchsize:(ibatch+1)*batchsize]):
+                data, label = dataset[idx]
+                batched_inp_spike_ids.append(data[0])
+                batched_num_inp_spikes[i] = data[1]
+                batched_labels[i] = label
+            batched_inp_spike_ids = np.stack(batched_inp_spike_ids).astype(np.float32)
+            batched_num_inp_spikes = np.stack(batched_inp_spike_ids).astype(np.float32)
+            yield {"inp_spike_ids": batched_inp_spike_ids, "num_inp_spikes": batched_num_inp_spikes, "targets": label}
 
     def gen_sparse():    
-        if shuffle: np.random.shuffle(idx_samples)
         for i in idx_samples:
             data, label = dataset[i]
             yield {"inp_spike_ids": data[0].astype(np.float32), "num_inp_spikes": data[1].astype(np.int32), "targets": label}
 
-    gen = gen_sparse if sparse else gen_dense
-
-    
-    # def get_dense(idx):
-    #     idx = int(idx)
-    #     data, label = dataset[idx]
-    #     data_flat = data.reshape(seq_len, -1).astype(np.float32)
-    #     return {"inp_spikes": data_flat, "targets": label}
-
-    # def get_sparse(idx):
-    #     print(idx)
-    #     # idx = int(idx)
-    #     # idx = tf.get_static_value(idx, partial=False)
-    #     idx = idx.numpy()
-    #     print(idx)
-    #     data, label = dataset[idx]
-
-    #     ds = np.array([np.prod(sensor_size[i:]) for i in range(1,len(sensor_size))] + [1], dtype=np.int16)
-    #     spike_ids_flat = tf.math.reduce_sum([spike_ids[:,:,i]*d for i,d in enumerate(ds)],axis=0)
-
-    #     return {"inp_spike_ids": spike_ids_flat.astype(np.float32), "num_inp_spikes": data[1].astype(np.int32), "targets": label}
-
-    # gen = get_sparse if sparse else get_dense
-
+    if batchsize is None:
+        gen = gen_sparse if sparse else gen_dense 
+    else:
+        gen = gen_sparse_batched if sparse else gen_dense_batched
 
     return gen, num_samples
 
 
-# def cast_data_tf_dense(data, label):
-#     return tf.cast(data, tf.float32), tf.cast(label, tf.float32)
+class KerasNMNIST(tf.keras.utils.Sequence):
+    _sparse: bool = False
+    _gen_batch: Callable
 
-def get_nmnist_dataset(root, sparse, seq_len, inp_dim, batchsize, sparse_size=None, num_samples=None, dims=None):
+    def __init__(self, 
+            dataset, 
+            batch_size: int, 
+            sparse: bool,
+            shuffle: Optional[bool] = False, 
+            rng: Optional[np.random.Generator] = None, 
+            # processing_func: Optional[Callable] = None
+        ):
+        self.dataset = dataset
+        self.batch_size = batch_size
+        # self.processing_func = processing_func
+        self.sparse = sparse
+        self.shuffle = shuffle
+        if shuffle:
+            assert isinstance(rng, np.random.Generator), f"If `shuffle=True`, `rng` has to be an instance of `numpy.random.Generator`, got '{rng}'."
+        self.rng = rng
+        self._indices = np.arange(len(self.dataset))
+
+    @property
+    def sparse(self):
+        return self._sparse
+
+    @sparse.setter
+    def sparse(self, value):
+        self._sparse = value
+        self._gen_batch = self._gen_sparse_batch if value else self._gen_dense_batch
+
+    def _gen_dense_batch(self, ids):
+        return create_dense_batch(ids, self.dataset, self.batch_size)
+
+    def _gen_sparse_batch(self, ids):
+        return create_sparse_batch(ids, self.dataset, self.batch_size)
+
+    def __len__(self):
+        return int(len(self.dataset) // self.batch_size)
+
+    def __getitem__(self, idx):
+        inds = self._indices[idx * self.batch_size:(idx + 1) * self.batch_size]
+        data_batch = self._gen_batch(inds)
+        return data_batch
+        
+    def on_epoch_end(self):
+        if self.shuffle:
+            self.rng.shuffle(self._indices)
+
+def get_nmnist_keras_dataset(rng, root, sparse, batchsize, seq_len, sparse_size: Optional[int] = None):
+    if sparse:
+        assert sparse_size is not None
+
+    tonic_dataset = create_nmnist_dataset(root, sparse, seq_len=seq_len, sparse_size=sparse_size, dataset='train')
+    keras_dataset = KerasNMNIST(
+            dataset=tonic_dataset, 
+            batch_size=batchsize, 
+            sparse=sparse,
+            shuffle=True, 
+            rng=rng, 
+    )
+    return keras_dataset
+
+
+def get_nmnist_dataset(root, sparse, num_epochs, seq_len, inp_dim, batchsize, num_samples=None, dims=None):
     # from snnax.utils.data import SequenceLoader
-    gen_train, num_samples = create_nmnist_gener(root, sparse, seq_len=seq_len, sparse_size=sparse_size, num_samples=num_samples)
+    gen_train, num_samples = create_nmnist_gener(root, sparse, num_epochs, seq_len=seq_len, sparse_size=inp_dim, num_samples=num_samples)
     # get_train, num_samples = create_nmnist_gener(root, sparse, seq_len=seq_len, sparse_size=sparse_size, num_samples=num_samples)
     
     # dataset = tf.data.Dataset.from_generator(gen_train, output_signature=((tf.TensorSpec(shape=(seq_len, inp_dim), dtype=tf.float32),
@@ -255,7 +364,6 @@ def flatten_data_tf(data, dims):
     dims: tuple whose elements specify the size of each dimension
     '''
     spike_ids = data["inp_spike_ids"]
-    print(spike_ids)
 
     ds = np.array([np.prod(dims[i:]) for i in range(1,len(dims))] + [1], dtype=np.int16)
     spike_ids_flat = tf.math.reduce_sum([spike_ids[:,:,i]*d for i,d in enumerate(ds)],axis=0)

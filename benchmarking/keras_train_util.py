@@ -184,13 +184,13 @@ def train_gpu(
                 # metrics=["accuracy"],
                 metrics=metrics,
                 steps_per_execution=train_steps_per_execution,
-                # jit_compile=True
+                jit_compile=True
     )
 
     model.summary()
 
     print('\nTraining')
-    model.fit(dataset, epochs=num_epochs, steps_per_epoch=steps_per_epoch, workers=batchsize, callbacks=callbacks) #, use_multiprocessing=True) #, 
+    model.fit(dataset, epochs=num_epochs, steps_per_epoch=steps_per_epoch, callbacks=callbacks, workers=batchsize, use_multiprocessing=True)
                 # validation_steps=1, validation_batch_size=10*batchsize)
 
 

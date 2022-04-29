@@ -13,7 +13,7 @@ import tensorflow as tf
 import tensorflow.keras as keras 
 # from keras.callbacks import CSVLogger
 
-from nmnist_util import get_nmnist_dataset
+from nmnist_util import get_nmnist_dataset, create_nmnist_gener, get_nmnist_keras_dataset
 
     # def reg_func(spikes_list):
     #     loss_reg = 0.0
@@ -94,6 +94,7 @@ def main(args):
     # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
 
     ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
+    # ROOT_PATH_DATA = "/Data/pgi-15/datasets"
 
     PROFILE_RUN = bool(args.profile_run)
     USE_IPU = bool(args.use_ipu)
@@ -105,8 +106,8 @@ def main(args):
 
     NUM_CLASSES = 10
     if PROFILE_RUN:
-        NUM_EPOCHS = 10
-        SEQ_LEN = 11
+        NUM_EPOCHS = 1
+        SEQ_LEN = 10
     else:
         NUM_EPOCHS = 10
         SEQ_LEN = 100 # 300
@@ -119,10 +120,11 @@ def main(args):
 
     BATCHSIZE = 48
     if PROFILE_RUN:
-        # NUM_SAMPLES_TRAIN = BATCHSIZE*4
-        NUM_SAMPLES_TRAIN = BATCHSIZE*16
+        NUM_SAMPLES_TRAIN = BATCHSIZE*4
+        # NUM_SAMPLES_TRAIN = BATCHSIZE*16*16*4
     else:
-        NUM_SAMPLES_TRAIN = 54210
+        NUM_SAMPLES_TRAIN = 60000 #54210
+    assert NUM_SAMPLES_TRAIN < 60000
 
     print("DENSE_SIZES: ", DENSE_SIZES)
     print("SPARSE_SIZES: ", SPARSE_SIZES)
@@ -146,7 +148,13 @@ def main(args):
     #     dataloader_train = get_nmnist_dataset(sparse_sizes[0], int(steps_per_epoch*batchsize), batchsize_per_step, image_dims, seq_len, sparse=True)
     # else:
     INP_DIM = SPARSE_SIZES[0] if SPARSE_METHOD else DENSE_SIZES[0]
-    dataloader_train = get_nmnist_dataset(ROOT_PATH_DATA, SPARSE_METHOD, SEQ_LEN, INP_DIM, BATCHSIZE, sparse_size=SPARSE_SIZES[0], dims=IMAGE_DIMS)
+    
+    # dataloader_train = get_nmnist_dataset(ROOT_PATH_DATA, SPARSE_METHOD, NUM_EPOCHS, SEQ_LEN, INP_DIM, BATCHSIZE, dims=IMAGE_DIMS)
+    
+    # dataloader_train, _ = create_nmnist_gener(ROOT_PATH_DATA, SPARSE_METHOD, seq_len=SEQ_LEN, sparse_size=INP_DIM, num_samples=NUM_SAMPLES_TRAIN, batchsize=BATCHSIZE)
+    # dataloader_train = dataloader_train()
+
+    dataloader_train = get_nmnist_keras_dataset(rng, ROOT_PATH_DATA, SPARSE_METHOD, BATCHSIZE, seq_len=SEQ_LEN, sparse_size=SPARSE_SIZES[0])
 
     NUM_LAYERS = len(DENSE_SIZES)-1
 
@@ -167,8 +175,8 @@ def main(args):
     else:
         callbacks = None
 
-    print(dataloader_train)
-    print(next(iter(dataloader_train)))
+    # print(dataloader_train)
+    # print(next(iter(dataloader_train)))
 
     # sys.exit()
 
@@ -255,7 +263,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Randman training optionally using the IPU and sparse implementations.")
     parser.add_argument('--use_ipu', type=int, default=1, help="Whether to use the IPU (default is `1` therefore `True`).")
-    parser.add_argument('--impl_method', type=str, default=1, help="Implementation method to use, one of ['dense', 'sparse_ops', 'sparse_layer']."
+    parser.add_argument('--impl_method', type=str, default="dense", help="Implementation method to use, one of ['dense', 'sparse_ops', 'sparse_layer']."
                                                                     "Only used for `use_ipu=1`")
     parser.add_argument('--profile_run', type=int, default=0, help="Whether this is a profiling run (default is `0` therefore `Flase`), "
                                                                     "which uses shorter squence length, less data and only one epoch.")
