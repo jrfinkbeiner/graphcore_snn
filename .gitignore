@@ -5,6 +5,7 @@ custom_lif_single_layer/util_and_experiments/figures/
 custom_lif_single_layer/reports/
 custom_lif_single_layer/optimization/
 custom_lif_single_layer/util_and_experiments/timings/
+benchmarking/reports/
 
 # Graphcore/Poplar extensions
 *.gp
