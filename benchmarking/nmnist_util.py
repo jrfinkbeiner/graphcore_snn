@@ -4,6 +4,8 @@ import bisect
 import numpy as np
 import tensorflow as tf
 
+from multiprocessing import Pool
+from multi_proc_helper import set_global_dataset, get_dataset_item
 
 import tonic
 import tonic.transforms as transforms
@@ -102,7 +104,7 @@ def events_to_sparse_tensors(events,
 #     return dataset_train, dataset_test
 
 
-def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='train'):
+def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='train', apply_flatten=False):
     '''
     root: root directory of tonic datasets
     seq_len: maximum sequence length
@@ -120,12 +122,18 @@ def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='
     
     sensor_size = tonic.datasets.NMNIST.sensor_size
     if sparse:
-        transform_train = transforms.Compose([
-            # transforms.ToFrame(sensor_size, time_window=1000.0),
+
+        transforms_list = [
             ft.partial(events_to_sparse_tensors, deltat=1000,
-                                        seq_len=seq_len,
-                                        sparse_size=sparse_size)
-        ])
+                            seq_len=seq_len,
+                            sparse_size=sparse_size),
+        ]
+        if apply_flatten:
+            def flatten_fn(dims, data):
+                return flatten_spike_ids(dims, data[0]), data[1]
+            transforms_list.append(ft.partial(flatten_fn, sensor_size))
+
+        transform_train = transforms.Compose(transforms_list)
     else:
         transform_train = transforms.Compose([
             # transforms.ToFrame(sensor_size, time_window=1000.0),
@@ -155,27 +163,37 @@ def create_dense_batch(ids, dataset, batch_size):
         # data_flat = np.empty((seq_len, np.prod(dataset.sensor_size))) #*data["x"][0]
         batched_data.append(data_flat)
         batched_labels[i] = label
-        # print(i, idx)
     batched_data = np.stack(batched_data)
     return {"inp_spikes": batched_data, "targets": batched_labels}        
 
-def create_sparse_batch(ids, dataset, batch_size): #, seq_len):
+def create_sparse_batch(ids, dataset, batch_size, pool=None): #, seq_len):
     batched_inp_spike_ids = []
     batched_num_inp_spikes = []
     # batched_num_inp_spikes = np.empty((batch_size, seq_len, 1), dtype=np.int32)
-    batched_labels = np.empty(batch_size, dtype=np.int32)
-    for i,idx in enumerate(ids):
-        data, label = dataset[idx]
-        batched_inp_spike_ids.append(data[0])
-        batched_num_inp_spikes.append(data[1])
-        # batched_num_inp_spikes[i] = data[1]
-        batched_labels[i] = label
+    
+    if pool is None:
+        batched_labels = np.empty(batch_size, dtype=np.int32)
+        for i,idx in enumerate(ids):
+            data, label = dataset[idx]
+            batched_inp_spike_ids.append(data[0])
+            batched_num_inp_spikes.append(data[1])
+            # batched_num_inp_spikes[i] = data[1]
+            batched_labels[i] = label
+    else:
+        data = pool.map(get_dataset_item, ids)
+        batched_labels = []
+        for (inp_spike_ids,num_inp_spikes),label in data:
+            batched_inp_spike_ids.append(inp_spike_ids)
+            batched_num_inp_spikes.append(num_inp_spikes)
+            batched_labels.append(label)
+        batched_labels = np.asarray(batched_labels, dtype=np.int32)
+
     batched_inp_spike_ids = np.stack(batched_inp_spike_ids).astype(np.float32)
     batched_num_inp_spikes = np.stack(batched_num_inp_spikes)
-    return {"inp_spike_ids": batched_inp_spike_ids, "num_inp_spikes": batched_num_inp_spikes, "targets": label}
+    return {"inp_spike_ids": batched_inp_spike_ids, "num_inp_spikes": batched_num_inp_spikes, "targets": batched_labels}
 
 
-def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=None, num_samples=None, dataset='train', shuffle=None, batchsize=None):
+def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=None, num_samples=None, dataset='train', shuffle=None, batchsize=None, multiprocessing=False):
     '''
     root: root directory of tonic datasets
     seq_len: maximum sequence length
@@ -186,7 +204,7 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
     data: flattened float32 array of dimension seq_len x prod(sersor_size) containing flattened event addresses
     '''
 
-    dataset = create_nmnist_dataset(root, sparse, seq_len=seq_len, sparse_size=sparse_size, dataset=dataset)
+    dataset = create_nmnist_dataset(root, sparse, seq_len=seq_len, sparse_size=sparse_size, dataset=dataset, apply_flatten=multiprocessing)
 
     if shuffle is None:
         shuffle = True if dataset == 'train' else False
@@ -195,6 +213,9 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
         num_samples = len(dataset)
     if batchsize is not None:
         num_batches = int((num_samples//batchsize) * num_epochs)
+
+    if multiprocessing:
+        assert batchsize is not None
 
     # idx_samples = np.arange(num_samples) 
     # idx_samples = np.arange(num_samples) 
@@ -205,23 +226,13 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
             np.random.shuffle(idx_samples_base)
         idx_samples[iepoch*num_samples:(iepoch+1)*num_samples] = idx_samples_base
     
+
+    print("0001000")
+
     def gen_dense_batched():
         for ibatch in range(num_batches):
             inds = idx_samples[ibatch*batchsize:(ibatch+1)*batchsize]
-            ret_data = create_dense_batch(inds, dataset, batchsize)
-            # batched_data = []
-            # batched_labels = np.empty(batchsize, dtype=np.int32)
-            # for i,idx in enumerate(idx_samples[ibatch*batchsize:(ibatch+1)*batchsize]):
-            #     data, label = dataset[idx]
-            #     data_flat = data.reshape(data.shape[0], -1).astype(np.float32)
-            #     # label = 0
-            #     # data_flat = np.empty((seq_len, np.prod(dataset.sensor_size))) #*data["x"][0]
-            #     batched_data.append(data_flat)
-            #     batched_labels[i] = label
-            # batched_data = np.stack(batched_data)
-            # # batched_data = np.empty((batchsize, seq_len, 2*34*34), dtype=np.float32)
-            # # batched_labels = np.empty(batchsize, dtype=np.int32)
-            # ret_data = {"inp_spikes": batched_data, "targets": batched_labels}
+            ret_data = create_dense_batch(inds, dataset, batchsize, multiprocessing)
             yield ret_data
 
     def gen_dense():
@@ -230,19 +241,29 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
             data_flat = data.reshape(data.shape[0], -1).astype(np.float32)
             yield {"inp_spikes": data_flat, "targets": label}
 
-    def gen_sparse_batched():    
+    def gen_sparse_batched():
         for ibatch in range(num_batches):
-            batched_inp_spike_ids = []
-            batched_num_inp_spikes = np.empty((batchsize, seq_len, 1), dtype=np.int32)
-            batched_labels = np.empty(batchsize, dtype=np.int32)
-            for i,idx in enumerate(idx_samples[ibatch*batchsize:(ibatch+1)*batchsize]):
-                data, label = dataset[idx]
-                batched_inp_spike_ids.append(data[0])
-                batched_num_inp_spikes[i] = data[1]
-                batched_labels[i] = label
-            batched_inp_spike_ids = np.stack(batched_inp_spike_ids).astype(np.float32)
-            batched_num_inp_spikes = np.stack(batched_inp_spike_ids).astype(np.float32)
-            yield {"inp_spike_ids": batched_inp_spike_ids, "num_inp_spikes": batched_num_inp_spikes, "targets": label}
+            inds = idx_samples[ibatch*batchsize:(ibatch+1)*batchsize]
+            ret_data = create_sparse_batch(inds, dataset, batchsize)
+            yield ret_data
+            # batched_inp_spike_ids = []
+            # batched_num_inp_spikes = np.empty((batchsize, seq_len, 1), dtype=np.int32)
+            # batched_labels = np.empty(batchsize, dtype=np.int32)
+            # for i,idx in enumerate(idx_samples[ibatch*batchsize:(ibatch+1)*batchsize]):
+            #     data, label = dataset[idx]
+            #     batched_inp_spike_ids.append(data[0])
+            #     batched_num_inp_spikes[i] = data[1]
+            #     batched_labels[i] = label
+            # batched_inp_spike_ids = np.stack(batched_inp_spike_ids).astype(np.float32)
+            # batched_num_inp_spikes = np.stack(batched_inp_spike_ids).astype(np.float32)
+            # yield {"inp_spike_ids": batched_inp_spike_ids, "num_inp_spikes": batched_num_inp_spikes, "targets": label}
+
+    def gen_sparse_batched_multiproc():
+        with Pool(min(64, batchsize), initializer=set_global_dataset, initargs=(dataset,)) as p:
+            for ibatch in range(num_batches):
+                inds = idx_samples[ibatch*batchsize:(ibatch+1)*batchsize]
+                ret_data = create_sparse_batch(inds, dataset, batchsize, p)
+                yield ret_data
 
     def gen_sparse():    
         for i in idx_samples:
@@ -252,7 +273,10 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
     if batchsize is None:
         gen = gen_sparse if sparse else gen_dense 
     else:
-        gen = gen_sparse_batched if sparse else gen_dense_batched
+        if multiprocessing:
+            gen = gen_sparse_batched_multiproc if sparse else gen_dense_batched_multiproc
+        else:
+            gen = gen_sparse_batched if sparse else gen_dense_batched
 
     return gen, num_samples
 
@@ -321,41 +345,61 @@ def get_nmnist_keras_dataset(rng, root, sparse, batchsize, seq_len, sparse_size:
     return keras_dataset
 
 
-def get_nmnist_dataset(root, sparse, num_epochs, seq_len, inp_dim, batchsize, num_samples=None, dims=None):
-    # from snnax.utils.data import SequenceLoader
-    gen_train, num_samples = create_nmnist_gener(root, sparse, num_epochs, seq_len=seq_len, sparse_size=inp_dim, num_samples=num_samples)
+def get_nmnist_dataset(root, sparse, num_epochs, seq_len, inp_dim, batchsize, num_samples=None, dims=None, multiprocessing=False):
+    if multiprocessing:
+        gen_train, num_samples = create_nmnist_gener(root, sparse, num_epochs, seq_len=seq_len, sparse_size=inp_dim, num_samples=num_samples, batchsize=batchsize, multiprocessing=multiprocessing)
+    else:
+        gen_train, num_samples = create_nmnist_gener(root, sparse, num_epochs, seq_len=seq_len, sparse_size=inp_dim, num_samples=num_samples, multiprocessing=multiprocessing)
     # get_train, num_samples = create_nmnist_gener(root, sparse, seq_len=seq_len, sparse_size=sparse_size, num_samples=num_samples)
-    
+
     # dataset = tf.data.Dataset.from_generator(gen_train, output_signature=((tf.TensorSpec(shape=(seq_len, inp_dim), dtype=tf.float32),
     #                                                                         tf.TensorSpec(shape=(), dtype=tf.int32))))
 
     if dims is None:
         dims = (34,34,2)
     flatten_fn = ft.partial(flatten_data_tf, dims=dims)
-    if sparse:
-        dataset = tf.data.Dataset.from_generator(gen_train, output_signature={"inp_spike_ids": tf.TensorSpec(shape=(seq_len, inp_dim, len(dims)), dtype=tf.float32),
-                                                                                "num_inp_spikes": tf.TensorSpec(shape=(seq_len, ), dtype=tf.int32),
-                                                                                "targets": tf.TensorSpec(shape=(), dtype=tf.int32)})
+    if multiprocessing:
+        if sparse:
+            dataset = tf.data.Dataset.from_generator(gen_train, output_signature={"inp_spike_ids": tf.TensorSpec(shape=(batchsize, seq_len, inp_dim), dtype=tf.float32),
+                                                                                    "num_inp_spikes": tf.TensorSpec(shape=(batchsize, seq_len, ), dtype=tf.int32),
+                                                                                    "targets": tf.TensorSpec(shape=(batchsize, ), dtype=tf.int32)})
+        else:
+            dataset = tf.data.Dataset.from_generator(gen_train, output_signature={"inp_spikes": tf.TensorSpec(shape=(batchsize, seq_len, inp_dim), dtype=tf.float32),
+                                                                                    "targets": tf.TensorSpec(shape=(batchsize, ), dtype=tf.int32)})
     else:
-        dataset = tf.data.Dataset.from_generator(gen_train, output_signature={"inp_spikes": tf.TensorSpec(shape=(seq_len, inp_dim), dtype=tf.float32),
-                                                                                "targets": tf.TensorSpec(shape=(), dtype=tf.int32)})
+        if sparse:
+            dataset = tf.data.Dataset.from_generator(gen_train, output_signature={"inp_spike_ids": tf.TensorSpec(shape=(seq_len, inp_dim, len(dims)), dtype=tf.float32),
+                                                                                    "num_inp_spikes": tf.TensorSpec(shape=(seq_len, ), dtype=tf.int32),
+                                                                                    "targets": tf.TensorSpec(shape=(), dtype=tf.int32)})
+        else:
+            dataset = tf.data.Dataset.from_generator(gen_train, output_signature={"inp_spikes": tf.TensorSpec(shape=(seq_len, inp_dim), dtype=tf.float32),
+                                                                                    "targets": tf.TensorSpec(shape=(), dtype=tf.int32)})
+
 
     # idx = np.arange(num_samples)
     # # dataset = tf.data.Dataset.from_tensor_slices(idx)
     # dataset = tf.data.Dataset.range(num_samples) # .as_numpy_iterator()
 
-    if sparse:
-        # TODO perform transform here instead of inside tonic dataset?, makes use of `num_parallel_calls`
-        dataset = dataset.map(flatten_fn, num_parallel_calls=tf.data.AUTOTUNE)
-    # # dataset = dataset.map(cast_data_tf_dense, num_parallel_calls=batchsize)
-    # dataset = dataset.shuffle(num_samples, reshuffle_each_iteration=False) # TODO uncomment
-    # # dataset = dataset.map(get_train, num_parallel_calls=tf.data.AUTOTUNE)
-    # dataset = dataset.repeat()
-    # dataset = dataset.interleave(num_parallel_calls=tf.data.AUTOTUNE)
-    dataset = dataset.batch(batchsize, drop_remainder=True)
+    # dataset = dataset.map(lambda *args: args, num_parallel_calls=tf.data.AUTOTUNE)
+    if not multiprocessing:
+        if sparse:
+            # TODO perform transform here instead of inside tonic dataset?, makes use of `num_parallel_calls`
+            dataset = dataset.map(flatten_fn, num_parallel_calls=tf.data.AUTOTUNE)
+        dataset = dataset.batch(batchsize, drop_remainder=True)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
     return dataset
 
+
+
+
+def flatten_spike_ids(dims, spike_ids):
+    '''
+    Flattens N-dimensional data to a 1 dimensional integer, where N = len(dims).
+    dims: tuple whose elements specify the size of each dimension
+    '''
+    ds = np.array([np.prod(dims[i:]) for i in range(1,len(dims))] + [1], dtype=np.int16)
+    spike_ids_flat = tf.math.reduce_sum([spike_ids[:,:,i]*d for i,d in enumerate(ds)],axis=0)
+    return spike_ids_flat
 
 
 def flatten_data_tf(data, dims):
@@ -363,11 +407,7 @@ def flatten_data_tf(data, dims):
     Flattens N-dimensional data to a 1 dimensional integer, where N = len(dims).
     dims: tuple whose elements specify the size of each dimension
     '''
-    spike_ids = data["inp_spike_ids"]
-
-    ds = np.array([np.prod(dims[i:]) for i in range(1,len(dims))] + [1], dtype=np.int16)
-    spike_ids_flat = tf.math.reduce_sum([spike_ids[:,:,i]*d for i,d in enumerate(ds)],axis=0)
-    data["inp_spike_ids"] = spike_ids_flat
+    data["inp_spike_ids"] = flatten_spike_ids(dims, data["inp_spike_ids"])
     return data
 
 # def cast_data_tf(input_data, label):
@@ -407,3 +447,43 @@ def flatten_data_tf(data, dims):
 #     dataset = dataset.batch(batchsize, drop_remainder=True)
 #     dataset = dataset.prefetch(tf.data.AUTOTUNE)
 #     return dataset
+
+
+def load_dataset_to_tensor_dict(root, sparse, seq_len, inp_dim, num_samples=None, iter_batchsize=None):
+
+    if iter_batchsize is None:
+        iter_batchsize = 1000
+    gen, num_samples = create_nmnist_gener(root, sparse, 1, seq_len=seq_len, sparse_size=inp_dim, num_samples=num_samples, batchsize=iter_batchsize, shuffle=False, multiprocessing=True)
+
+    assert num_samples % iter_batchsize == 0, "`num_samples` must be divisible by `iter_batchsize`"
+
+    if sparse:
+
+        # TODO apply flatten here or in create_nmnist_gener !!!
+
+        inp_spike_ids = np.empty((num_samples, seq_len, inp_dim), dtype=np.float32)
+        num_inp_spikes = np.empty((num_samples, seq_len, 1), dtype=np.int32)
+        labels = np.empty((num_samples,), dtype=np.int32)
+        for i,data in enumerate(gen()):
+            inp_spike_ids[i*iter_batchsize:(i+i)*iter_batchsize] = data["inp_spike_ids"]
+            num_inp_spikes[i*iter_batchsize:(i+i)*iter_batchsize] = data["num_inp_spikes"]
+            labels[i*iter_batchsize:(i+i)*iter_batchsize] = data["targets"]
+        ret_val = {
+            "inp_spike_ids": inp_spike_ids,
+            "num_inp_spikes": num_inp_spikes,
+            "targets": labels,
+        }
+    else:
+        inp_spikes = np.empty((num_samples, seq_len, inp_dim), dtype=np.float32)
+        labels = np.empty((num_samples,), dtype=np.int32)
+        for i,data in enumerate(gen()):
+            print(i)
+            inp_spikes[i*iter_batchsize:(i+1)*iter_batchsize] = data["inp_spikes"]
+            labels[i*iter_batchsize:(i+1)*iter_batchsize] = data["targets"]
+        ret_val = {
+            "inp_spikes": inp_spikes,
+            "targets": labels,
+        }
+    return ret_val
+
+

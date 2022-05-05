@@ -42,42 +42,42 @@ reg_func_single_layer = get_single_layer_reg_function(lambda_lower=100, nu_lower
 
 
 
-# def mse_softmax_loss_fn(y_target, y_pred):
-#     print(y_target.shape)
-#     print(y_pred.shape)
-#     sum_spikes = tf.reduce_sum(y_pred, axis=1) # (batch, seq, neurons)
-#     print(sum_spikes.shape)
-#     softmax_pred = tf.nn.softmax(sum_spikes, axis=1)
-#     one_hot_target = tf.one_hot(y_target, softmax_pred.shape[-1], axis=-1, dtype=softmax_pred.dtype)
-#     return tf.math.reduce_sum((softmax_pred-one_hot_target)**2)/y_target.shape[-1]
-#     # return tf.math.reduce_max(softmax_pred)
-#     # return tf.math.reduce_sum(sum_spikes)
-#     # return tf.math.reduce_max((softmax_pred-one_hot_target)**2)/y_pred.shape[-1]
+# # def mse_softmax_loss_fn(y_target, y_pred):
+# #     print(y_target.shape)
+# #     print(y_pred.shape)
+# #     sum_spikes = tf.reduce_sum(y_pred, axis=1) # (batch, seq, neurons)
+# #     print(sum_spikes.shape)
+# #     softmax_pred = tf.nn.softmax(sum_spikes, axis=1)
+# #     one_hot_target = tf.one_hot(y_target, softmax_pred.shape[-1], axis=-1, dtype=softmax_pred.dtype)
+# #     return tf.math.reduce_sum((softmax_pred-one_hot_target)**2)/y_target.shape[-1]
+# #     # return tf.math.reduce_max(softmax_pred)
+# #     # return tf.math.reduce_sum(sum_spikes)
+# #     # return tf.math.reduce_max((softmax_pred-one_hot_target)**2)/y_pred.shape[-1]
 
-# # def mse_softmax_loss_with_reg_fn(y_target, y_pred):
+# # # def mse_softmax_loss_with_reg_fn(y_target, y_pred):
 
-# #     loss_class = mse_softmax_loss_fn(y_target, y_pred[-1])
-# #     loss_reg = reg_func(y_target)
+# # #     loss_class = mse_softmax_loss_fn(y_target, y_pred[-1])
+# # #     loss_reg = reg_func(y_target)
     
-# #     return loss_class + 0.1 * loss_reg
+# # #     return loss_class + 0.1 * loss_reg
 
-# @tf.function(experimental_compile=True)
-# def calc_accuracy(y_true, y_pred):
-#     sum_spikes = tf.reduce_sum(y_pred, axis=1)
-#     preds = tf.math.argmax(sum_spikes, axis=1)
-#     # preds = tf.ones_like(y_true)
-#     y_true = tf.cast(y_true, preds.dtype)
-#     identical = tf.cast(preds==y_true, tf.float32)
-#     return tf.math.reduce_mean(identical)
+# # @tf.function(experimental_compile=True)
+# # def calc_accuracy(y_true, y_pred):
+# #     sum_spikes = tf.reduce_sum(y_pred, axis=1)
+# #     preds = tf.math.argmax(sum_spikes, axis=1)
+# #     # preds = tf.ones_like(y_true)
+# #     y_true = tf.cast(y_true, preds.dtype)
+# #     identical = tf.cast(preds==y_true, tf.float32)
+# #     return tf.math.reduce_mean(identical)
 
-# @tf.function(experimental_compile=True)
-# def calc_activity(y_true, y_pred):
-#     sum_spikes = tf.reduce_mean(y_pred)*y_pred.shape[1]
-#     return sum_spikes
+# # @tf.function(experimental_compile=True)
+# # def calc_activity(y_true, y_pred):
+# #     sum_spikes = tf.reduce_mean(y_pred)*y_pred.shape[1]
+# #     return sum_spikes
 
-def sum_and_sparse_categorical_crossentropy(y_true, y_pred):
-    sum_spikes = tf.reduce_sum(y_pred, axis=1) # (batch, seq_len, neurons)
-    return tf.keras.metrics.sparse_categorical_crossentropy(y_true, sum_spikes, from_logits=True)
+# def sum_and_sparse_categorical_crossentropy(y_true, y_pred):
+#     sum_spikes = tf.reduce_sum(y_pred, axis=1) # (batch, seq_len, neurons)
+#     return tf.keras.metrics.sparse_categorical_crossentropy(y_true, sum_spikes, from_logits=True)
 
 
 def get_sum_and_sparse_categorical_crossentropy_sparse_out(out_dim, transpose=False):
@@ -87,6 +87,33 @@ def get_sum_and_sparse_categorical_crossentropy_sparse_out(out_dim, transpose=Fa
             y_pred_dense = tf.transpose(y_pred_dense, perm=[1, 0, 2])
         return sum_and_sparse_categorical_crossentropy(y_true, y_pred_dense)
     return loss_fn
+
+def sum_and_sparse_categorical_crossentropy(y_true, y_pred):
+    sum_spikes = tf.reduce_sum(y_pred, axis=1) # (batch, seq_len, neurons)
+    return tf.keras.metrics.sparse_categorical_crossentropy(y_true, sum_spikes, from_logits=True)
+
+def calc_activity(y_true, y_pred):
+    sum_spikes = tf.reduce_mean(y_pred)*y_pred.shape[1]
+    return sum_spikes
+
+def calc_sparse_categorical_accuracy(y_true, y_pred):
+    sum_spikes = tf.reduce_sum(y_pred, axis=1)
+    return tf.keras.metrics.sparse_categorical_accuracy(y_true, sum_spikes)
+
+def get_sparse_func(func, out_dim, transpose=False):
+    def sparse_fn(y_true, y_pred):
+        y_pred_dense = sparse2dense_ipu(y_pred, out_dim)
+        if transpose:
+            y_pred_dense = tf.transpose(y_pred_dense, perm=[1, 0, 2])
+        return func(y_true, y_pred_dense)
+    sparse_fn.__name__ = func.__name__ + "_sparsified"
+    return sparse_fn
+
+def filter_layer_output(func, layer_id):
+    def filter_fn(y_true, y_pred):
+        return func(y_true, y_pred[layer_id])
+    filter_fn.__name__ = func.__name__ + f"_lay{layer_id}"
+    return filter_fn
 
 
 def main(args):
@@ -99,6 +126,10 @@ def main(args):
     PROFILE_RUN = bool(args.profile_run)
     USE_IPU = bool(args.use_ipu)
     IMPL_METHOD = args.impl_method
+    CALC_ACTIVITY = True
+    MULTIPROCESSING = True
+
+
     if USE_IPU:
         assert IMPL_METHOD is not None, "If `USE_IPU=True` the variable `IMPL_METHOD` must be set."
         assert IMPL_METHOD in ["dense", "sparse_ops", "sparse_layer"], f"`method` must be one of 'dense', 'sparse_ops', 'sparse_layer' or None, got '{IMPL_METHOD}'."
@@ -106,25 +137,26 @@ def main(args):
 
     NUM_CLASSES = 10
     if PROFILE_RUN:
-        NUM_EPOCHS = 1
-        SEQ_LEN = 10
+        NUM_EPOCHS = 5
+        SEQ_LEN = 100
     else:
-        NUM_EPOCHS = 10
+        NUM_EPOCHS = 100
         SEQ_LEN = 100 # 300
 
 
     IMAGE_DIMS = (34,34,2)
 
     DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 512, 128, NUM_CLASSES]
-    SPARSE_SIZES = [32, 48, 32, 16, 8]
+    # SPARSE_SIZES = [32, 48, 32, 16, 8]
+    SPARSE_SIZES = [32*2, 48*2, 32*2, 16*2, 8]
 
     BATCHSIZE = 48
     if PROFILE_RUN:
-        NUM_SAMPLES_TRAIN = BATCHSIZE*4
-        # NUM_SAMPLES_TRAIN = BATCHSIZE*16*16*4
+        # NUM_SAMPLES_TRAIN = BATCHSIZE*4
+        NUM_SAMPLES_TRAIN = BATCHSIZE*16
     else:
         NUM_SAMPLES_TRAIN = 60000 #54210
-    assert NUM_SAMPLES_TRAIN < 60000
+    assert NUM_SAMPLES_TRAIN <= 60000
 
     print("DENSE_SIZES: ", DENSE_SIZES)
     print("SPARSE_SIZES: ", SPARSE_SIZES)
@@ -147,14 +179,26 @@ def main(args):
     #     sys.exit()
     #     dataloader_train = get_nmnist_dataset(sparse_sizes[0], int(steps_per_epoch*batchsize), batchsize_per_step, image_dims, seq_len, sparse=True)
     # else:
+
     INP_DIM = SPARSE_SIZES[0] if SPARSE_METHOD else DENSE_SIZES[0]
-    
-    # dataloader_train = get_nmnist_dataset(ROOT_PATH_DATA, SPARSE_METHOD, NUM_EPOCHS, SEQ_LEN, INP_DIM, BATCHSIZE, dims=IMAGE_DIMS)
+    # dataloader_train = get_nmnist_dataset(ROOT_PATH_DATA, SPARSE_METHOD, NUM_EPOCHS, SEQ_LEN, INP_DIM, BATCHSIZE, dims=IMAGE_DIMS, multiprocessing=MULTIPROCESSING)
     
     # dataloader_train, _ = create_nmnist_gener(ROOT_PATH_DATA, SPARSE_METHOD, seq_len=SEQ_LEN, sparse_size=INP_DIM, num_samples=NUM_SAMPLES_TRAIN, batchsize=BATCHSIZE)
     # dataloader_train = dataloader_train()
 
-    dataloader_train = get_nmnist_keras_dataset(rng, ROOT_PATH_DATA, SPARSE_METHOD, BATCHSIZE, seq_len=SEQ_LEN, sparse_size=SPARSE_SIZES[0])
+    # dataloader_train = get_nmnist_keras_dataset(rng, ROOT_PATH_DATA, SPARSE_METHOD, BATCHSIZE, seq_len=SEQ_LEN, sparse_size=SPARSE_SIZES[0])
+
+    data = load_dataset_to_tensor_dict(ROOT_PATH_DATA, SPARSE_METHOD, SEQ_LEN, INP_DIM, num_samples=NUM_SAMPLES_TRAIN)
+    if SPARSE_METHOD:
+        dataloader_train = create_dataset_sparse(data["inp_spike_ids"], data["num_inp_spikes"], data["targets"], BATCHSIZE, shuffle=True) 
+    else:
+        dataloader_train = create_dataset_dense(
+            tf.convert_to_tensor(data["inp_spikes"], dtype=data["inp_spikes"].dtype), 
+            tf.convert_to_tensor(data["targets"], dtype=data["targets"].dtype), 
+            BATCHSIZE, 
+            shuffle=True) 
+
+
 
     NUM_LAYERS = len(DENSE_SIZES)-1
 
@@ -200,11 +244,40 @@ def main(args):
 
     if USE_IPU:
 
+        # method_to_loss_fn = {
+        #     "dense": sum_and_sparse_categorical_crossentropy,
+        #     "sparse_ops": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=False),
+        #     "sparse_layer": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=True),
+        # }
+
         method_to_loss_fn = {
             "dense": sum_and_sparse_categorical_crossentropy,
-            "sparse_ops": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=False),
-            "sparse_layer": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=True),
+            "sparse_ops": get_sparse_func(sum_and_sparse_categorical_crossentropy, DENSE_SIZES[-1], transpose=False),
+            "sparse_layer": get_sparse_func(sum_and_sparse_categorical_crossentropy, DENSE_SIZES[-1], transpose=True),
         }
+
+        method_to_metr_fn_to_last = {
+            "dense": calc_sparse_categorical_accuracy,
+            "sparse_ops": get_sparse_func(calc_sparse_categorical_accuracy, DENSE_SIZES[-1], transpose=False),
+            "sparse_layer": get_sparse_func(calc_sparse_categorical_accuracy, DENSE_SIZES[-1], transpose=True),
+        }
+        method_to_calc_activity = {
+            "dense": calc_activity,
+            "sparse_ops": ft.partial(get_sparse_func, calc_activity, transpose=False),
+            "sparse_layer": ft.partial(get_sparse_func, calc_activity, transpose=True),
+        }
+
+        loss_fn = method_to_loss_fn[IMPL_METHOD] if not CALC_ACTIVITY else filter_layer_output(method_to_loss_fn[IMPL_METHOD], NUM_LAYERS-1)
+
+        if CALC_ACTIVITY:
+            metrics = [filter_layer_output(method_to_metr_fn_to_last[IMPL_METHOD], NUM_LAYERS-1)]
+            for i in range(NUM_LAYERS):
+                met = method_to_calc_activity[IMPL_METHOD]
+                if SPARSE_METHOD:
+                    met = met(DENSE_SIZES[i+1])
+                metrics.append(filter_layer_output(met, i))
+        else:
+            metrics = [method_to_metr_fn_to_last[IMPL_METHOD]]
 
         train_ipu(
             IMPL_METHOD,
@@ -217,11 +290,11 @@ def main(args):
             SPARSE_SIZES, 
             DECAY_CONSTANT, 
             THRESHOLD,
-            method_to_loss_fn[IMPL_METHOD],
-            metrics=None, #[calc_accuracy],
+            loss_fn,
+            metrics=metrics,
             steps_per_epoch=STEPS_PER_EPOCH,
             callbacks=callbacks,
-            return_all=False
+            return_all=True if CALC_ACTIVITY else False
         )
     else:
         train_gpu(

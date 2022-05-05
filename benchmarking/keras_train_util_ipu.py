@@ -150,8 +150,11 @@ def custom_multi_lif_layer_sparse(sparse_sizes, weights, init_state, sparse_inp_
     base_path = os.path.realpath(os.path.dirname(__file__))
     # lib_path = os.path.join(base_path, "custom_lif_layer_loop_noCopy", "libcustom_op.so")
     # gp_path = os.path.join(base_path, "custom_lif_layer_loop_noCopy", "custom_codelet.gp")
-    lib_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_vectorize", "libcustom_op.so")
-    gp_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_vectorize", "custom_codelet.gp")
+    # lib_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_vectorize", "libcustom_op.so")
+    # gp_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_vectorize", "custom_codelet.gp")
+    lib_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_dynamic", "libcustom_op.so")
+    gp_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_dynamic", "custom_codelet.gp")
+
 
     inputs = [*weights, *init_state, *inp_spike_ids, *num_inp_spikes, *decay_constants, *thresholds]
     # sparse_sizes_str = "_".join([str(val) for val in sparse_sizes])
@@ -312,6 +315,7 @@ def create_dataset_sparse(inp_spike_ids, num_inp_spikes, labels, batchsize, shuf
     # dataset = dataset.interleave(num_parallel_calls=tf.data.AUTOTUNE)
     dataset = dataset.batch(batchsize, drop_remainder=True)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    # dataset = dataset.prefetch(4)
     return dataset
 
 def train_ipu(
@@ -354,6 +358,10 @@ def train_ipu(
         inputs, outputs = method_to_model_fn[method](seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, return_all=return_all)
         targets = keras.Input((1,), name="targets")
         model = keras.Model([inputs, targets], outputs)
+
+        # Set the infeed and outfeed options.
+        model.set_infeed_queue_options(prefetch_depth=2)
+        model.set_outfeed_queue_options(buffer_depth=2)
 
         # Compile our model with Stochastic Gradient Descent as an optimizer
         # optim = tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.5, nesterov=False, name="SGD")

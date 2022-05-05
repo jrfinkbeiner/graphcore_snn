@@ -43,6 +43,14 @@ void printVector(std::vector<T> vec) {
   std::cout << "}"<< std::endl;
 }
 
+template<typename T>
+std::vector<T> arange(T start, T stop, T step = 1) {
+    std::vector<T> values;
+    for (T value = start; value < stop; value += step)
+        values.push_back(value);
+    return values;
+}
+
 std::vector<std::string> split_string(const std::string& s, char seperator)
 {
     std::vector<std::string> output;
@@ -878,10 +886,19 @@ extern "C" poplar::Tensor Build_allocator(
             allocTensor = alloc_neuronwise(graph, shape, type, neuronDim, neuron_mapping, {dnai, tensor_name});
             break;
     case 2: tensor_name = "inp_spike_ids";
-            allocTensor = alloc_linearly(graph, shape, type, 0, {dnai, tensor_name});
+            if (layer_id == 0) {
+              allocTensor = popops::createSliceableTensor(graph, type, shape, {0}, {1}, 0, {dnai, tensor_name});
+            } else {
+              allocTensor = alloc_linearly(graph, shape, type, 0, {dnai, tensor_name});
+            }
             break;  
     case 3: tensor_name = "num_inp_spikes";
-            allocTensor = alloc_linearly(graph, shape, type, 0, {dnai, tensor_name});
+            if (layer_id == 0) {
+              allocTensor = popops::createSliceableTensor(graph, type, shape, {0}, {1}, 0, {dnai, tensor_name});
+            } else {
+              allocTensor = alloc_linearly(graph, shape, type, 0, {dnai, tensor_name});
+            }
+
             break;
     case 4: neuronDim = 0;
             tensor_name = "decay_constants";
@@ -994,18 +1011,20 @@ extern "C" poplar::program::Program Build(
   /// TODO alloc_linearly linearly best choice here ? think about copying between this and per timestep sliced tensors...
   std::transform(sparse_sizes.begin()+1,sparse_sizes.end(), std::back_inserter(out_spike_ids), 
                   [&graph, &dnai, &seq_len, &batchsize](size_t sparse_size) 
-                    -> poplar::Tensor {return alloc_linearly(graph, {seq_len, batchsize, sparse_size}, poplar::UNSIGNED_INT, 0, {dnai, "alloc out_spike_ids"});});
-                    // -> poplar::Tensor {return alloc_perneuron_3d(graph, {seq_len, batchsize, sparse_size}, poplar::UNSIGNED_INT, 1, {dnai, "alloc out_spike_ids"});});
+                    -> poplar::Tensor {return popops::createSliceableTensor(graph, poplar::UNSIGNED_INT, {seq_len, batchsize, sparse_size}, {0}, {1}, 0, {dnai, "alloc out_spike_ids"});});
+                    // -> poplar::Tensor {return alloc_linearly(graph, {seq_len, batchsize, sparse_size}, poplar::UNSIGNED_INT, 0, {dnai, "alloc out_spike_ids"});});
   std::vector<poplar::Tensor> num_out_spikes;
   /// TODO alloc_linearly linearly best choice here ? think about copying between this and per timestep sliced tensors...
   std::transform(sparse_sizes.begin()+1,sparse_sizes.end(), std::back_inserter(num_out_spikes), 
                   [&graph, &dnai, &seq_len, &batchsize](size_t sparse_size) 
-                    -> poplar::Tensor {return alloc_linearly(graph, {seq_len, batchsize, 1}, poplar::UNSIGNED_INT, 0, {dnai, "alloc  num_out_spikes"});});
-                    // -> poplar::Tensor {return alloc_perneuron_3d(graph, {seq_len, batchsize, 1}, poplar::UNSIGNED_INT, 1, {dnai, "alloc  num_out_spikes"});});
+                    -> poplar::Tensor {return popops::createSliceableTensor(graph,  poplar::UNSIGNED_INT, {seq_len, batchsize, 1}, {0}, {1}, 0, {dnai, "alloc  num_out_spikes"});});
+                    // -> poplar::Tensor {return alloc_linearly(graph, {seq_len, batchsize, 1}, poplar::UNSIGNED_INT, 0, {dnai, "alloc  num_out_spikes"});});
   std::vector<poplar::Tensor> stateSeqOutput;
   for (unsigned ilay=0; ilay<num_layers; ++ilay){
+    // TODO also here popops::createSliceableTensor, otherwise memory bottleneck might be an issue...
     std::vector<size_t> neuron_mapping = determine_neuron_mapping(numTiles, ilay, dense_sizes, sparse_sizes, batchsize);
     stateSeqOutput.push_back(alloc_neuronwise(graph, {seq_len, batchsize, dense_sizes[ilay+1]}, dtype, 2, neuron_mapping, {dnai, "alloc stateSeqOutput"}));
+    // stateSeqOutput.push_back(alloc_neuronwise(graph, {seq_len, batchsize, dense_sizes[ilay+1]}, dtype, 2, neuron_mapping, {dnai, "alloc stateSeqOutput"}));
   }
   // std::transform(dense_sizes.begin()+1,dense_sizes.end(), std::back_inserter(stateSeqOutput), 
   //                 [&graph, &dnai, &seq_len, &batchsize, &dtype](size_t dense_size) 
@@ -1018,18 +1037,19 @@ extern "C" poplar::program::Program Build(
   
   // As the netowrk is purely feed forward, generate the output spikes tensors from the initial input spikes tensors of the next layer
   std::vector<poplar::Tensor> slicedOutSpikeIds;
-  std::transform(inp_spike_ids.begin()+1, inp_spike_ids.end(), std::back_inserter(slicedOutSpikeIds), 
-                  [&graph, &dnai](const poplar::Tensor &t) -> poplar::Tensor {return graph.clone(t, {dnai, "initial clone slicedOutSpikeIds"});});
-  /// TODO alloc_linearly linearly best choice here ? think about copying between sliced input and output spikes...
-  slicedOutSpikeIds.push_back(alloc_linearly(graph, {batchsize, sparse_sizes.back()}, out_spike_ids.back().elementType(), 0, {dnai, "slicedNumOutSpikes"})); // TODO improve alloc
-  // slicedOutSpikeIds.push_back(alloc_perneuron_2d(graph, {batchsize, sparse_sizes.back()}, out_spike_ids.back().elementType(), 1, {dnai, "slicedNumOutSpikes"})); // TODO improve alloc
+  // std::transform(inp_spike_ids.begin()+1, inp_spike_ids.end(), std::back_inserter(slicedOutSpikeIds), 
+  //                 [&graph, &dnai](const poplar::Tensor &t) -> poplar::Tensor {return graph.clone(t, {dnai, "initial clone slicedOutSpikeIds"});});
+  // slicedOutSpikeIds.push_back(alloc_linearly(graph, {batchsize, sparse_sizes.back()}, out_spike_ids.back().elementType(), 0, {dnai, "slicedNumOutSpikes"})); // TODO improve alloc
+  std::transform(out_spike_ids.begin(), out_spike_ids.end(), std::back_inserter(slicedOutSpikeIds), 
+                  [&graph, &dnai](const poplar::Tensor &t) -> poplar::Tensor {return popops::createSliceTensor(graph, t, {0}, {1}, 1, {dnai, "initial createSliceTensor slicedOutSpikeIds"})[0][0];});
 
   std::vector<poplar::Tensor> slicedNumOutSpikes;
-  std::transform(num_inp_spikes.begin()+1, num_inp_spikes.end(), std::back_inserter(slicedNumOutSpikes), 
-                  [&graph, &dnai](poplar::Tensor &t) -> poplar::Tensor {return graph.clone(t, {dnai, "initial clone slicedOutSpikeIds"});});
-  /// TODO alloc_linearly linearly best choice here ? think about copying between sliced input and output spikes...
-  slicedNumOutSpikes.push_back(alloc_linearly(graph, {batchsize, 1}, num_out_spikes.back().elementType(), 0, {dnai, "slicedNumOutSpikes"}));  // TODO improve alloc
-  // slicedNumOutSpikes.push_back(alloc_perneuron_2d(graph, {batchsize, 1}, num_out_spikes.back().elementType(), 1, {dnai, "slicedNumOutSpikes"}));  // TODO improve alloc
+  // std::transform(num_inp_spikes.begin()+1, num_inp_spikes.end(), std::back_inserter(slicedNumOutSpikes), 
+  //                 [&graph, &dnai](poplar::Tensor &t) -> poplar::Tensor {return graph.clone(t, {dnai, "initial clone slicedOutSpikeIds"});});
+  // slicedNumOutSpikes.push_back(alloc_linearly(graph, {batchsize, 1}, num_out_spikes.back().elementType(), 0, {dnai, "slicedNumOutSpikes"}));  // TODO improve alloc
+  std::transform(num_out_spikes.begin(), num_out_spikes.end(), std::back_inserter(slicedNumOutSpikes), 
+                  [&graph, &dnai](const poplar::Tensor &t) -> poplar::Tensor {return popops::createSliceTensor(graph, t, {0}, {1}, 1, {dnai, "initial createSliceTensor slicedNumOutSpikes"})[0][0];});
+
 
   for (unsigned i=0; i<num_layers-1; ++i){
     fwdProg.add(poplar::program::Copy(inp_spike_ids[i+1], slicedOutSpikeIds[i], false, dnai));
@@ -1064,7 +1084,12 @@ extern "C" poplar::program::Program Build(
 
     std::vector<BatchedSparseSpikes> inpSpikes;
     std::vector<BatchedSparseSpikes> outSpikes;
+    std::cout << "\nslicedOutSpikeIds[i].shape()" << std::endl;
     for (unsigned i=0; i < num_layers; ++i){
+      printVector(slicedInpSpikeIds[i].shape());
+      printVector(slicedNumInpSpikes[i].shape());
+      printVector(slicedOutSpikeIds[i].shape());
+      printVector(slicedNumOutSpikes[i].shape());
       inpSpikes.push_back({slicedInpSpikeIds[i], slicedNumInpSpikes[i]});
       outSpikes.push_back({slicedOutSpikeIds[i], slicedNumOutSpikes[i]});
     }

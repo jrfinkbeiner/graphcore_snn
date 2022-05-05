@@ -86,13 +86,13 @@ def main(args):
     NUM_CLASSES = 10
     if PROFILE_RUN:
         NUM_EPOCHS = 1
-        SEQ_LEN = 10
+        SEQ_LEN = 100
     else:
         NUM_EPOCHS = 5
         SEQ_LEN = 100
 
-    DENSE_SIZES = [2*34*34, 200, 200, NUM_CLASSES]
-    # DENSE_SIZES = [2*34*34, 1024, 512, 128, NUM_CLASSES]
+    # DENSE_SIZES = [2*34*34, 200, 200, NUM_CLASSES]
+    DENSE_SIZES = [2*34*34, 1024, 512, 128, NUM_CLASSES]
     SPARSE_SIZES = [32, 48, 32, 16, 8]
     BATCHSIZE = 48
     if PROFILE_RUN:

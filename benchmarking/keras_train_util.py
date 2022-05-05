@@ -150,6 +150,7 @@ def create_dataset_dense(data, labels, batchsize, shuffle=True):
     # dataset = dataset.interleave(num_parallel_calls=tf.data.AUTOTUNE)
     dataset = dataset.batch(batchsize, drop_remainder=True)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    # dataset = dataset.prefetch(4)
     return dataset
 
 
