@@ -45,35 +45,43 @@ def sparse2dense(spike_ids, num_spikes, dense_size, values=None, sparse_dim=-1):
     return dense_tensor
 
 
+def get_shape(in_features: int, out_features: int, transpose: bool):
+    # return (in_features, out_features) if transpose else (out_features, in_features)
+    return (out_features, in_features)
+
 class KerasMultiLIFLayerBase(keras.layers.Layer):
-    def __init__(self, dense_shapes, decay_constant, threshold, seed=None):
+    def __init__(self, dense_shapes, decay_constant, threshold, transpose_weights=False, seed=None):
         super().__init__()
         assert len(dense_shapes) > 1, "`dense_shapes` must be of at least length 2, generating a network with no hidden layers."
         self.num_layers = len(dense_shapes)-1
         self.dense_shapes = dense_shapes
         self.decay_constant_value = decay_constant
         self.threshold_value = threshold
+        self.transpose_weights = transpose_weights
         self.seed = seed
 
     def build(self, input_shape):
 
-        def custom_init(shape, dtype):
-            limit = (6/(shape[0]+shape[1]))**0.5
+        def custom_init(in_feat, out_feat, dtype):
+            limit = (6/(in_feat + out_feat))**0.5 * 10
+            shape = get_shape(in_feat, out_feat, self.transpose_weights)
             return tf.random.uniform(shape, minval=-limit, maxval=limit, dtype=dtype)
 
         w_init = tf.random_normal_initializer(0.0, 5.0, self.seed)
+        
+
         self.ws = [tf.Variable(
-            initial_value=w_init(shape=(self.dense_shapes[ilay+1], self.dense_shapes[ilay]), dtype=tf.float32),
-            # initial_value=custom_init(shape=(self.dense_shapes[ilay+1], self.dense_shapes[ilay]), dtype=tf.float32),
+            initial_value=w_init(shape=get_shape(self.dense_shapes[ilay], self.dense_shapes[ilay+1], self.transpose_weights), dtype=tf.float32),
+            # initial_value=custom_init(in_feat=self.dense_shapes[ilay], out_feat=self.dense_shapes[ilay+1], dtype=tf.float32),
             trainable=True,
-            name="weights",
+            name=f"weights_{ilay}",
         ) for ilay in range(self.num_layers)]
         self.decay_constants = [tf.Variable(
-            initial_value=tf.cast(tf.fill((self.dense_shapes[ilay],), self.decay_constant_value, "decay_cosntants"), tf.float32),
+            initial_value=tf.cast(tf.fill((self.dense_shapes[ilay],), self.decay_constant_value, f"decay_cosntants_{ilay}"), tf.float32),
             trainable=False,
         ) for ilay in range(1, self.num_layers+1)]
         self.thresholds = [tf.Variable(
-            initial_value=tf.cast(tf.fill((self.dense_shapes[ilay],), self.threshold_value, "thresholds"), tf.float32),
+            initial_value=tf.cast(tf.fill((self.dense_shapes[ilay],), self.threshold_value, f"thresholds_{ilay}"), tf.float32),
             trainable=False,
         ) for ilay in range(1, self.num_layers+1)]
 
@@ -99,8 +107,8 @@ def pure_tf_lif_step_dense(weights, state, inp_, decay_constants, thresholds):
     return spikes_out, new_state
 
 class KerasMultiLIFLayerDenseCell(KerasMultiLIFLayerBase):
-    def __init__(self, dense_shapes, decay_constant, threshold, seed=None):
-        super().__init__(dense_shapes, decay_constant, threshold, seed)
+    def __init__(self, dense_shapes, decay_constant, threshold, transpose_weights=False, seed=None):
+        super().__init__(dense_shapes, decay_constant, threshold, transpose_weights, seed)
         state_shapes = dense_shapes[1:]*2
         self.state_size = [tf.TensorShape((dim,)) for dim in state_shapes]
         self.output_size = [tf.TensorShape((shape_,)) for shape_ in dense_shapes[1:]]
@@ -121,13 +129,13 @@ class KerasMultiLIFLayerDenseCell(KerasMultiLIFLayerBase):
         state_new = [*all_neuron_states, *all_out_spikes]
         return all_out_spikes, state_new
 
-def KerasMultiLIFLayerDense(dense_shapes, decay_constant, threshold, seed=None, **kwargs):
-    return tf.keras.layers.RNN(KerasMultiLIFLayerDenseCell(dense_shapes, decay_constant, threshold, seed), **kwargs)
+def KerasMultiLIFLayerDense(dense_shapes, decay_constant, threshold, transpose_weights=False, seed=None, **kwargs):
+    return tf.keras.layers.RNN(KerasMultiLIFLayerDenseCell(dense_shapes, decay_constant, threshold, transpose_weights, seed), **kwargs)
 
 def model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, seed=None, return_all=False):
     inp_spikes = keras.Input(shape=(seq_len, dense_shapes[0]), batch_size=batchsize_per_step, name="inp_spikes", dtype=tf.float32)
     out_spikes = KerasMultiLIFLayerDense(
-            dense_shapes, decay_constant, threshold, seed, return_sequences=True
+            dense_shapes, decay_constant, threshold, False, seed, return_sequences=True
     )(inp_spikes)
     if return_all:
         out = out_spikes

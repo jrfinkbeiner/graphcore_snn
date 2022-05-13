@@ -11,6 +11,7 @@
     - dynamic slice op
     - reduce op
     - there is no way to execute them as compute sets in parallel. Just using sequence.add(Execute(computeSet))
+    - how well are the dynamicSlice and dynamicUpdate operations optimized? (regarding separate memory regions to maximize IO, ...)
 
 * How to make vertices run faster?\\
     - is there a way to have vectorization in our case, where we don't have 8 byte aligned memory ?
@@ -19,7 +20,6 @@
 * Multivertex\\
     - what happens if there are multiple mutlivertices on one tile? are the mutlivertices executed sequentially with 6 workers each, or are the 6 workers split between the multivertices?
     - how many cycles does 'read-add-write' take ? (If multiple workers access the same output memory, I'd like to estimate, how often I would overrwrite other computations. )
-
 
 
 ## Multi Ipu

@@ -317,7 +317,7 @@ template class LIFStateOutGrad<float>;
 // TODO maybe not most efficient usage of MultiVertex 
 template <typename FPType>
 // class LIFWeightsGrad : public poplar::MultiVertex {
-  class LIFWeightsGrad : public poplar::Vertex {
+class LIFWeightsGrad : public poplar::Vertex {
 public:
   poplar::Input<poplar::Vector<FPType>> dLdState;
   poplar::Input<poplar::Vector<unsigned>> fwd_inp_spikes_ids;
@@ -384,7 +384,6 @@ public:
 
   // TODO this could use multiple threads: It is guarantted that a single elemnent is only touched once!
   bool compute() {
-    FPType one{1.0};
     const FPType dLdStat{dLdState};
     const auto end{fwd_inp_spike_ids.size()};
     // TODO this sneakily use `dLdinp_spike_ids` tensor as intermediate storage for relevant weights
@@ -398,7 +397,7 @@ public:
     #pragma clang loop vectorize(enable) interleave(enable)
     for (unsigned i = 0; i < end; ++i) {
       //  dLdinp_spike_ids[i] = dLdStat * decay_val * weights_row[fwd_inp_spike_ids[i]];
-      dLdinp_spike_ids[i] = dLdStat * dLdinp_spike_ids[i];
+      dLdinp_spike_ids[i] *= dLdStat;
     }
     return true;
   }

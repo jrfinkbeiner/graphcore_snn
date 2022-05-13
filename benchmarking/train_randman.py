@@ -260,7 +260,8 @@ def main(args):
             metrics=metrics, #[calc_accuracy],
             steps_per_epoch=STEPS_PER_EPOCH,
             callbacks=callbacks,
-            return_all=True if CALC_ACTIVITY else False
+            return_all=True if CALC_ACTIVITY else False,
+            transpose_weights=False,
         )
     else:
         train_gpu(

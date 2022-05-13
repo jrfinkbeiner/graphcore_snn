@@ -117,7 +117,7 @@ def compute_sparse_spikes(state: tf.Tensor, thresholds: tf.Tensor, sparse_size: 
 
 
 # TODO could also implement a self-recurrent version
-def custom_multi_lif_layer_sparse(sparse_sizes, weights, init_state, sparse_inp_spikes, decay_constants, thresholds):
+def custom_multi_lif_layer_sparse(sparse_sizes, transpose_weights, weights, init_state, sparse_inp_spikes, decay_constants, thresholds):
 
     inp_spike_ids = [t.ids for t in sparse_inp_spikes] 
     num_inp_spikes = [t.num_nzelements for t in sparse_inp_spikes]
@@ -148,18 +148,39 @@ def custom_multi_lif_layer_sparse(sparse_sizes, weights, init_state, sparse_inp_
     }
 
     base_path = os.path.realpath(os.path.dirname(__file__))
-    # lib_path = os.path.join(base_path, "custom_lif_layer_loop_noCopy", "libcustom_op.so")
-    # gp_path = os.path.join(base_path, "custom_lif_layer_loop_noCopy", "custom_codelet.gp")
-    # lib_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_vectorize", "libcustom_op.so")
-    # gp_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_vectorize", "custom_codelet.gp")
-    lib_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_dynamic", "libcustom_op.so")
-    gp_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_dynamic", "custom_codelet.gp")
 
+    if transpose_weights:
+        lib_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_vectorize_transpose", "libcustom_op.so")
+        gp_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_vectorize_transpose", "custom_codelet.gp")
+    else:
+        # lib_path = os.path.join(base_path, "custom_lif_layer_loop_noCopy", "libcustom_op.so")
+        # gp_path = os.path.join(base_path, "custom_lif_layer_loop_noCopy", "custom_codelet.gp")
+        # lib_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_baseline", "libcustom_op.so")
+        # gp_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_baseline", "custom_codelet.gp")
+        # lib_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_dynamic", "libcustom_op.so")
+        # gp_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_dynamic", "custom_codelet.gp")
+        lib_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_vectorize", "libcustom_op.so")
+        gp_path = os.path.join(base_path, "..", "custom_lif_multi_layer", "custom_lif_layer_vectorize", "custom_codelet.gp")
+
+
+
+    # # sparse_sizes_str = "_".join([str(val) for val in sparse_sizes])
+    dense_sizes = [w.shape[0] for w in weights]
+    # if transpose_weights:
+    #     dense_sizes = [*dense_sizes, weights[-1].shape[1]]
+    # else:
+    dense_sizes = [weights[0].shape[1], *dense_sizes]
+
+    if transpose_weights:
+        weights = [tf.transpose(ws, perm=[1, 0]) for ws in weights]
 
     inputs = [*weights, *init_state, *inp_spike_ids, *num_inp_spikes, *decay_constants, *thresholds]
-    # sparse_sizes_str = "_".join([str(val) for val in sparse_sizes])
-    dense_sizes = [w.shape[0] for w in weights]
-    dense_sizes = [weights[0].shape[1], *dense_sizes]
+
+
+    print("\ncustom_multi_lif_layer_sparse")
+    print(dense_sizes)
+    print([[w.shape for w in weights]])
+
     sizes_str = "_".join([str(val) for val in [*dense_sizes, *sparse_sizes, batch_size]])
     return ipu.custom_ops.precompiled_user_op(inputs,
                                               lib_path,
@@ -170,13 +191,13 @@ def custom_multi_lif_layer_sparse(sparse_sizes, weights, init_state, sparse_inp_
                                             )
 
 class KerasMultiLIFLayerSparse(KerasMultiLIFLayerBase):
-    def __init__(self, dense_shapes, sparse_shapes, decay_constant, threshold, seed=None):
-        super().__init__(dense_shapes, decay_constant, threshold, seed)
+    def __init__(self, dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights=False, seed=None):
+        super().__init__(dense_shapes, decay_constant, threshold, transpose_weights, seed)
         assert len(dense_shapes) == len(sparse_shapes), "`dense_shapes` and `sparse_shapes` must have the same nmber of elements."
         self.sparse_shapes = sparse_shapes
 
     def call(self, inp_spikes, init_states):
-        return custom_multi_lif_layer_sparse(self.sparse_shapes, self.ws, init_states, inp_spikes, self.decay_constants, self.thresholds)
+        return custom_multi_lif_layer_sparse(self.sparse_shapes, self.transpose_weights, self.ws, init_states, inp_spikes, self.decay_constants, self.thresholds)
 
 
 def pure_tf_lif_step_sparse(weights, state, inp_, decay_constants, thresholds, sparse_dim):
@@ -201,7 +222,7 @@ def pure_tf_lif_step_sparse(weights, state, inp_, decay_constants, thresholds, s
 
 class KerasMultiLIFLayerSparseCell(KerasMultiLIFLayerBase):
     def __init__(self, dense_shapes, sparse_shapes, decay_constant, threshold, seed=None):
-        super().__init__(dense_shapes, decay_constant, threshold, seed)
+        super().__init__(dense_shapes, decay_constant, threshold, False, seed)
         self.sparse_shapes = sparse_shapes
         state_size = [tf.TensorShape((dim,)) for dim in dense_shapes[1:]]
         for sparse_dim in sparse_shapes[1:]:
@@ -240,7 +261,7 @@ def KerasMultiLIFLayerSparseOps(dense_shapes, sparse_shapes, decay_constant, thr
     return tf.keras.layers.RNN(KerasMultiLIFLayerSparseCell(dense_shapes, sparse_shapes, decay_constant, threshold, seed), **kwargs)
 
 
-def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, return_all=False, seed=None):
+def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None):
     if return_all:
         warnings.warn("All layers outputs will be returned. But note that only gradient propagation through the last layers outputs is implemented."
                     " Adding loss terms to other layers outputs will be ignored and will result in a wrong gradient.", UserWarning)
@@ -256,7 +277,7 @@ def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, 
 
     init_states = [tf.zeros((batchsize_per_step, dense_shapes[i+1]), dtype=tf.float32) for i in range(num_layers)]
     out = KerasMultiLIFLayerSparse(
-            dense_shapes, sparse_shapes, decay_constant, threshold, seed
+            dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed
         )(inp_spikes, init_states)
     out_spike_ids, num_out_spikes, states = out[:num_layers], out[num_layers:2*num_layers], out[2*num_layers:]
 
@@ -334,6 +355,7 @@ def train_ipu(
         steps_per_epoch=None,
         callbacks=None,
         return_all=False,
+        transpose_weights=False,
     ):
     # set ipu config and strategy 
     ipu_config = ipu.config.IPUConfig()
@@ -349,7 +371,7 @@ def train_ipu(
     method_to_model_fn = {
         "dense": model_fn_dense, 
         "sparse_ops": ft.partial(model_fn_sparse_ops, sparse_shapes), 
-        "sparse_layer": ft.partial(model_fn_sparse_layer, sparse_shapes),
+        "sparse_layer": ft.partial(model_fn_sparse_layer, sparse_shapes, transpose_weights=transpose_weights),
     }
 
     with strategy.scope():
@@ -359,16 +381,20 @@ def train_ipu(
         targets = keras.Input((1,), name="targets")
         model = keras.Model([inputs, targets], outputs)
 
+        # model.load_weights("./model_save_weights")
+        # # model = tf.keras.models.load_model("./model_save", compile=False)
+
         # Set the infeed and outfeed options.
         model.set_infeed_queue_options(prefetch_depth=2)
         model.set_outfeed_queue_options(buffer_depth=2)
 
         # Compile our model with Stochastic Gradient Descent as an optimizer
+        # optim = tf.keras.optimizers.SGD(learning_rate=0.01, nesterov=False, name="SGD")
         # optim = tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.5, nesterov=False, name="SGD")
-        optim = tf.keras.optimizers.SGD(learning_rate=1e-1, momentum=0.9, nesterov=False, name="SGD")
+        # optim = tf.keras.optimizers.SGD(learning_rate=1e-1, momentum=0.9, nesterov=False, name="SGD")
+        optim = tf.keras.optimizers.Adam(learning_rate=1e-2) # NOTE 1e-2 worked quite well
+        # optim = tf.keras.optimizers.Adam(learning_rate=2.5e-2) # NOTE 1e-2 worked quite well
         # optim = tf.keras.optimizers.SGD(learning_rate=1e-1, momentum=0.0, nesterov=False, name="SGD")
-
-        print(outputs)
 
         model.add_loss(loss_fn(targets, outputs))
         if metrics is not None:
@@ -386,6 +412,9 @@ def train_ipu(
         print('\nTraining')
         model.fit(dataset, epochs=num_epochs, steps_per_epoch=steps_per_epoch, workers=batchsize_per_step, callbacks=callbacks)
         # model.fit([inp_spike_ids, num_inp_spikes, init_states], targets, epochs=num_epochs, batch_size=batchsize, shuffle=False)
+
+        # # model.save("./model_save")
+        # model.save_weights("./model_trained_weights", save_format="tf")
 
 
 @tf.function(experimental_compile=True)  # Make it fast.

@@ -4,7 +4,7 @@ import bisect
 import numpy as np
 import tensorflow as tf
 
-from multiprocessing import Pool
+from multiprocessing import Pool, cpu_count
 from multi_proc_helper import set_global_dataset, get_dataset_item
 
 import tonic
@@ -193,7 +193,7 @@ def create_sparse_batch(ids, dataset, batch_size, pool=None): #, seq_len):
     return {"inp_spike_ids": batched_inp_spike_ids, "num_inp_spikes": batched_num_inp_spikes, "targets": batched_labels}
 
 
-def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=None, num_samples=None, dataset='train', shuffle=None, batchsize=None, multiprocessing=False):
+def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=None, num_samples=None, dataset='train', shuffle=None, batchsize=None, use_multiprocessing=False):
     '''
     root: root directory of tonic datasets
     seq_len: maximum sequence length
@@ -204,7 +204,7 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
     data: flattened float32 array of dimension seq_len x prod(sersor_size) containing flattened event addresses
     '''
 
-    dataset = create_nmnist_dataset(root, sparse, seq_len=seq_len, sparse_size=sparse_size, dataset=dataset, apply_flatten=multiprocessing)
+    dataset = create_nmnist_dataset(root, sparse, seq_len=seq_len, sparse_size=sparse_size, dataset=dataset, apply_flatten=True if use_multiprocessing else False)
 
     if shuffle is None:
         shuffle = True if dataset == 'train' else False
@@ -214,7 +214,7 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
     if batchsize is not None:
         num_batches = int((num_samples//batchsize) * num_epochs)
 
-    if multiprocessing:
+    if use_multiprocessing:
         assert batchsize is not None
 
     # idx_samples = np.arange(num_samples) 
@@ -226,13 +226,10 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
             np.random.shuffle(idx_samples_base)
         idx_samples[iepoch*num_samples:(iepoch+1)*num_samples] = idx_samples_base
     
-
-    print("0001000")
-
     def gen_dense_batched():
         for ibatch in range(num_batches):
             inds = idx_samples[ibatch*batchsize:(ibatch+1)*batchsize]
-            ret_data = create_dense_batch(inds, dataset, batchsize, multiprocessing)
+            ret_data = create_dense_batch(inds, dataset, batchsize, use_multiprocessing)
             yield ret_data
 
     def gen_dense():
@@ -259,7 +256,8 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
             # yield {"inp_spike_ids": batched_inp_spike_ids, "num_inp_spikes": batched_num_inp_spikes, "targets": label}
 
     def gen_sparse_batched_multiproc():
-        with Pool(min(64, batchsize), initializer=set_global_dataset, initargs=(dataset,)) as p:
+        # use at most one process per cpu or one process per sample
+        with Pool(min(cpu_count(), batchsize), initializer=set_global_dataset, initargs=(dataset,)) as p:
             for ibatch in range(num_batches):
                 inds = idx_samples[ibatch*batchsize:(ibatch+1)*batchsize]
                 ret_data = create_sparse_batch(inds, dataset, batchsize, p)
@@ -273,7 +271,7 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
     if batchsize is None:
         gen = gen_sparse if sparse else gen_dense 
     else:
-        if multiprocessing:
+        if use_multiprocessing:
             gen = gen_sparse_batched_multiproc if sparse else gen_dense_batched_multiproc
         else:
             gen = gen_sparse_batched if sparse else gen_dense_batched
@@ -453,7 +451,7 @@ def load_dataset_to_tensor_dict(root, sparse, seq_len, inp_dim, num_samples=None
 
     if iter_batchsize is None:
         iter_batchsize = 1000
-    gen, num_samples = create_nmnist_gener(root, sparse, 1, seq_len=seq_len, sparse_size=inp_dim, num_samples=num_samples, batchsize=iter_batchsize, shuffle=False, multiprocessing=True)
+    gen, num_samples = create_nmnist_gener(root, sparse, 1, seq_len=seq_len, sparse_size=inp_dim, num_samples=num_samples, batchsize=iter_batchsize, shuffle=True, use_multiprocessing=True)
 
     assert num_samples % iter_batchsize == 0, "`num_samples` must be divisible by `iter_batchsize`"
 
@@ -465,9 +463,10 @@ def load_dataset_to_tensor_dict(root, sparse, seq_len, inp_dim, num_samples=None
         num_inp_spikes = np.empty((num_samples, seq_len, 1), dtype=np.int32)
         labels = np.empty((num_samples,), dtype=np.int32)
         for i,data in enumerate(gen()):
-            inp_spike_ids[i*iter_batchsize:(i+i)*iter_batchsize] = data["inp_spike_ids"]
-            num_inp_spikes[i*iter_batchsize:(i+i)*iter_batchsize] = data["num_inp_spikes"]
-            labels[i*iter_batchsize:(i+i)*iter_batchsize] = data["targets"]
+            print(i)
+            inp_spike_ids[i*iter_batchsize:(i+1)*iter_batchsize] = data["inp_spike_ids"]
+            num_inp_spikes[i*iter_batchsize:(i+1)*iter_batchsize] = np.expand_dims(data["num_inp_spikes"], axis=-1)
+            labels[i*iter_batchsize:(i+1)*iter_batchsize] = data["targets"]
         ret_val = {
             "inp_spike_ids": inp_spike_ids,
             "num_inp_spikes": num_inp_spikes,

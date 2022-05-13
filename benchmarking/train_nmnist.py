@@ -3,8 +3,8 @@ import sys
 import functools as ft
 import numpy as np
 
-from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense
-from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu
+from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense
+from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
 # from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense
 # from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, create_dataset_sparse, sparse2dense_ipu
 
@@ -13,7 +13,7 @@ import tensorflow as tf
 import tensorflow.keras as keras 
 # from keras.callbacks import CSVLogger
 
-from nmnist_util import get_nmnist_dataset, create_nmnist_gener, get_nmnist_keras_dataset
+from nmnist_util import get_nmnist_dataset, create_nmnist_gener, get_nmnist_keras_dataset, load_dataset_to_tensor_dict
 
     # def reg_func(spikes_list):
     #     loss_reg = 0.0
@@ -126,9 +126,11 @@ def main(args):
     PROFILE_RUN = bool(args.profile_run)
     USE_IPU = bool(args.use_ipu)
     IMPL_METHOD = args.impl_method
+    SPARSE_MULTIPLIER = args.sparse_multiplier
     CALC_ACTIVITY = True
     MULTIPROCESSING = True
-
+    TRANSPOSE_WEIGHTS = bool(args.transpose_weights)
+    print(TRANSPOSE_WEIGHTS)
 
     if USE_IPU:
         assert IMPL_METHOD is not None, "If `USE_IPU=True` the variable `IMPL_METHOD` must be set."
@@ -138,31 +140,54 @@ def main(args):
     NUM_CLASSES = 10
     if PROFILE_RUN:
         NUM_EPOCHS = 5
-        SEQ_LEN = 100
+        SEQ_LEN = 10
     else:
-        NUM_EPOCHS = 100
+        NUM_EPOCHS = 30
         SEQ_LEN = 100 # 300
 
 
     IMAGE_DIMS = (34,34,2)
 
-    DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 512, 128, NUM_CLASSES]
+    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 512, 128, NUM_CLASSES]
     # SPARSE_SIZES = [32, 48, 32, 16, 8]
-    SPARSE_SIZES = [32*2, 48*2, 32*2, 16*2, 8]
+    # # SPARSE_SIZES = [32*2, 48*2, 32*2, 16*2, 8]
+    # # SPARSE_SIZES = [32*2, 64*4, 32*4, 16*4, 8]
+
+    DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 1024, 1024, 1024, 512, 128, NUM_CLASSES]
+    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 128, NUM_CLASSES]
+    # SPARSE_SIZES_BASE = [32, 64, 64, 64, 64, 32, 16, 8]
+
+    # SPARSE_SIZES_BASE = [32, 4, 4, 4, 4, 2, 1, 1]
+    # SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:-1], DENSE_SIZES[1:-1])]
+    # SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
+    SPARSE_SIZES_BASE = [2, 4, 4, 4, 4, 2, 1, 1]
+    # SPARSE_SIZES_BASE = [2, 1, 1]
+    SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[:-1], DENSE_SIZES[:-1])]
+    SPARSE_SIZES = SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
+
+    # sys.exit()
 
     BATCHSIZE = 48
     if PROFILE_RUN:
-        # NUM_SAMPLES_TRAIN = BATCHSIZE*4
-        NUM_SAMPLES_TRAIN = BATCHSIZE*16
+        NUM_SAMPLES_TRAIN = BATCHSIZE*4
+        # NUM_SAMPLES_TRAIN = BATCHSIZE*16
     else:
-        NUM_SAMPLES_TRAIN = 60000 #54210
+        NUM_SAMPLES_TRAIN = 9984 #54210
     assert NUM_SAMPLES_TRAIN <= 60000
 
+    print("#################################################################################################")
+    print("SPARSE_MULTIPLIER: ", SPARSE_MULTIPLIER)
     print("DENSE_SIZES: ", DENSE_SIZES)
     print("SPARSE_SIZES: ", SPARSE_SIZES)
     print("BATCHSIZE: ", BATCHSIZE)
     print("NUM_SAMPLES_TRAIN: ", NUM_SAMPLES_TRAIN)
     print("SEQ_LEN: ", SEQ_LEN)
+    print()
+    print("PROFILE_RUN: ", PROFILE_RUN)
+    print("USE_IPU: ", USE_IPU)
+    print("IMPL_METHOD: ", IMPL_METHOD)
+    print("TRANSPOSE_WEIGHTS: ", TRANSPOSE_WEIGHTS)
+    # sys.exit()
 
     rng = np.random.default_rng(42)
 
@@ -188,7 +213,7 @@ def main(args):
 
     # dataloader_train = get_nmnist_keras_dataset(rng, ROOT_PATH_DATA, SPARSE_METHOD, BATCHSIZE, seq_len=SEQ_LEN, sparse_size=SPARSE_SIZES[0])
 
-    data = load_dataset_to_tensor_dict(ROOT_PATH_DATA, SPARSE_METHOD, SEQ_LEN, INP_DIM, num_samples=NUM_SAMPLES_TRAIN)
+    data = load_dataset_to_tensor_dict(ROOT_PATH_DATA, SPARSE_METHOD, SEQ_LEN, INP_DIM, num_samples=NUM_SAMPLES_TRAIN, iter_batchsize=min(10000, NUM_SAMPLES_TRAIN))
     if SPARSE_METHOD:
         dataloader_train = create_dataset_sparse(data["inp_spike_ids"], data["num_inp_spikes"], data["targets"], BATCHSIZE, shuffle=True) 
     else:
@@ -197,8 +222,6 @@ def main(args):
             tf.convert_to_tensor(data["targets"], dtype=data["targets"].dtype), 
             BATCHSIZE, 
             shuffle=True) 
-
-
 
     NUM_LAYERS = len(DENSE_SIZES)-1
 
@@ -294,7 +317,8 @@ def main(args):
             metrics=metrics,
             steps_per_epoch=STEPS_PER_EPOCH,
             callbacks=callbacks,
-            return_all=True if CALC_ACTIVITY else False
+            return_all=True if CALC_ACTIVITY else False,
+            transpose_weights=TRANSPOSE_WEIGHTS,
         )
     else:
         train_gpu(
@@ -310,7 +334,7 @@ def main(args):
             metrics=None, #calc_accuracy,
             steps_per_epoch=STEPS_PER_EPOCH,
             callbacks=callbacks,
-            return_all=False
+            return_all=False,
         )
 
 
@@ -340,6 +364,9 @@ if __name__ == "__main__":
                                                                     "Only used for `use_ipu=1`")
     parser.add_argument('--profile_run', type=int, default=0, help="Whether this is a profiling run (default is `0` therefore `Flase`), "
                                                                     "which uses shorter squence length, less data and only one epoch.")
+    parser.add_argument('--sparse_multiplier', type=int, default=16, help="Factor to multiply sparse sizes with, default is 16.")
+    parser.add_argument('--transpose_weights', type=int, default=0, help="Whether to use the transposed weight matrix to better make use of vectorization."
+                                                                        " For now only used with `impl_method=sparse_layer`. Default is 0 (False).")
 
     args = parser.parse_args()
     main(args)

@@ -78,22 +78,28 @@ def main(args):
     USE_IPU = bool(args.use_ipu)
     IMPL_METHOD = args.impl_method
     CALC_ACTIVITY = False
+    TRANSPOSE_WEIGHTS = bool(args.transpose_weights)
+
     if USE_IPU:
         assert IMPL_METHOD is not None, "If `USE_IPU=True` the variable `IMPL_METHOD` must be set."
         assert IMPL_METHOD in ["dense", "sparse_ops", "sparse_layer"], f"`method` must be one of 'dense', 'sparse_ops', 'sparse_layer' or None, got '{IMPL_METHOD}'."
     SPARSE_METHOD = ("sparse" in IMPL_METHOD) and USE_IPU
 
-    NUM_CLASSES = 10
+    NUM_CLASSES = 8
     if PROFILE_RUN:
         NUM_EPOCHS = 1
-        SEQ_LEN = 100
+        SEQ_LEN = 10
     else:
         NUM_EPOCHS = 5
         SEQ_LEN = 100
 
-    # DENSE_SIZES = [2*34*34, 200, 200, NUM_CLASSES]
-    DENSE_SIZES = [2*34*34, 1024, 512, 128, NUM_CLASSES]
-    SPARSE_SIZES = [32, 48, 32, 16, 8]
+    # DENSE_SIZES = [2*34*34, 1024, 512, 128, NUM_CLASSES]
+    # SPARSE_SIZES = [32, 48, 32, 16, 8]
+
+    DENSE_SIZES = [2*34*34, 1024, 1024, 512, 128, NUM_CLASSES]
+    SPARSE_SIZES = [32, 32, 32, 16, 8, 4]
+
+
     BATCHSIZE = 48
     if PROFILE_RUN:
         NUM_SAMPLES = BATCHSIZE*5
@@ -107,7 +113,11 @@ def main(args):
     print("BATCHSIZE: ", BATCHSIZE)
     print("NUM_SAMPLES_TRAIN: ", NUM_SAMPLES_TRAIN)
     print("SEQ_LEN: ", SEQ_LEN)
-
+    print()
+    print("PROFILE_RUN: ", PROFILE_RUN)
+    print("USE_IPU: ", USE_IPU)
+    print("IMPL_METHOD: ", IMPL_METHOD)
+    print("TRANSPOSE_WEIGHTS: ", TRANSPOSE_WEIGHTS)
 
     rng = np.random.default_rng(42)
 
@@ -179,7 +189,8 @@ def main(args):
             metrics=metrics,
             steps_per_epoch=STEPS_PER_EPOCH,
             callbacks=callbacks,
-            return_all=True if CALC_ACTIVITY else False
+            return_all=True if CALC_ACTIVITY else False,
+            transpose_weights=TRANSPOSE_WEIGHTS,
         )
     else:
         train_gpu(
@@ -207,6 +218,8 @@ if __name__ == "__main__":
                                                                     "Only used for `use_ipu=1`")
     parser.add_argument('--profile_run', type=int, default=0, help="Whether this is a profiling run (default is `0` therefore `Flase`), "
                                                                     "which uses shorter squence length, less data and only one epoch.")
+    parser.add_argument('--transpose_weights', type=int, default=0, help="Whether to use the transposed weight matrix to better make use of vectorization."
+                                                                        " For now only used with `impl_method=sparse_layer`. Default is 0 (False).")
 
     args = parser.parse_args()
     main(args)

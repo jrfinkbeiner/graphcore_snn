@@ -288,7 +288,7 @@ FPType superspike_surrogate(FPType x, FPType beta) {
   return one / std::pow((beta * std::abs(x) + one), 2);
 }
 
-template <typename FPType>
+template <typename FPType> 
 class LIFStateOutGrad : public poplar::Vertex {
 public:
   poplar::Input<poplar::Vector<FPType>> fwdState;
@@ -316,8 +316,9 @@ template class LIFStateOutGrad<float>;
 
 // TODO maybe not most efficient usage of MultiVertex 
 template <typename FPType>
+// class [[poplar::constraint("elem(*fwd_inp_spikes_ids) != elem(*dLdweights_row)")]] LIFWeightsGrad : public poplar::Vertex {
+class LIFWeightsGrad : public poplar::Vertex {
 // class LIFWeightsGrad : public poplar::MultiVertex {
-class [[poplar::constraint("elem(*fwd_inp_spikes_ids) != elem(*dLdweights_row)")]] LIFWeightsGrad : public poplar::Vertex {
 public:
   poplar::Input<poplar::Vector<FPType>> dLdState;
   poplar::Input<poplar::Vector<unsigned>> fwd_inp_spikes_ids;
@@ -349,49 +350,15 @@ template class LIFWeightsGrad<float>;
 
 
 template <typename FPType>
-class [[poplar::constraint("elem(*fwd_inp_spike_ids) != elem(*dLdinp_spike_ids)")]] LIFInpSpikesGradRowWise : public poplar::Vertex {
-// class LIFInpSpikesGradRowWise : public poplar::Vertex {
-public:
-  poplar::Input<poplar::Vector<FPType>> weights_row;
-  poplar::Input<FPType> dLdState;
-  poplar::Input<poplar::Vector<unsigned, poplar::VectorLayout::ONE_PTR, 8>> fwd_inp_spike_ids;
-
-  poplar::InOut<poplar::Vector<FPType,  poplar::VectorLayout::ONE_PTR, 8>> dLdinp_spike_ids;
-//   poplar::Input<poplar::Vector<unsigned>> fwd_inp_spike_ids;
-//   poplar::InOut<poplar::Vector<FPType>> dLdinp_spike_ids;
-  poplar::Input<unsigned> end;
-  // unsigned end;
-
-  // TODO this could use multiple threads: It is guarantted that a single elemnent is only touched once!
-  bool compute() {
-    const FPType dLdStat{dLdState};
-    // const auto end{fwd_inp_spike_ids.size()};
-    // TODO this sneakily use `dLdinp_spike_ids` tensor as intermediate storage for relevant weights
-    // TODO should probably be removed for readibility and correct future behaviour when `weights_row`
-    // TODO and `dLdinp_spike_ids` can have a different type
-    for (unsigned i = 0; i < end; ++i) {
-      dLdinp_spike_ids[i] = weights_row[fwd_inp_spike_ids[i]];
-    }
-        
-    // #pragma clang loop vectorize_width(4) interleave(enable)
-    #pragma clang loop vectorize(enable) interleave(enable)
-    for (unsigned i = 0; i < end; ++i) {
-      //  dLdinp_spike_ids[i] = dLdStat * decay_val * weights_row[fwd_inp_spike_ids[i]];
-      dLdinp_spike_ids[i] *= dLdStat;
-    }
-    return true;
-  }
-};
-template class LIFInpSpikesGradRowWise<float>;
-// template class LIFInpSpikesGradRowWise<half>;
-
-
-template <typename FPType>
-// class [[poplar::constraint("elem(*fwd_inp_spike_ids) != elem(*dLdinp_spike_ids)")]] LIFInpSpikesGradRowWise : public poplar::Vertex {
+// class [[poplar::constraint("elem(*weights_rows) != elem(*dLdinp_spike_ids)")]] LIFInpSpikesGradMultiRow : public poplar::Vertex {
 class LIFInpSpikesGradMultiRow : public poplar::Vertex {
 public:
-  poplar::Input<poplar::Vector<FPType>> weights_rows;
-  poplar::Input<poplar::Vector<FPType>> dLdStates;
+  // poplar::Input<poplar::Vector<FPType>> weights_rows;
+  poplar::Input<poplar::Vector<FPType, poplar::VectorLayout::ONE_PTR, 8>> weights_rows;
+  // poplar::Input<poplar::VectorList<FPType, poplar::VectorListLayout::COMPACT_DELTAN>> weights_rows;
+  poplar::Input<poplar::Vector<FPType, poplar::VectorLayout::ONE_PTR, 8>> dLdStates;
+  //  poplar::Input<poplar::Vector<FPType>> dLdStates;
+ 
   poplar::Input<unsigned> weights_per_neuron;
   poplar::Input<unsigned> num_neurons;
   poplar::Input<unsigned> sparse_size;
@@ -405,39 +372,21 @@ public:
 
   // TODO this could use multiple threads: It is guarantted that a single elemnent is only touched once!
   bool compute() {
-    // const auto end{fwd_inp_spike_ids.size()};
-    // // TODO this sneakily use `dLdinp_spike_ids` tensor as intermediate storage for relevant weights
-    // // TODO should probably be removed for readibility and correct future behaviour when `weights_row`
-    // // TODO and `dLdinp_spike_ids` can have a different type
-    // for (unsigned i = 0; i < end; ++i) {
-    //   dLdinp_spike_ids[i] = weights_row[fwd_inp_spike_ids[i]];
-    // }
-        
     
-    unsigned start_idx{0};
     // // #pragma clang loop vectorize_width(4) interleave(enable)
     // #pragma clang loop vectorize(enable) interleave(enable)
-    for (unsigned ineuron = 0; ineuron < num_neurons; ++ineuron){
-      const auto dLdStat = dLdStates[ineuron];
-      for (unsigned i = 0; i < sparse_size; ++i) {
-        dLdinp_spike_ids[i] += dLdStat * weights_rows[start_idx+fwd_inp_spike_ids[i]]; // TODO faster like this with flatten and start_idx, or with VectorList ? 
+    for (unsigned i = 0; i < sparse_size; ++i) {
+      // const auto spikeId = fwd_inp_spike_ids[i];
+      FPType sum{0};
+      #pragma clang loop vectorize(enable) interleave(enable)
+      for (unsigned ineuron = 0; ineuron < num_neurons; ++ineuron){
+        // sum += dLdStates[ineuron] * weights_rows[ineuron];
+        // sum += dLdStates[ineuron] * weights_rows[spikeId+ineuron]; // TODO faster like this with flatten and start_idx, or with VectorList ? 
+        // sum += dLdStates[ineuron] * weights_rows[fwd_inp_spike_ids[i]][ineuron];
+        sum += dLdStates[ineuron] * weights_rows[fwd_inp_spike_ids[i]+ineuron]; // TODO faster like this with flatten and start_idx, or with VectorList ? 
       }
-      start_idx += weights_per_neuron;
+      dLdinp_spike_ids[i] = sum; 
     }
-
-    // // // #pragma clang loop vectorize_width(4) interleave(enable)
-    // // #pragma clang loop vectorize(enable) interleave(enable)
-    //   for (unsigned i = 0; i < sparse_size; ++i) {
-    //     unsigned start_idx_dense{0};
-    //     unsigned start_idx_sparse{0};
-    //     FPType sum{0.0};
-    //     for (unsigned ineuron = 0, ineuron < num_neurons; ++ineuron){
-    //       sum += dLdStates[ineuron]; * weights_rows[start_idx+fwd_inp_spike_ids[start_idx_sparse+i]]; // TODO faster like this with flatten and start_idx, or with VectorList ? 
-    //       start_idx_dense += weights_per_neuron;
-    //       start_idx_sparse += sparse_size;
-    //   }
-    //   dLdinp_spike_ids[i] = sum;
-    // }
   
     return true;
   }
