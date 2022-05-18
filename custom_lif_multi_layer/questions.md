@@ -2,7 +2,20 @@
 
 ## Important
 
-* Stream Copy 
+* Vectorize Vectrices
+    - no way to vectorize non-8-byte aligened memory, correct?
+    - I noticed that a (very) short loop is not autoverctorized. Does it mean, that it makes no sense there to vectorize? otherwise, how to do it myself (see Marks example)? Is there an efficent sum over vector elements ?
+    - how to use the AMP cores from vertices? Is it even possible or desirable in my case?
+
+* Multivertex
+    - what happens if there are multiple mutlivertices on one tile? are the mutlivertices executed sequentially with 6 workers each, or are the 6 workers split between the multivertices?
+    - how many cycles does 'read-add-write' take ? (If multiple workers access the same output memory, I'd like to estimate, how often I would overrwrite other computations. )
+
+* Pre-/Post-arrange
+    - when and why does pre-/post-arrange happen and how can I prevent it?
+
+
+<!-- * Stream Copy 
     - why does stream copy only act on so few tiles ? Where is the bottleneck ? in writeToTile or in bandwidth betweeen IPU and host ?
     - why is there stream copy before the backkward pass in the first place ?
     - is the stream copy that the popvison tool shows applicable to all epochs? different to later epochs (because no more code and parameter transfer necessary) ? 
@@ -19,7 +32,7 @@
 
 * Multivertex\\
     - what happens if there are multiple mutlivertices on one tile? are the mutlivertices executed sequentially with 6 workers each, or are the 6 workers split between the multivertices?
-    - how many cycles does 'read-add-write' take ? (If multiple workers access the same output memory, I'd like to estimate, how often I would overrwrite other computations. )
+    - how many cycles does 'read-add-write' take ? (If multiple workers access the same output memory, I'd like to estimate, how often I would overrwrite other computations. ) -->
 
 
 ## Multi Ipu
