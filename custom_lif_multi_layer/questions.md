@@ -14,6 +14,12 @@
 * Pre-/Post-arrange
     - when and why does pre-/post-arrange happen and how can I prevent it?
 
+* Data Types
+    - is there a way to have different data types for forward tensor and gradient tensor?
+
+* Random
+    - is there a `shuffle` or random choice function in poplar that let's you randomly rearrange tensors or generate random indices for that?
+
 
 <!-- * Stream Copy 
     - why does stream copy only act on so few tiles ? Where is the bottleneck ? in writeToTile or in bandwidth betweeen IPU and host ?
