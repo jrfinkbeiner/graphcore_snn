@@ -1,2 +1,3 @@
-# python3 train_random.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --transpose_weights=0
-POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports/final_test_random_large_2states_baseline"}' python3 train_random.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --transpose_weights=0
+python3 train_random.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --transpose_weights=1
+# POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports/vec_test_random_large_2states_manyReduce"}' python3 train_random.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --transpose_weights=0
+# POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports/vec_random_2states_transpose_twoRow"}' python3 train_random.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --transpose_weights=1

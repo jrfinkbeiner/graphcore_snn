@@ -130,7 +130,7 @@ def main(args):
     CALC_ACTIVITY = True
     MULTIPROCESSING = True
     TRANSPOSE_WEIGHTS = bool(args.transpose_weights)
-    print(TRANSPOSE_WEIGHTS)
+    BATCHSIZE = args.batchsize
 
     if USE_IPU:
         assert IMPL_METHOD is not None, "If `USE_IPU=True` the variable `IMPL_METHOD` must be set."
@@ -139,40 +139,49 @@ def main(args):
 
     NUM_CLASSES = 10
     if PROFILE_RUN:
-        NUM_EPOCHS = 5
+        NUM_EPOCHS = 1
         SEQ_LEN = 10
     else:
-        NUM_EPOCHS = 30
+        NUM_EPOCHS = 5
         SEQ_LEN = 100 # 300
 
 
     IMAGE_DIMS = (34,34,2)
 
-    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 512, 128, NUM_CLASSES]
-    # SPARSE_SIZES = [32, 48, 32, 16, 8]
-    # # SPARSE_SIZES = [32*2, 48*2, 32*2, 16*2, 8]
-    # # SPARSE_SIZES = [32*2, 64*4, 32*4, 16*4, 8]
+    # # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 512, 128, NUM_CLASSES]
+    # # SPARSE_SIZES = [32, 48, 32, 16, 8]
+    # # # SPARSE_SIZES = [32*2, 48*2, 32*2, 16*2, 8]
+    # # # SPARSE_SIZES = [32*2, 64*4, 32*4, 16*4, 8]
 
-    DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 1024, 1024, 1024, 512, 128, NUM_CLASSES]
-    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 128, NUM_CLASSES]
-    # SPARSE_SIZES_BASE = [32, 64, 64, 64, 64, 32, 16, 8]
+    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 1024, 1024, 1024, 512, 128, NUM_CLASSES]
+    # # DENSE_SIZES = [np.prod(IMAGE_DIMS), 128, NUM_CLASSES]
+    # # SPARSE_SIZES_BASE = [32, 64, 64, 64, 64, 32, 16, 8]
 
-    # SPARSE_SIZES_BASE = [32, 4, 4, 4, 4, 2, 1, 1]
-    # SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:-1], DENSE_SIZES[1:-1])]
-    # SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
-    SPARSE_SIZES_BASE = [2, 4, 4, 4, 4, 2, 1, 1]
-    # SPARSE_SIZES_BASE = [2, 1, 1]
+
+    # # SPARSE_SIZES_BASE = [32, 4, 4, 4, 4, 2, 1, 1]
+    # # SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:-1], DENSE_SIZES[1:-1])]
+    # # SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
+    # SPARSE_SIZES_BASE = [2, 4, 4, 4, 4, 2, 1, 1]
+    # # SPARSE_SIZES_BASE = [2, 1, 1]
+    # SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[:-1], DENSE_SIZES[:-1])]
+    # SPARSE_SIZES = SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
+
+    # benchmarking presentation
+    DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 1024, 512, 512, 128, NUM_CLASSES]
+    SPARSE_SIZES_BASE = [4, 4, 4, 2, 2, 1, 1]
     SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[:-1], DENSE_SIZES[:-1])]
     SPARSE_SIZES = SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
 
+
     # sys.exit()
 
-    BATCHSIZE = 48
+    # BATCHSIZE = 48
     if PROFILE_RUN:
         NUM_SAMPLES_TRAIN = BATCHSIZE*4
         # NUM_SAMPLES_TRAIN = BATCHSIZE*16
     else:
-        NUM_SAMPLES_TRAIN = 9984 #54210
+        NUM_SAMPLES_TRAIN = BATCHSIZE*26 #54210
+        # NUM_SAMPLES_TRAIN = 9984 #54210
     assert NUM_SAMPLES_TRAIN <= 60000
 
     print("#################################################################################################")
@@ -367,6 +376,8 @@ if __name__ == "__main__":
     parser.add_argument('--sparse_multiplier', type=int, default=16, help="Factor to multiply sparse sizes with, default is 16.")
     parser.add_argument('--transpose_weights', type=int, default=0, help="Whether to use the transposed weight matrix to better make use of vectorization."
                                                                         " For now only used with `impl_method=sparse_layer`. Default is 0 (False).")
+    parser.add_argument('--batchsize', type=int, default=48, help="batchsize to use for training, default is 48.")
+
 
     args = parser.parse_args()
     main(args)

@@ -1,4 +1,5 @@
 test_top_k.py
+slurm*.out
 **/log/
 .vscode
 custom_lif_single_layer/util_and_experiments/figures/
@@ -7,6 +8,11 @@ custom_lif_single_layer/optimization/
 custom_lif_single_layer/util_and_experiments/timings/
 benchmarking/reports/
 model_save*
+bak/
+benchmarking/convergence_learning_rate_sweep_512/
+benchmarking/convergence_sparsity_sweep_512/
+# benchmarking/create_sbatch.py
+benchmarking/reports_vec/
 
 *.bc
 

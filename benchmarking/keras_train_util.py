@@ -68,6 +68,7 @@ class KerasMultiLIFLayerBase(keras.layers.Layer):
             return tf.random.uniform(shape, minval=-limit, maxval=limit, dtype=dtype)
 
         w_init = tf.random_normal_initializer(0.0, 5.0, self.seed)
+        # w_init = tf.random_normal_initializer(0.0, 2.0, self.seed)
         
 
         self.ws = [tf.Variable(

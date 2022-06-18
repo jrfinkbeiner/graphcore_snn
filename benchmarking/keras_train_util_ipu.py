@@ -356,6 +356,7 @@ def train_ipu(
         callbacks=None,
         return_all=False,
         transpose_weights=False,
+        learning_rate=1e-2,
     ):
     # set ipu config and strategy 
     ipu_config = ipu.config.IPUConfig()
@@ -388,13 +389,16 @@ def train_ipu(
         model.set_infeed_queue_options(prefetch_depth=2)
         model.set_outfeed_queue_options(buffer_depth=2)
 
-        # Compile our model with Stochastic Gradient Descent as an optimizer
-        # optim = tf.keras.optimizers.SGD(learning_rate=0.01, nesterov=False, name="SGD")
-        # optim = tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.5, nesterov=False, name="SGD")
-        # optim = tf.keras.optimizers.SGD(learning_rate=1e-1, momentum=0.9, nesterov=False, name="SGD")
-        optim = tf.keras.optimizers.Adam(learning_rate=1e-2) # NOTE 1e-2 worked quite well
-        # optim = tf.keras.optimizers.Adam(learning_rate=2.5e-2) # NOTE 1e-2 worked quite well
-        # optim = tf.keras.optimizers.SGD(learning_rate=1e-1, momentum=0.0, nesterov=False, name="SGD")
+        # # Compile our model with Stochastic Gradient Descent as an optimizer
+        # # optim = tf.keras.optimizers.SGD(learning_rate=0.01, nesterov=False, name="SGD")
+        # # optim = tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.5, nesterov=False, name="SGD")
+        # # optim = tf.keras.optimizers.SGD(learning_rate=1e-1, momentum=0.9, nesterov=False, name="SGD")
+        # optim = tf.keras.optimizers.Adam(learning_rate=1e-2) # NOTE 1e-2 worked quite well
+        # # optim = tf.keras.optimizers.Adam(learning_rate=2.5e-2) # NOTE 1e-2 worked quite well
+        # # optim = tf.keras.optimizers.SGD(learning_rate=1e-1, momentum=0.0, nesterov=False, name="SGD")
+
+        optim = tf.keras.optimizers.Adam(learning_rate=learning_rate) # NOTE 1e-2 worked quite well
+        # optim = tf.keras.optimizers.SGD(learning_rate=5e-2, momentum=0.9, nesterov=False, name="SGD")
 
         model.add_loss(loss_fn(targets, outputs))
         if metrics is not None:
@@ -484,7 +488,7 @@ def test_sparse_vs_dense():
         out_ipu_dense, grad_ipu_dense =  strategy.run(value_and_grad_on_batch, args=[model_dense_ipu, *data_dense, False])
 
     with strategy.scope():
-        model_sparse_layer = keras.Model(*model_fn_sparse_layer(sparse_sizes, seq_len, dense_sizes, decay_constant, threshold, batchsize_per_step, seed=model_seed, return_all=False))
+        model_sparse_layer = keras.Model(*model_fn_sparse_layer(sparse_sizes, seq_len, dense_sizes, decay_constant, threshold, batchsize_per_step, seed=model_seed, return_all=False, transpose_weights=True))
         out_sparse_layer, grad_sparse_layer =  strategy.run(value_and_grad_on_batch, args=[model_sparse_layer, *data_sparse, True, False])
 
     with strategy.scope():
@@ -495,16 +499,18 @@ def test_sparse_vs_dense():
     out_dense, grad_dense = value_and_grad_on_batch(model_dense, *data_dense, False)
     
  
-    # print("\nforward")
-    # print(out_dense.shape)
-    # print(out_sparse.shape)
-    # print(out_sparse)
-    # print(out_dense)
-    # print("\ngrad")
-    # print(len(grad_sparse))
-    # print(len(grad_dense))
-    # print(grad_sparse)
-    # print(grad_dense)
+    print("\nforward")
+    print(out_ipu_dense.shape)
+    print(out_dense.shape)
+    print(out_ipu_dense)
+    print(out_dense)
+    print("\ngrad")
+    print(len(grad_ipu_dense))
+    print(len(grad_sparse_layer))
+    print(len(grad_dense))
+    print(grad_ipu_dense)
+    print(grad_sparse_layer)
+    print(grad_dense)
 
     # import matplotlib.pyplot as plt
     # for i in range(num_layers):
@@ -529,6 +535,8 @@ def test_sparse_vs_dense():
     # print()
     # print(f"{out_dense.numpy().sum()=}")
 
+    print("\nMAKE SURE TO USE A WEIGHT INIT THAT USES THE SEED!!!\n")
+
     print()
     check_values(out_ipu_dense, out_dense, f"dense - out_spikes", rtol=1e-4, atol=1e-6)
     for i in range(num_layers):
@@ -543,6 +551,12 @@ def test_sparse_vs_dense():
     check_values(out_sparse_ops, out_dense, f"sparse ops - out_spikes", rtol=1e-4, atol=1e-6)
     for i in range(num_layers):
         check_values(grad_sparse_ops[i], grad_dense[i], f"sparse ops - grad_weights[{i}]", rtol=1e-4, atol=1e-6)
+        # check_values(model_sparse_ops.trainable_weights[i], model_dense.trainable_weights[i], f"weights[{i}]", rtol=1e-4, atol=1e-6)
+
+    print()
+    check_values(out_ipu_dense, out_sparse_layer, f"sparse layer vs dense ipu - out_spikes", rtol=1e-4, atol=1e-6)
+    for i in range(num_layers):
+        check_values(grad_ipu_dense[i], grad_sparse_layer[i], f"sparse layer vs dense ipu - grad_weights[{i}]", rtol=1e-4, atol=1e-6)
         # check_values(model_sparse_ops.trainable_weights[i], model_dense.trainable_weights[i], f"weights[{i}]", rtol=1e-4, atol=1e-6)
 
     print()

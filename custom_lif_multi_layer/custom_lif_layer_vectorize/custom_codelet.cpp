@@ -349,8 +349,8 @@ template class LIFWeightsGrad<float>;
 
 
 template <typename FPType>
-class [[poplar::constraint("elem(*fwd_inp_spike_ids) != elem(*dLdinp_spike_ids)")]] LIFInpSpikesGradRowWise : public poplar::Vertex {
-// class LIFInpSpikesGradRowWise : public poplar::Vertex {
+// class [[poplar::constraint("elem(*fwd_inp_spike_ids) != elem(*dLdinp_spike_ids)")]] LIFInpSpikesGradRowWise : public poplar::Vertex {
+class LIFInpSpikesGradRowWise : public poplar::Vertex {
 public:
   poplar::Input<poplar::Vector<FPType>> weights_row;
   poplar::Input<FPType> dLdState;
@@ -405,18 +405,11 @@ public:
 
   // TODO this could use multiple threads: It is guarantted that a single elemnent is only touched once!
   bool compute() {
-    // const auto end{fwd_inp_spike_ids.size()};
-    // // TODO this sneakily use `dLdinp_spike_ids` tensor as intermediate storage for relevant weights
-    // // TODO should probably be removed for readibility and correct future behaviour when `weights_row`
-    // // TODO and `dLdinp_spike_ids` can have a different type
-    // for (unsigned i = 0; i < end; ++i) {
-    //   dLdinp_spike_ids[i] = weights_row[fwd_inp_spike_ids[i]];
-    // }
-        
     
     unsigned start_idx{0};
     // // #pragma clang loop vectorize_width(4) interleave(enable)
     // #pragma clang loop vectorize(enable) interleave(enable)
+
     for (unsigned ineuron = 0; ineuron < num_neurons; ++ineuron){
       const auto dLdStat = dLdStates[ineuron];
       for (unsigned i = 0; i < sparse_size; ++i) {
@@ -425,19 +418,6 @@ public:
       start_idx += weights_per_neuron;
     }
 
-    // // // #pragma clang loop vectorize_width(4) interleave(enable)
-    // // #pragma clang loop vectorize(enable) interleave(enable)
-    //   for (unsigned i = 0; i < sparse_size; ++i) {
-    //     unsigned start_idx_dense{0};
-    //     unsigned start_idx_sparse{0};
-    //     FPType sum{0.0};
-    //     for (unsigned ineuron = 0, ineuron < num_neurons; ++ineuron){
-    //       sum += dLdStates[ineuron]; * weights_rows[start_idx+fwd_inp_spike_ids[start_idx_sparse+i]]; // TODO faster like this with flatten and start_idx, or with VectorList ? 
-    //       start_idx_dense += weights_per_neuron;
-    //       start_idx_sparse += sparse_size;
-    //   }
-    //   dLdinp_spike_ids[i] = sum;
-    // }
   
     return true;
   }

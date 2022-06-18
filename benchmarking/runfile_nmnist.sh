@@ -1,10 +1,18 @@
 export PYTHONPATH="${PYTHONPATH}:/p/home/jusers/finkbeiner1/jureca/util/tonic_fork"
 
-python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --sparse_multiplier=1 --transpose_weights=1
-# POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports/nmnist/nmnist_large_constInit5_multiRow_epoch0"}' python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1
+# python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=0 --sparse_multiplier=16 --transpose_weights=0 --batchsize=192
+# POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports/vec_nmnist_2states_notranspose_baseline"}' python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --transpose_weights=0 --batchsize=48 --sparse_multiplier=16
+# POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports/vec_nmnist_2states_transpose_MultiRowsSIMD_stateUpdBase"}' python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --transpose_weights=1 --batchsize=48 --sparse_multiplier=16
+
+POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports_vec/vec_nmnist_2states_var5Init_transpose_multiRowSIMD_stateUpdMultiSIMD"}' python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --transpose_weights=1 --batchsize=48 --sparse_multiplier=16
+# POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports_vec/vec_nmnist_2states_var5Init_notranspose_baseline"}' python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --transpose_weights=0 --batchsize=48 --sparse_multiplier=16
 
 # # for VARIABLE in 1 2 4 8 16 32 64 128 256
-# for VARIABLE in 32 64
+
+# for BATCHSIZE in 6 48 96
 # do
-# 	python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=0 --sparse_multiplier=$VARIABLE
+#     for VARIABLE in 1 2 4 8 16 32 64 128 256
+#     do
+#         python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=0 --sparse_multiplier=$VARIABLE --batchsize=$BATCHSIZE --transpose_weights=0
+#     done
 # done

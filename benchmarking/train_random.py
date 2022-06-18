@@ -99,6 +99,13 @@ def main(args):
     DENSE_SIZES = [2*34*34, 1024, 1024, 512, 128, NUM_CLASSES]
     SPARSE_SIZES = [32, 32, 32, 16, 8, 4]
 
+    DENSE_SIZES = [1024, 1024, 1024, NUM_CLASSES]
+    SPARSE_SIZES = [32, 32, 32, 8]
+
+    # DENSE_SIZES = [8, 8 , NUM_CLASSES]
+    # SPARSE_SIZES = [4, 4, 4]
+
+
 
     BATCHSIZE = 48
     if PROFILE_RUN:

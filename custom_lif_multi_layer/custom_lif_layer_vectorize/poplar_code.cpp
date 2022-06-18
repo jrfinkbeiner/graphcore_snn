@@ -708,15 +708,26 @@ void calcLIFInpSpikesGradRowWise(poplar::Graph &graph, const std::vector<poplar:
   }
   prog.add(poplar::program::Execute(cs));
 
-  // TODO possibly scale here instead of in `LIFInpSpikesGradRowWise` verstex with (1-decay_constant)
   // std::string operation = "ADD";
   popops::ReduceParams reduceParams = popops::ReduceParams(popops::Operation::ADD, false); 
+  
+  // for (unsigned ilay=0; ilay<num_layers-1; ++ilay){
+  //   // reduceWithOutput(graph, dLdx_vec[ilay], dLdInpSpikes[ilay], {0}, reduceParams, prog, {dnai, "add rowwise inpSpikeGrads"});
+  //   auto temp = reduce(graph, dLdx_vec[ilay], {0}, reduceParams, prog, {dnai, "add rowwise inpSpikeGrads"});
+  //   prog.add(poplar::program::Copy(temp, dLdInpSpikes[ilay]));
+  //   // prog.add(poplar::program::Copy(dLdx_vec[ilay][0], dLdInpSpikes[ilay]));
+  // }
+
+  std::vector<popops::SingleReduceOp> single_reduce_ops;
   for (unsigned ilay=0; ilay<num_layers-1; ++ilay){
-    // reduceWithOutput(graph, dLdx_vec[ilay], dLdInpSpikes[ilay], {0}, reduceParams, prog, {dnai, "add rowwise inpSpikeGrads"});
-    auto temp = reduce(graph, dLdx_vec[ilay], {0}, reduceParams, prog, {dnai, "add rowwise inpSpikeGrads"});
-    prog.add(poplar::program::Copy(temp, dLdInpSpikes[ilay]));
-    // prog.add(poplar::program::Copy(dLdx_vec[ilay][0], dLdInpSpikes[ilay]));
+    single_reduce_ops.push_back(
+      popops::SingleReduceOp(dLdx_vec[ilay], {0}, reduceParams, "single reduce rowwise inpSpikeGrads")
+    );
   }
+  std::vector<poplar::Tensor> reduce_outs;
+  std::transform(dLdInpSpikes.begin(), dLdInpSpikes.end(), std::back_inserter(reduce_outs), [](poplar::Tensor &t) -> poplar::Tensor {return t;});
+  reduceMany(graph, single_reduce_ops, reduce_outs, prog, {dnai, "add rowwise inpSpikeGrads"});
+
 }
 
 

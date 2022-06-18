@@ -16,7 +16,8 @@ def get_dataloaders(rng, seq_len, num_inp_neurons, num_classes, num_samples_per_
     if sparse:
         assert sparse_size is not None, "If `sparse=True` the variable `sparse_size` must be set."
 
-    data, labels = make_spike_raster_dataset(rng, nb_classes=num_classes, nb_units=num_inp_neurons, nb_steps=seq_len, step_frac=1.0, dim_manifold=2, nb_spikes=1, nb_samples=num_samples_per_class, alpha=2.0, shuffle=True)
+    # data, labels = make_spike_raster_dataset(rng, nb_classes=num_classes, nb_units=num_inp_neurons, nb_steps=seq_len, step_frac=1.0, dim_manifold=2, nb_spikes=1, nb_samples=num_samples_per_class, alpha=2.0, shuffle=True)
+    data, labels = make_spike_raster_dataset(rng, nb_classes=num_classes, nb_units=num_inp_neurons, nb_steps=seq_len, step_frac=1.0, dim_manifold=1, nb_spikes=1, nb_samples=num_samples_per_class, alpha=2.0, shuffle=True)
 
     data_train, labels_train = data[:num_train_samples], labels[:num_train_samples]
     data_test,  labels_test  = data[num_train_samples:], labels[num_train_samples:]
@@ -141,23 +142,26 @@ def main(args):
     PROFILE_RUN = bool(args.profile_run)
     USE_IPU = bool(args.use_ipu)
     IMPL_METHOD = args.impl_method
+    SPARSE_MULTIPLIER = args.sparse_multiplier
+    LEARNING_RATE = args.lr
     CALC_ACTIVITY = True
     if USE_IPU:
         assert IMPL_METHOD is not None, "If `USE_IPU=True` the variable `IMPL_METHOD` must be set."
         assert IMPL_METHOD in ["dense", "sparse_ops", "sparse_layer"], f"`method` must be one of 'dense', 'sparse_ops', 'sparse_layer' or None, got '{IMPL_METHOD}'."
     SPARSE_METHOD = ("sparse" in IMPL_METHOD) and USE_IPU
 
-    NUM_CLASSES = 10
+    NUM_CLASSES = 8
     if PROFILE_RUN:
         NUM_EPOCHS = 1
         SEQ_LEN = 10
     else:
-        NUM_EPOCHS = 5
+        NUM_EPOCHS = 100
         SEQ_LEN = 100
 
-    DENSE_SIZES = [20, 100, NUM_CLASSES]
-    # SPARSE_SIZES = [11, 50, 6]
-    SPARSE_SIZES = [6, 16, 10]
+    DENSE_SIZES = [64, 512, 512, NUM_CLASSES]
+    SPARSE_SIZES_BASE = [1, 2, 2, 1]
+    SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE, DENSE_SIZES)]
+    # SPARSE_SIZES = DENSE_SIZES # [20, 100, 10]
     # SPARSE_SIZES= DENSE_SIZES
     # DENSE_SIZES = [1024, 1024, 1024, 1024, 1024, 1024, NUM_CLASSES]
     # SPARSE_SIZES = [32,   32,   32,   32,   32,   32,   8]
@@ -172,12 +176,14 @@ def main(args):
         TRAIN_TEST_SPILT = 0.8
     NUM_SAMPLES_TRAIN = int(NUM_CLASSES*NUM_SAMPLES_PER_CLASS*TRAIN_TEST_SPILT)
 
+    print("IMPL_METHOD: ", IMPL_METHOD)
     print("DENSE_SIZES: ", DENSE_SIZES)
     print("SPARSE_SIZES: ", SPARSE_SIZES)
     print("BATCHSIZE: ", BATCHSIZE)
     print("NUM_SAMPLES_TRAIN: ", NUM_SAMPLES_TRAIN)
     print("SEQ_LEN: ", SEQ_LEN)
-
+    print("SPARSE_MULTIPLIER: ", SPARSE_MULTIPLIER)
+    print("LEARNING_RATE: ", LEARNING_RATE)
 
     rng = np.random.default_rng(42)
 
@@ -185,10 +191,12 @@ def main(args):
     STEPS_PER_EPOCH = int(NUM_SAMPLES_TRAIN/BATCHSIZE)
     TRAIN_STEPS_PER_EXECUTION = STEPS_PER_EPOCH
 
-    DECAY_CONSTANT = 0.9
+    DECAY_CONSTANT = 0.9    
     THRESHOLD = 1.0
 
-    LOG_FILE = None # f"log_sparse_bs{BATCHSIZE}.csv"
+    LOG_FILE = f"convergence_sparsity_sweep_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_topK_sparse_multiplier_{SPARSE_MULTIPLIER}.csv"
+    # LOG_FILE = f"convergence_learning_rate_sweep_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_topK_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
+    # LOG_FILE = None
 
     dataloader_train, dataloader_test = get_dataloaders(rng, SEQ_LEN, DENSE_SIZES[0], NUM_CLASSES, 
                     NUM_SAMPLES_PER_CLASS, NUM_SAMPLES_TRAIN, BATCHSIZE_PER_STEP if USE_IPU else BATCHSIZE, 
@@ -209,6 +217,7 @@ def main(args):
     if LOG_FILE is not None:
         csv_logger = keras.callbacks.CSVLogger(LOG_FILE, append=True, separator=';')
         callbacks = [csv_logger]
+        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     else:
         callbacks = None
 
@@ -262,6 +271,7 @@ def main(args):
             callbacks=callbacks,
             return_all=True if CALC_ACTIVITY else False,
             transpose_weights=False,
+            learning_rate=LEARNING_RATE,
         )
     else:
         train_gpu(
@@ -277,7 +287,8 @@ def main(args):
             metrics=[calc_sparse_categorical_accuracy], #calc_accuracy,
             steps_per_epoch=STEPS_PER_EPOCH,
             callbacks=callbacks,
-            return_all=False
+            return_all=False,
+            # learning_rate=LEARNING_RATE,
         )
         # train_gpu(
         #     num_epochs, 
@@ -304,6 +315,8 @@ if __name__ == "__main__":
                                                                     "Only used for `use_ipu=1`")
     parser.add_argument('--profile_run', type=int, default=0, help="Whether this is a profiling run (default is `0` therefore `Flase`), "
                                                                     "which uses shorter squence length, less data and only one epoch.")
+    parser.add_argument('--sparse_multiplier', type=int, default=8, help="Factor to multiply sparse sizes with, default is 16.")
+    parser.add_argument('--lr', type=float, default=1e-2, help="Learning rate for optimizer, default `1e-2`.")
 
     args = parser.parse_args()
     main(args)
