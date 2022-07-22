@@ -168,7 +168,7 @@ poplar::program::Program Build_grad(
   calcWeightsGrad(graph, dLdweights, spike_ids, num_spikes, dLdy, prog, {dnai, "calcWeightsGrad"});
   outputs.push_back(dLdweights);
 
-  poplar::Tensor dLdx = MYcalcInpSpikesGradRowWise(graph, weights, spike_ids, dLdy, prog, {dnai, "calcInpSpikesGradRowWise"});
+  poplar::Tensor dLdx = calcInpSpikesGradRowWise(graph, weights, spike_ids, dLdy, prog, {dnai, "calcInpSpikesGradRowWise"});
   // poplar::Tensor dLdx = graph.clone(spike_ids_fptype, {dnai, "dLdspike_ids"});
   // popops::zero(graph, dLdx, prog, dnai);
   outputs.push_back(dLdx);
