@@ -6,4 +6,4 @@ In general, make some performance relevant things more obvious
 
 ## Minor things
 
-- using the variable name `attributes` for `Build` and `Build_grad` makes you think the attribute filed is used for both. Even if it states in the docu, that there is a separate variable called `gradient_attributes`
+* using the variable name `attributes` for `Build` and `Build_grad` makes you think the attribute filed is used for both. Even if it states in the docu, that there is a separate variable called `gradient_attributes`
