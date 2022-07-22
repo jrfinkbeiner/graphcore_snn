@@ -623,7 +623,6 @@ void calcLIFInpSpikesGradRowWise(poplar::Graph &graph, const std::vector<poplar:
     size_t batchsize = dLdState[ilay].dim(0);
     auto dtype = weights[ilay].elementType();
 
-
     auto neuronTileMapping = graph.getTileMapping(weights[ilay].dimShuffle({1,0})[0], true);
     // auto neuronTileMapping = graph.getTileMapping(weights[ilay][0], true);
     const auto numTilesThisLayer = get_num_tiles_of_mapping(neuronTileMapping);

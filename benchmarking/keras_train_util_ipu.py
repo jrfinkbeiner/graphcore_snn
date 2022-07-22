@@ -81,12 +81,18 @@ def dyn_dense_binary_sparse_matmul_op(matrix: tf.Tensor, sparse_vec: SparseBinar
     }
 
     base_path = os.path.realpath(os.path.dirname(__file__))
-    lib_path = os.path.join(base_path, "..", "custom_dyn_dense_sparse_matmul", "batched", "libcustom_op.so")
-    gp_path  = os.path.join(base_path, "..", "custom_dyn_dense_sparse_matmul", "batched", "custom_codelet.gp")
-   
+    # lib_path = os.path.join(base_path, "..", "custom_dyn_dense_sparse_matmul", "batched", "libcustom_op.so")
+    # gp_path  = os.path.join(base_path, "..", "custom_dyn_dense_sparse_matmul", "batched", "custom_codelet.gp")
+    # lib_path = os.path.join(base_path, "..", "test_build", "lib", "custom_dynamic_sparse", "custom_dyn_dense_sparse_matmul", "batched", "standard", "libcustom_op.so")
+    lib_path = os.path.join(base_path, "..", "build", "custom_ops", "libcustom_dyn_dense_sparse_matmul_standard.so")
+    # gp_path  = os.path.join(base_path, "..", "source", "custom_dyn_dense_sparse_matmul", "batched", "standard", "custom_codelet.gp")
+
     out = ipu.custom_ops.precompiled_user_op([matrix, sparse_ids, num_nzelements],
                                               lib_path,
-                                              gp_path,
+                                            #   gp_path,
+                                              name="dyn_dense_binary_sparse_matmul_op", # TF operation name
+                                              op_name="Build",
+                                            #   inputs_with_gradients=[0, 1],
                                               separate_gradients=False, # to calculate gradients separately. Allows to only calculate weight gradient without implementing the others
                                               outs=outputs)[0]
     return out
@@ -101,13 +107,18 @@ def compute_sparse_spikes(state: tf.Tensor, thresholds: tf.Tensor, sparse_size: 
     }
 
     base_path = os.path.realpath(os.path.dirname(__file__))
-    lib_path = os.path.join(base_path, "..", "custom_select_spikes", "twoThresh", "libcustom_op.so")
-    gp_path  = os.path.join(base_path, "..", "custom_select_spikes", "twoThresh", "custom_codelet.gp")
-    
+    # lib_path = os.path.join(base_path, "..", "custom_select_spikes", "twoThresh", "libcustom_op.so")
+    # gp_path  = os.path.join(base_path, "..", "custom_select_spikes", "twoThresh", "custom_codelet.gp")
+    # lib_path = os.path.join(base_path, "..", "test_build", "lib", "custom_dynamic_sparse", "custom_select_spikes", "twoThresh", "libcustom_op.so")
+    lib_path = os.path.join(base_path, "..", "build", "custom_ops", "libcustom_select_spikes_twoThresh.so")
+    # lib_path = os.path.join(base_path, "..", "source", "custom_select_spikes", "twoThresh", "libcustom_op.so")
+
     attributes = "_".join([str(val) for val in [sparse_size, start_tile, end_tile]])
     out = ipu.custom_ops.precompiled_user_op([state, thresholds],
                                               lib_path,
-                                              gp_path,
+                                            #   gp_path,
+                                              name="compute_sparse_spikes_op", # TF operation name
+                                              op_name="Build",
                                               separate_gradients=False, # to calculate gradients separately. Allows to only calculate weight gradient without implementing the others
                                               attributes=attributes,
                                               gradient_attributes=attributes,

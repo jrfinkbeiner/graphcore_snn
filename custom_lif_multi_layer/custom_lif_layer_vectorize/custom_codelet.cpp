@@ -417,8 +417,6 @@ public:
       }
       start_idx += weights_per_neuron;
     }
-
-  
     return true;
   }
 };
