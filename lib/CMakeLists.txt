@@ -16,6 +16,7 @@ add_library(custom_dynamic_sparse SHARED
   custom_dynamic_sparse/custom_select_spikes/twoThresh/poplar_code.hpp
   custom_dynamic_sparse/custom_codelet_path.cpp
   custom_dynamic_sparse/string_util.cpp
+  custom_dynamic_sparse/vector_util.cpp
 )
 
 target_include_directories(custom_dynamic_sparse

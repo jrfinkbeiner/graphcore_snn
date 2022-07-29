@@ -86,6 +86,7 @@ template <typename FPType>
 FPType superspike_surrogate(FPType x, FPType beta) {
   FPType one{1.0};
   return one / std::pow((beta * std::abs(x) + one), 2);
+  // return one;
 }
 
 template <typename FPType>

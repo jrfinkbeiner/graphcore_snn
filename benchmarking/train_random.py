@@ -102,8 +102,8 @@ def main(args):
     DENSE_SIZES = [1024, 1024, 1024, NUM_CLASSES]
     SPARSE_SIZES = [32, 32, 32, 8]
 
-    DENSE_SIZES = [8, 8 , NUM_CLASSES]
-    SPARSE_SIZES = [4, 4, 4]
+    # DENSE_SIZES = [8, 8 , NUM_CLASSES]
+    # SPARSE_SIZES = [4, 4, 4]
 
 
 

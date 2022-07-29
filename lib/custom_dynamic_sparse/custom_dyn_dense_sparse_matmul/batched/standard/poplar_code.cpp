@@ -106,9 +106,11 @@ void calcWeightsGrad(poplar::Graph &graph, poplar::Tensor &dLdweights, poplar::T
   prog.add(poplar::program::Execute(cs));
 }
 
+// void calcWeightsGrad(poplar::Graph &graph, poplar::Tensor &dLdweights, poplar::Tensor  &fwdInpSpikeIds, poplar::Tensor  &fwdNumInpSpikes, 
+//                         poplar::Tensor &dLdy, poplar::ComputeSet &cs, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai) {
 void calcWeightsGrad(poplar::Graph &graph, poplar::Tensor &dLdweights, poplar::Tensor  &fwdInpSpikeIds, poplar::Tensor  &fwdNumInpSpikes, 
                         poplar::Tensor &dLdy, poplar::ComputeSet &cs) {
-  
+
   // graph.addCodelets("custom_codelet.gp");
   const size_t numTiles = graph.getTarget().getNumTiles();
 
@@ -131,6 +133,8 @@ void calcWeightsGrad(poplar::Graph &graph, poplar::Tensor &dLdweights, poplar::T
       poplar::Tensor neuronDLdWeights = dLdweights.slice(neuronRange); // TODO does this create new tensors ?
       poplar::Tensor neuronDLdy = dLdy.slice(neuronRange, 1);
 
+      // popops::zero(graph, neuronDLdWeights, prog, {dnai, "zero neuronDLdWeights"}); // debug, zero should happen in the custom op
+
       // TODO ? should perform worker spilt and rewrite Vertex code to take multiple neurons ?
       // TODO ? does that reduce memory for code and potentially overhead for spawning vertices ?
       // !!! TODO !!! really row wise or just column wise as in `calcLIFInpSpikesGrad` case ?
@@ -139,7 +143,7 @@ void calcWeightsGrad(poplar::Graph &graph, poplar::Tensor &dLdweights, poplar::T
       for (unsigned ineuron = 0; ineuron < numNeuronsThisThile; ++ineuron){
         auto v = graph.addVertex(cs, poputil::templateVertex("DynDenseBinarySparseProductGradWeight", dtype),
                                   // {{"dLdy", neuronDLdy.slice(ineuron, ineuron+1, 1)},
-                                  {{"dLdy", neuronDLdy.dimShuffle({1, 0})[0]},
+                                  {{"dLdy", neuronDLdy.dimShuffle({1, 0})[ineuron]},
                                   {"fwd_inp_spikes_ids", fwdInpSpikeIds.flatten()}, // TODO flatten here or does a Tensor structure exist for vertex Input ?
                                   {"fwd_num_inp_spikes", fwdNumInpSpikes.flatten()}, // TODO does this copy over for every neuron or once onto the tile ?
                                   {"dLdweights_row", neuronDLdWeights[ineuron]},
@@ -164,6 +168,7 @@ void calcInpSpikesGradRowWise(poplar::Graph &graph, const std::vector<poplar::Te
   // TODO include checks for same vector lengths
   for (unsigned i = 0; i < num_layers; ++i){
     poplar::Tensor dLdx = calcInpSpikesGradRowWise(graph, weights[i], fwdInpSpikeIds[i], dLdy[i], cs);
+    popops::zero(graph, dLdx, prog, {dnai, "zero dLdx"});
     dLdx_vec.push_back(dLdx);
   }
   prog.add(poplar::program::Execute(cs));
@@ -185,6 +190,7 @@ poplar::Tensor calcInpSpikesGradRowWise(poplar::Graph &graph, poplar::Tensor &we
                                   poplar::Tensor &dLdy, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai) {  
   auto cs = graph.addComputeSet({dnai, "calcLIFInpSpikesGradRowWise"});
   poplar::Tensor dLdx = calcInpSpikesGradRowWise(graph, weights, fwdInpSpikeIds, dLdy, cs);
+  popops::zero(graph, dLdx, prog, {dnai, "zero dLdx"});
   prog.add(poplar::program::Execute(cs));
 
   // std::cout << "\nBefore Reduce\n" << std::endl;

@@ -30,7 +30,7 @@ else()
 endif()
 
 
-message("CMAKE_CXX_FLAGS = ${CMAKE_CXX_FLAGS}")
+# message("CMAKE_CXX_FLAGS = ${CMAKE_CXX_FLAGS}")
 
 add_subdirectory(lib)
 add_subdirectory(custom_ops)

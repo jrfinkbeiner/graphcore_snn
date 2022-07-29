@@ -1031,6 +1031,18 @@ extern "C" poplar::program::Program Build(
     }
   }
 
+
+  // std::cout << "SPARSE LAYER"<< std::endl;
+  // for (poplar::Tensor &ws: weights){
+  //   auto neuronTileMapping = graph.getTileMapping(ws.dimShuffle({1,0})[0], true);
+  //   for (unsigned tile=0; tile<1472; ++tile){
+  //     if (neuronTileMapping[tile].size() > 0){
+  //       std::cout << tile << ": " << neuronTileMapping[tile].size() << std::endl;
+  //     }
+  //   }
+  // }
+
+
   size_t seq_len = inp_spike_ids_fptype[0].dim(0);
   size_t batchsize = inp_spike_ids_fptype[0].dim(1);
   std::vector<size_t> dense_sizes = {weights[0].dim(1)};

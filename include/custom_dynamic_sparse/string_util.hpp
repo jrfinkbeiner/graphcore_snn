@@ -9,7 +9,7 @@ std::vector<size_t> convert_vecOfStr_to_vecOfSizet(const std::string& s, char se
 // template<typename T>
 // void printVector(std::vector<T> vec);
 template<typename T>
-void printVector(std::vector<T> vec) {
+void printVector(std::vector<T> &vec) {
   std::cout << "{";
   for (auto val: vec) {
     std::cout << val << ", ";

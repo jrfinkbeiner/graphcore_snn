@@ -67,16 +67,17 @@ class KerasMultiLIFLayerBase(keras.layers.Layer):
             shape = get_shape(in_feat, out_feat, self.transpose_weights)
             return tf.random.uniform(shape, minval=-limit, maxval=limit, dtype=dtype)
 
-        w_init = tf.random_normal_initializer(0.0, 5.0, self.seed)
-        # w_init = tf.random_normal_initializer(0.0, 2.0, self.seed)
-        
+        # w_init = tf.random_normal_initializer(0.0, 10.0, self.seed)
+        w_init = tf.random_normal_initializer(0.0, 2.0, self.seed)
 
         self.ws = [tf.Variable(
             initial_value=w_init(shape=get_shape(self.dense_shapes[ilay], self.dense_shapes[ilay+1], self.transpose_weights), dtype=tf.float32),
             # initial_value=custom_init(in_feat=self.dense_shapes[ilay], out_feat=self.dense_shapes[ilay+1], dtype=tf.float32),
+            # initial_value=1*tf.ones(shape=get_shape(self.dense_shapes[ilay], self.dense_shapes[ilay+1], self.transpose_weights), dtype=tf.float32),
             trainable=True,
             name=f"weights_{ilay}",
         ) for ilay in range(self.num_layers)]
+
         self.decay_constants = [tf.Variable(
             initial_value=tf.cast(tf.fill((self.dense_shapes[ilay],), self.decay_constant_value, f"decay_cosntants_{ilay}"), tf.float32),
             trainable=False,

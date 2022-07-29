@@ -31,7 +31,7 @@ function(add_gp_executables)
     # message(FILENAME)
     # message(${FILENAME})
     # message(FULL_GP_NAME)
-    message("FULL_GP_NAME: ${FULL_GP_NAME}")
+    # message("FULL_GP_NAME: ${FULL_GP_NAME}")
 
     set(FULL_CPP_SOURCE_NAME "${CMAKE_CURRENT_SOURCE_DIR}/${CPP_SOURCE}")
 

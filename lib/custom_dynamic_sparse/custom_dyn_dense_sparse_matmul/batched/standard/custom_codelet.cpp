@@ -128,16 +128,25 @@ public:
 
   bool compute() {
     size_t batchsize{dLdy.size()};
+    unsigned start_idx{0};
+
+    // // TODO why is this necessary? popops::zero should do the trick! (-> Tensor allocation was messed up)
+    // unsigned num_neurons = dLdweights_row.size();
+    // for (unsigned i = 0; i < num_neurons; ++i) {
+    //   dLdweights_row[i] = 0.0;
+    // }
+
     for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
       auto dLdyi = dLdy[ibatch];
-      const unsigned start_idx{sparse_out_dim*ibatch};
       const auto end{fwd_num_inp_spikes[ibatch]};
       // TODO this loop could use multiple threads: It is guarantted that a single elemnent is only touched once! 
       // but for that batches have to be handled sequentially
       // for (unsigned i = workerId; i < end; i+=numWorkers) {
       for (unsigned i = 0; i < end; ++i) {
         dLdweights_row[fwd_inp_spikes_ids[start_idx+i]] += dLdyi;
+        // dLdweights_row[fwd_inp_spikes_ids[start_idx+i]] = 1.0; // TODO change back!
       }
+      start_idx += sparse_out_dim;
     }
     return true;
   }

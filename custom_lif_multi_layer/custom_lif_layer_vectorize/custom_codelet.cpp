@@ -179,7 +179,6 @@ public:
   poplar::Output<poplar::Vector<unsigned>> repeated_out_spikes_ids;
   poplar::Output<unsigned> repeated_num_out_spikes;
 
-
   bool compute() {
     unsigned numSpikesCounter{0};
     unsigned numGradsCounter{0};
@@ -189,6 +188,7 @@ public:
     auto sizeSparseOut = repeated_out_spikes_ids.size();
 
     for (unsigned i = 0; i < numStates; ++i) {
+      // TODO reformulate to not use + instead of - operations 
       if ((state[i] > thresholds[i]*secThreshMul) || (numStates - i <= (sizeSparseOut-(numSpikesCounter+numGradsCounter)))) {
         if (state[i] > thresholds[i]) {
           repeated_out_spikes_ids[numSpikesCounter] = state_id;
