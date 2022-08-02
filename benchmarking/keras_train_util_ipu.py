@@ -157,6 +157,45 @@ def dyn_dense_binary_sparse_matmul_op(matrix: tf.Tensor, sparse_vec: SparseBinar
     print(out.dtype)
     return out
 
+def dyn_dense_binary_sparse_matmul_op_parallel(matrix: List[tf.Tensor], sparse_vec: List[SparseBinaryVec], tileMappings: List[TileMapping], first_layer_grad_bool: bool):
+    assert isinstance(matrix, (list, tuple))
+    num_layers = len(matrix)
+    assert len(sparse_vec) == num_layers
+    assert len(tileMappings) == num_layers
+        
+    sparse_ids = [spvec.ids for spvec in sparse_vec] 
+    num_nzelements = [spvec.num_nzelements for spvec in sparse_vec]
+
+    outputs = {
+        "output_types": [mat.dtype for mat in matrix],
+        "output_shapes": [tf.TensorShape([*spids.shape[:-1], mat.shape[0]]) for spids, mat in zip(sparse_ids, matrix)],
+    }
+
+    base_path = os.path.realpath(os.path.dirname(__file__))
+    # lib_path = os.path.join(base_path, "..", "custom_dyn_dense_sparse_matmul", "batched", "libcustom_op.so")
+    # gp_path  = os.path.join(base_path, "..", "custom_dyn_dense_sparse_matmul", "batched", "custom_codelet.gp")
+    # lib_path = os.path.join(base_path, "..", "test_build", "lib", "custom_dynamic_sparse", "custom_dyn_dense_sparse_matmul", "batched", "standard", "libcustom_op.so")
+    lib_path = os.path.join(base_path, "..", "build", "custom_ops", "libcustom_dyn_dense_sparse_matmul_standard_parallel.so")
+    # gp_path  = os.path.join(base_path, "..", "source", "custom_dyn_dense_sparse_matmul", "batched", "standard", "custom_codelet.gp")
+
+    start_tiles = [tileMapping.start_tile for tileMapping in tileMappings]
+    end_tiles = [tileMapping.end_tile for tileMapping in tileMappings]
+    attributes = "_".join([str(val) for val in [*start_tiles, *end_tiles]])
+
+    inputs_with_gradients = list(range(2*num_layers)) if first_layer_grad_bool else [*list(range(num_layers)), *list(range(num_layers+1, 2*num_layers))] 
+
+    out = ipu.custom_ops.precompiled_user_op([*matrix, *sparse_ids, *num_nzelements],
+                                              lib_path,
+                                            #   gp_path,
+                                              name="dyn_dense_binary_sparse_matmul_parallel_op", # TF operation name
+                                              op_name="Build",
+                                              attributes=attributes,
+                                              gradient_attributes=attributes, # TODO only because of not working automatic alloc
+                                              inputs_with_gradients=inputs_with_gradients, # TODO is this working ?
+                                              separate_gradients=False, # to calculate gradients separately. Allows to only calculate weight gradient without implementing the others
+                                              outs=outputs)
+    return out
+
 
 def compute_sparse_spikes(state: tf.Tensor, thresholds: tf.Tensor, sparse_size: int, tileMapping: TileMapping):
 
@@ -185,7 +224,6 @@ def compute_sparse_spikes(state: tf.Tensor, thresholds: tf.Tensor, sparse_size: 
                                               gradient_attributes=attributes,
                                               outs=outputs)
     spike_ids, num_spikes = out[0], out[1]
-    print(spike_ids.dtype, num_spikes.dtype)
     return SparseBinaryVec(spike_ids, num_spikes)
 
 def compute_sparse_spikes_parallel(states: List[tf.Tensor], thresholds: List[tf.Tensor], sparse_sizes: List[int], tileMappings: List[TileMapping]):
@@ -333,18 +371,14 @@ def pure_tf_lif_step_sparse(weights, state, inp_, decay_constants, thresholds, s
     # start_tile = 1
     # end_tile = int(new_state.shape[0]+1)
 
-    print(decay_constants.shape)
-    print(new_state.shape)
-
     spikes_out = compute_sparse_spikes(new_state, thresholds, sparse_dim, spikeGen_tileMapping)
     return spikes_out, new_state
 
 def pure_tf_lif_step_sparse_parallel(weights, neuron_states, input_spikes, decay_constants, thresholds, sparse_dim, neuron_tileMapping, spikeGen_tileMapping, state_bins):
     
     num_layers = len(weights)
-    # TODO implement fused parallel custom operation for dynamic dense-sparse matmul 
-    print("Fused parallel custom operation for dynamic dense-sparse matmul for not implemented yet!")
-    syn_inps = [dyn_dense_binary_sparse_matmul_op(weights[i], input_spikes[i], neuron_tileMapping[i]) for i in range(num_layers)]
+    # syn_inps = [dyn_dense_binary_sparse_matmul_op(weights[i], input_spikes[i], neuron_tileMapping[i]) for i in range(num_layers)]
+    syn_inps = dyn_dense_binary_sparse_matmul_op_parallel(weights, input_spikes[:-1], neuron_tileMapping, False)
 
     decay_constants_concat = tf.concat(decay_constants, axis=0)
     thresholds_concat = tf.concat(thresholds, axis=0)
@@ -597,11 +631,8 @@ def value_and_grad_on_batch(model, x, y, sparse=False, out_batch_first=True):
             out = sparse2dense_ipu(out, y.shape[-1])
         if not out_batch_first:
             out = tf.transpose(out , perm=[1, 0, 2])
-        print("000100")
         loss = simple_loss_fn_dense(y, out)
-        print("000200")
         gradients = tape.gradient(loss, model.trainable_weights)
-    print("000300")
     return out, gradients
 
 def check_values(a, b, name, *,rtol=1e-4, **kwargs):
@@ -627,7 +658,7 @@ def test_sparse_vs_dense():
     batchsize_per_step = batchsize
     seq_len = 2 
     # dense_sizes = [102, 801, 799]
-    dense_sizes = [124, 256, 64]
+    dense_sizes = [128, 256, 64]
     # dense_sizes = [4, 4, 4]
     # dense_sizes = [4*1024, 1024, 1024, 1024]
     sparse_sizes = dense_sizes
@@ -657,24 +688,17 @@ def test_sparse_vs_dense():
     data_sparse = ((data_sparse["inp_spike_ids"], data_sparse["num_inp_spikes"]), data_sparse["targets"])
     data_dense = iter(dataset_dense).next().values()
 
-    # with strategy.scope():
-    #     model_dense_ipu = keras.Model(*model_fn_dense(seq_len, dense_sizes, decay_constant, threshold, batchsize, seed=model_seed, return_all=False))
-    #     out_ipu_dense, grad_ipu_dense =  strategy.run(value_and_grad_on_batch, args=[model_dense_ipu, *data_dense, False])
+    with strategy.scope():
+        model_dense_ipu = keras.Model(*model_fn_dense(seq_len, dense_sizes, decay_constant, threshold, batchsize, seed=model_seed, return_all=False))
+        out_ipu_dense, grad_ipu_dense =  strategy.run(value_and_grad_on_batch, args=[model_dense_ipu, *data_dense, False])
 
-    # with strategy.scope():
-    #     model_sparse_layer = keras.Model(*model_fn_sparse_layer(sparse_sizes, seq_len, dense_sizes, decay_constant, threshold, batchsize_per_step, seed=model_seed, return_all=False, transpose_weights=False))
-    #     out_sparse_layer, grad_sparse_layer =  strategy.run(value_and_grad_on_batch, args=[model_sparse_layer, *data_sparse, True, False])
-    #     # out_sparse_ops, grad_sparse_ops =  strategy.run(value_and_grad_on_batch, args=[model_sparse_layer, *data_sparse, True, False])
+    with strategy.scope():
+        model_sparse_layer = keras.Model(*model_fn_sparse_layer(sparse_sizes, seq_len, dense_sizes, decay_constant, threshold, batchsize_per_step, seed=model_seed, return_all=False, transpose_weights=False))
+        out_sparse_layer, grad_sparse_layer =  strategy.run(value_and_grad_on_batch, args=[model_sparse_layer, *data_sparse, True, False])
 
-    
     with strategy.scope():
         model_sparse_ops = keras.Model(*model_fn_sparse_ops(sparse_sizes, seq_len, dense_sizes, decay_constant, threshold, batchsize_per_step, seed=model_seed, return_all=False))
-        print("Initialized model")
-
-        # ipu.utils.move_variable_initialization_to_cpu()    
-        # session.run(variables.global_variables_initializer())
         out_sparse_ops, grad_sparse_ops =  strategy.run(value_and_grad_on_batch, args=[model_sparse_ops, *data_sparse, True])
-        print("Sparse op DONE")
 
     model_dense = keras.Model(*model_fn_dense(seq_len, dense_sizes, decay_constant, threshold, batchsize, seed=model_seed, return_all=False))
     out_dense, grad_dense = value_and_grad_on_batch(model_dense, *data_dense, False)
@@ -684,17 +708,18 @@ def test_sparse_vs_dense():
     print("\ndata dense")
     print(data_dense)
     print("\nforward")
-    # print(out_ipu_dense.shape)
+    print(out_ipu_dense.shape)
     print(out_dense.shape)
-    # print(out_ipu_dense)
+    print(out_ipu_dense)
     print(out_dense)
     print(out_sparse_ops)
     print("\ngrad")
-    # print(len(grad_ipu_dense))
-    # print(len(grad_sparse_layer))
+    print(len(grad_ipu_dense))
+    print(len(grad_sparse_layer))
     print(len(grad_dense))
-    # print(grad_ipu_dense)
-    # print(grad_sparse_layer)
+    print()
+    print(grad_ipu_dense)
+    print(grad_sparse_layer)
     print(grad_sparse_ops)
     print(grad_dense)
 
@@ -723,33 +748,33 @@ def test_sparse_vs_dense():
 
     print("\nMAKE SURE TO USE A WEIGHT INIT THAT USES THE SEED!!!\n")
 
-    # print()
-    # check_values(out_ipu_dense, out_dense, f"dense - out_spikes", rtol=1e-4, atol=1e-6)
-    # for i in range(num_layers):
-    #     check_values(grad_ipu_dense[i], grad_dense[i], f"dense - grad_weights[{i}]", rtol=1e-4, atol=1e-6)
-    #     # check_values(model_dense_ipu.trainable_weights[i], model_dense.trainable_weights[i], f"weights[{i}]", rtol=1e-4, atol=1e-6)
-    # print()
-    # check_values(out_sparse_layer, out_dense, f"sparse layer - out_spikes", rtol=1e-4, atol=1e-6)
-    # for i in range(num_layers):
-    #     check_values(grad_sparse_layer[i], grad_dense[i], f"sparse layer - grad_weights[{i}]", rtol=1e-4, atol=1e-6)
-    #     # check_values(model_sparse_layer.trainable_weights[i], model_dense.trainable_weights[i], f"weights[{i}]", rtol=1e-4, atol=1e-6)
+    print()
+    check_values(out_ipu_dense, out_dense, f"dense - out_spikes", rtol=1e-4, atol=1e-6)
+    for i in range(num_layers):
+        check_values(grad_ipu_dense[i], grad_dense[i], f"dense - grad_weights[{i}]", rtol=1e-4, atol=1e-6)
+        # check_values(model_dense_ipu.trainable_weights[i], model_dense.trainable_weights[i], f"weights[{i}]", rtol=1e-4, atol=1e-6)
+    print()
+    check_values(out_sparse_layer, out_dense, f"sparse layer - out_spikes", rtol=1e-4, atol=1e-6)
+    for i in range(num_layers):
+        check_values(grad_sparse_layer[i], grad_dense[i], f"sparse layer - grad_weights[{i}]", rtol=1e-4, atol=1e-6)
+        # check_values(model_sparse_layer.trainable_weights[i], model_dense.trainable_weights[i], f"weights[{i}]", rtol=1e-4, atol=1e-6)
     print()
     check_values(out_sparse_ops, out_dense, f"sparse ops - out_spikes", rtol=1e-4, atol=1e-6)
     for i in range(num_layers):
         check_values(grad_sparse_ops[i], grad_dense[i], f"sparse ops - grad_weights[{i}]", rtol=1e-4, atol=1e-6)
         # check_values(model_sparse_ops.trainable_weights[i], model_dense.trainable_weights[i], f"weights[{i}]", rtol=1e-4, atol=1e-6)
 
-    # print()
-    # check_values(out_ipu_dense, out_sparse_layer, f"sparse layer vs dense ipu - out_spikes", rtol=1e-4, atol=1e-6)
-    # for i in range(num_layers):
-    #     check_values(grad_ipu_dense[i], grad_sparse_layer[i], f"sparse layer vs dense ipu - grad_weights[{i}]", rtol=1e-4, atol=1e-6)
-    #     # check_values(model_sparse_ops.trainable_weights[i], model_dense.trainable_weights[i], f"weights[{i}]", rtol=1e-4, atol=1e-6)
+    print()
+    check_values(out_ipu_dense, out_sparse_layer, f"sparse layer vs dense ipu - out_spikes", rtol=1e-4, atol=1e-6)
+    for i in range(num_layers):
+        check_values(grad_ipu_dense[i], grad_sparse_layer[i], f"sparse layer vs dense ipu - grad_weights[{i}]", rtol=1e-4, atol=1e-6)
+        # check_values(model_sparse_ops.trainable_weights[i], model_dense.trainable_weights[i], f"weights[{i}]", rtol=1e-4, atol=1e-6)
 
-    # print()
-    # check_values(out_sparse_ops, out_sparse_layer, f"sparse layer vs sparse ops - out_spikes", rtol=1e-4, atol=1e-6)
-    # for i in range(num_layers):
-    #     check_values(grad_sparse_ops[i], grad_sparse_layer[i], f"sparse layer vs sparse ops - grad_weights[{i}]", rtol=1e-4, atol=1e-6)
-    #     # check_values(model_sparse_ops.trainable_weights[i], model_dense.trainable_weights[i], f"weights[{i}]", rtol=1e-4, atol=1e-6)
+    print()
+    check_values(out_sparse_ops, out_sparse_layer, f"sparse layer vs sparse ops - out_spikes", rtol=1e-4, atol=1e-6)
+    for i in range(num_layers):
+        check_values(grad_sparse_ops[i], grad_sparse_layer[i], f"sparse layer vs sparse ops - grad_weights[{i}]", rtol=1e-4, atol=1e-6)
+        # check_values(model_sparse_ops.trainable_weights[i], model_dense.trainable_weights[i], f"weights[{i}]", rtol=1e-4, atol=1e-6)
 
 
 

@@ -6,4 +6,4 @@
 # python3 train_random.py --use_ipu=1 --impl_method=sparse_ops --profile_run=1 --transpose_weights=0
 # POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports/vec_test_random_large_2states_manyReduce"}' python3 train_random.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --transpose_weights=0
 # POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports/vec_random_2states_transpose_twoRow"}' python3 train_random.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --transpose_weights=1
-POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports_ops/sparse_ops_fusedParallel"}' python3 train_random.py --use_ipu=1 --impl_method=sparse_ops --profile_run=1 --transpose_weights=0
+POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports_ops/sparse_ops_parallelLoops"}' python3 train_random.py --use_ipu=1 --impl_method=sparse_ops --profile_run=1 --transpose_weights=0

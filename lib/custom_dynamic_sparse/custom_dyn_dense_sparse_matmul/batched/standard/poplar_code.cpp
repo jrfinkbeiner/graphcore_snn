@@ -159,30 +159,43 @@ void calcWeightsGrad(poplar::Graph &graph, poplar::Tensor &dLdweights, poplar::T
 }
 
 
-void calcInpSpikesGradRowWise(poplar::Graph &graph, const std::vector<poplar::Tensor> &weights, const std::vector<poplar::Tensor> &fwdInpSpikeIds,
-                                  const std::vector<poplar::Tensor> &dLdy, std::vector<poplar::Tensor> &dLdInpSpikes,
+std::vector<poplar::Tensor> calcInpSpikesGradRowWise(poplar::Graph &graph, const std::vector<poplar::Tensor> &weights, const std::vector<poplar::Tensor> &fwdInpSpikeIds,
+                                  const std::vector<poplar::Tensor> &dLdy, const bool &grad_for_first_inp,
                                   poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai) {  
   auto cs = graph.addComputeSet({dnai, "calcLIFInpSpikesGradRowWise"});
   size_t num_layers = weights.size();
   std::vector<poplar::Tensor> dLdx_vec;
+  
+  unsigned start_layer = grad_for_first_inp? 0 : 1;
+
   // TODO include checks for same vector lengths
-  for (unsigned i = 0; i < num_layers; ++i){
+  for (unsigned i = start_layer; i < num_layers; ++i){
     poplar::Tensor dLdx = calcInpSpikesGradRowWise(graph, weights[i], fwdInpSpikeIds[i], dLdy[i], cs);
     popops::zero(graph, dLdx, prog, {dnai, "zero dLdx"});
     dLdx_vec.push_back(dLdx);
+    
   }
   prog.add(poplar::program::Execute(cs));
 
+  std::vector<poplar::Tensor> dLdInpSpikes;
   popops::ReduceParams reduceParams = popops::ReduceParams(popops::Operation::ADD, false); 
   std::vector<popops::SingleReduceOp> single_reduce_ops;
-  for (unsigned ilay=0; ilay<num_layers-1; ++ilay){
+  for (unsigned ilay=start_layer; ilay<num_layers; ++ilay){
     single_reduce_ops.push_back(
-      popops::SingleReduceOp(dLdx_vec[ilay], {0}, reduceParams, "single reduce rowwise inpSpikeGrads")
+      popops::SingleReduceOp(dLdx_vec[ilay-start_layer], {0}, reduceParams, "single reduce rowwise inpSpikeGrads")
     );
+    // dLdInpSpikes.push_back(graph.addVariable(weights[ilay].elementType(), {1, fwdInpSpikeIds[ilay].dim(0), fwdInpSpikeIds[ilay].dim(1)}, {dnai, "init dLdInpSpikes"}));
   }
-  std::vector<poplar::Tensor> reduce_outs;
-  std::transform(dLdInpSpikes.begin(), dLdInpSpikes.end(), std::back_inserter(reduce_outs), [](poplar::Tensor &t) -> poplar::Tensor {return t;});
-  reduceMany(graph, single_reduce_ops, reduce_outs, prog, {dnai, "add rowwise inpSpikeGrads"});
+
+  for (unsigned i = 0; i < num_layers-1; ++i){
+    std::cout << "dLdx_vec" << dLdx_vec[i].shapeToString() << std::endl;
+    // std::cout << "dLdInpSpikes" << dLdInpSpikes[i].shapeToString() << std::endl;
+  }
+  
+  // std::vector<poplar::Tensor> dLdInpSpikes;
+  // std::transform(dLdInpSpikes.begin(), dLdInpSpikes.end(), std::back_inserter(reduce_outs), [](poplar::Tensor &t) -> poplar::Tensor {return t;});
+  reduceMany(graph, single_reduce_ops, dLdInpSpikes, prog, {dnai, "add rowwise inpSpikeGrads"});
+  return dLdInpSpikes;
 }
 
 

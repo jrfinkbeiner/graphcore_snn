@@ -5,6 +5,7 @@
 #include <poputil/exceptions.hpp>
 #include <popops/Reduce.hpp>
 #include <popops/Zero.hpp>
+#include <popops/Cast.hpp>
 
 #include <iostream>
 
@@ -85,8 +86,14 @@ extern "C" poplar::program::Program Build(
   poplar::Tensor out_spikes_ids = out_spikes.first;
   poplar::Tensor num_out_spikes = out_spikes.second;
 
-  outputs.push_back(out_spikes_ids);
-  outputs.push_back(num_out_spikes);
+  // outputs.push_back(out_spikes_ids);
+  // outputs.push_back(num_out_spikes);
+
+  // TODO cast for now
+  auto out_spikes_ids_fptype = popops::cast(graph, out_spikes_ids, poplar::FLOAT, prog, {dnai, "cast spikes"});
+  auto num_out_spikes_int = popops::cast(graph, num_out_spikes, poplar::INT, prog, {dnai, "cast spikes"});
+  outputs.push_back(out_spikes_ids_fptype);
+  outputs.push_back(num_out_spikes_int);
   return prog;
 }
 
@@ -120,11 +127,15 @@ poplar::program::Program Build_grad(
     const std::string& debug_prefix) {
 
   poplar::DebugNameAndId dnai{debug_prefix, "/ComputeSpikesTwoThreshsGrad"};
+  auto prog = poplar::program::Sequence();
+
 
   auto state = fwd_inputs[0];
   auto thresholds = fwd_inputs[1];
-  auto out_spikes_ids = fwd_outputs[0];
-  auto num_out_spikes = fwd_outputs[1];
+  // TODO cast for now!!!
+  auto out_spikes_ids_fptype = fwd_outputs[0];
+  auto out_spikes_ids = popops::cast(graph, out_spikes_ids_fptype, poplar::UNSIGNED_INT, prog, {dnai, "cast spikes"});
+  // auto num_out_spikes = fwd_outputs[1];
 
   auto dLdoutSpikes = gradients[0];
 
@@ -141,7 +152,7 @@ poplar::program::Program Build_grad(
   // const size_t batchsize = state.dim(0);
   auto dtype = state.elementType();
 
-  auto prog = poplar::program::Sequence();
+
 
   poplar::Tensor dLdState = graph.clone(state, {dnai, "init dLdState"});
   popops::zero(graph, dLdState, prog, {dnai, "zero dLdState"});

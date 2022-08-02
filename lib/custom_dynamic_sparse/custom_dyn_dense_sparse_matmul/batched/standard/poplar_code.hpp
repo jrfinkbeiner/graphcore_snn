@@ -45,8 +45,8 @@ void calcWeightsGrad(poplar::Graph &graph, poplar::Tensor &dLdweights, poplar::T
 // void calcWeightsGrad(poplar::Graph &graph, poplar::Tensor &dLdweights, poplar::Tensor  &fwdInpSpikeIds, poplar::Tensor  &fwdNumInpSpikes, 
 //                         poplar::Tensor &dLdy, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai);
 
-void calcInpSpikesGradRowWise(poplar::Graph &graph, const std::vector<poplar::Tensor> &weights, const std::vector<poplar::Tensor> &fwdInpSpikeIds,
-                                  const std::vector<poplar::Tensor> &dLdy, std::vector<poplar::Tensor> &dLdInpSpikes,
+std::vector<poplar::Tensor> calcInpSpikesGradRowWise(poplar::Graph &graph, const std::vector<poplar::Tensor> &weights, const std::vector<poplar::Tensor> &fwdInpSpikeIds,
+                                  const std::vector<poplar::Tensor> &dLdy, const bool &grad_for_first_inp,
                                   poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai);
 
 poplar::Tensor calcInpSpikesGradRowWise(poplar::Graph &graph, poplar::Tensor &weights, poplar::Tensor &fwdInpSpikeIds, 

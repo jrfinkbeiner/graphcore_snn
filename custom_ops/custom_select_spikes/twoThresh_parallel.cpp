@@ -85,7 +85,14 @@ extern "C" poplar::program::Program Build(
   poplar::DebugNameAndId dnai{debug_prefix, "/ComputeSpikesTwoThreshsParallel"};
   auto prog = poplar::program::Sequence();
   std::vector<poplar::Tensor> out_spikes = select_spikes_two_threshs(graph, states, thresholds, sparseSizes, startTiles, endTiles, prog, dnai);
-  extend_tensor_vector(out_spikes, outputs);
+  
+  // extend_tensor_vector(out_spikes, outputs);
+  
+  // TODO later just reinterpret cast !!!
+  std::vector<poplar::Tensor> out_spikes_ids_fptype = cast_tensor_vector(graph, {out_spikes.begin(), out_spikes.begin()+num_layers}, poplar::FLOAT, prog, {dnai, "cast spikes"});
+  std::vector<poplar::Tensor> num_out_spikes_int = cast_tensor_vector(graph, {out_spikes.begin()+num_layers, out_spikes.begin()+2*num_layers}, poplar::INT, prog, {dnai, "cast spikes"});
+  extend_tensor_vector(out_spikes_ids_fptype, outputs);
+  extend_tensor_vector(num_out_spikes_int, outputs);
   return prog;
 }
 
@@ -123,8 +130,10 @@ poplar::program::Program Build_grad(
   size_t num_layers = fwd_inputs.size() / 2;
   std::vector<poplar::Tensor> state(fwd_inputs.begin(),fwd_inputs.begin()+num_layers);
   std::vector<poplar::Tensor> thresholds(fwd_inputs.begin()+num_layers,fwd_inputs.begin()+2*num_layers);
-  std::vector<poplar::Tensor> out_spikes_ids(fwd_outputs.begin(), fwd_outputs.begin()+num_layers);
+  std::vector<poplar::Tensor> out_spikes_ids_fptype(fwd_outputs.begin(), fwd_outputs.begin()+num_layers);
   std::vector<poplar::Tensor> dLdoutSpikes(gradients.begin(), gradients.begin()+num_layers);
+
+  
 
   std::vector<size_t> atrribute_sizes = convert_vecOfStr_to_vecOfSizet(attributes, '_');
   std::cout << atrribute_sizes[0] << std::endl;
@@ -136,6 +145,9 @@ poplar::program::Program Build_grad(
   const std::vector<size_t> endTile(atrribute_sizes.begin()+2*num_layers, atrribute_sizes.begin()+3*num_layers);
 
   auto prog = poplar::program::Sequence();
+
+  // TODO cast for now!!!
+  std::vector<poplar::Tensor> out_spikes_ids = cast_tensor_vector(graph, out_spikes_ids_fptype, poplar::UNSIGNED_INT, prog, {dnai, "cast spikes"});
 
   std::vector<poplar::Tensor> dLdState = clone_tensor_vector(graph, state, {dnai, "init dLdState"});
   zero_tensor_vector(graph, dLdState, prog,  {dnai, "zero dLdState"});

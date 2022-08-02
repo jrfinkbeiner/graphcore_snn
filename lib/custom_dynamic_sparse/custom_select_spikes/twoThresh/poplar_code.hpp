@@ -8,10 +8,23 @@
 std::vector<poplar::Tensor> select_spikes_two_threshs(poplar::Graph &graph, std::vector<poplar::Tensor> &state, std::vector<poplar::Tensor> &thresholds, 
                                                   const std::vector<size_t> sparseSize, const std::vector<size_t> startTile, const std::vector<size_t> endTile, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai);
 
+// std::pair<poplar::Tensor, poplar::Tensor> select_spikes_two_threshs(poplar::Graph &graph, poplar::Tensor &state, poplar::Tensor &thresholds, 
+//                                                   size_t sparseSize, size_t startTile, size_t endTile, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai);
 std::pair<poplar::Tensor, poplar::Tensor> select_spikes_two_threshs(poplar::Graph &graph, poplar::Tensor &state, poplar::Tensor &thresholds, 
-                                                  size_t sparseSize, size_t startTile, size_t endTile, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai);
+                                                  const size_t sparseSize, const size_t startTile, const size_t endTile, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai);
+
+
 
 std::pair<poplar::Tensor, poplar::Tensor> select_spikes_two_threshs(poplar::Graph &graph, poplar::Tensor &state, poplar::Tensor &thresholds,
+                                                  const size_t &sparseSize, const size_t &startTile, const size_t &endTile, poplar::ComputeSet &cs);
+
+std::vector<poplar::Tensor> select_spikes_two_threshs_singleThread(poplar::Graph &graph, std::vector<poplar::Tensor> &state, std::vector<poplar::Tensor> &thresholds, 
+                                                  const std::vector<size_t> sparseSize, const std::vector<size_t> startTile, const std::vector<size_t> endTile, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai);
+
+std::pair<poplar::Tensor, poplar::Tensor> select_spikes_two_threshs_singleThread(poplar::Graph &graph, poplar::Tensor &state, poplar::Tensor &thresholds, 
+                                                  size_t sparseSize, size_t startTile, size_t endTile, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai);
+
+std::pair<poplar::Tensor, poplar::Tensor> select_spikes_two_threshs_singleThread(poplar::Graph &graph, poplar::Tensor &state, poplar::Tensor &thresholds,
                                                   size_t sparseSize, size_t startTile, size_t endTile, poplar::ComputeSet &cs);
 
 // std::pair<poplar::Tensor, poplar::Tensor> select_spikes_two_threshs(poplar::Graph &graph, poplar::Tensor &state, poplar::Tensor &thresholds, 
