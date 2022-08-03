@@ -354,8 +354,8 @@ template class LIFStateOutGrad<float>;
 
 
 template <typename FPType>
-// class [[poplar::constraint("elem(*fwd_inp_spikes_ids) != elem(*dLdweights_row)")]] LIFWeightsGrad : public poplar::Vertex {
-class LIFWeightsGrad : public poplar::Vertex {
+class [[poplar::constraint("elem(*dLdweights_row) != elem(*dLdState)")]] LIFWeightsGrad : public poplar::Vertex { // TODO maybe unnecessary here
+// class LIFWeightsGrad : public poplar::Vertex {
 // class LIFWeightsGrad : public poplar::MultiVertex {
 public:
   poplar::Input<poplar::Vector<FPType>> dLdState;
@@ -387,7 +387,9 @@ template class LIFWeightsGrad<float>;
 // template class LIFWeightsGrad<half>;
 
 template <typename FPType>
-class LIFWeightsGradMultiNeuron : public poplar::MultiVertex {
+// class LIFWeightsGradMultiNeuron : public poplar::MultiVertex {
+// class LIFWeightsGradMultiNeuron : public poplar::Vertex {
+class [[poplar::constraint("elem(*dLdweights) != elem(*dLdState)")]] LIFWeightsGradMultiNeuron : public poplar::MultiVertex {
 public:
   poplar::Input<poplar::Vector<FPType>> dLdState;
   poplar::Input<poplar::Vector<unsigned>> fwd_inp_spikes_ids;
@@ -395,13 +397,15 @@ public:
   poplar::Input<unsigned> sparse_out_dim;
   poplar::Input<unsigned> batchsize;
   poplar::Input<unsigned> num_neurons;
-  poplar::Input<unsigned> num_weights_per_neuron;
+  // poplar::Input<unsigned> num_weights_per_neuron;
 
   poplar::InOut<poplar::Vector<FPType>> dLdweights;
 
   bool compute(unsigned workerId) { // TODO vectorize operations instead of different threads for different neurons
     unsigned numWorkers = MultiVertex::numWorkers();
     for (unsigned ineuron = workerId; ineuron < num_neurons; ineuron+=numWorkers) {
+  // bool compute() {
+  //   for (unsigned ineuron = 0; ineuron < num_neurons; ++ineuron) {
       unsigned start_idx_spikes{0};
       unsigned start_idx_state{ineuron};
       for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
@@ -419,6 +423,46 @@ public:
 };
 template class LIFWeightsGradMultiNeuron<float>;
 // template class LIFWeightsGradMultiNeuron<half>;
+
+
+// template <typename FPType>
+// class LIFWeightsGradMultiNeuronVectorized : public poplar::Vertex {
+template <typename FPType>
+class [[poplar::constraint("elem(*dLdweights) != elem(*dLdState)")]] LIFWeightsGradMultiNeuronVectorized : public poplar::Vertex {
+public:
+  poplar::Input<poplar::Vector<FPType, poplar::VectorLayout::ONE_PTR, 8>> dLdState;
+  poplar::Input<poplar::Vector<unsigned>> fwd_inp_spikes_ids;
+  poplar::Input<poplar::Vector<unsigned>> fwd_num_inp_spikes;
+  poplar::Input<unsigned> sparse_out_dim;
+  poplar::Input<unsigned> batchsize;
+  poplar::Input<unsigned> num_neurons;
+  // poplar::Input<unsigned> num_weights_per_neuron;
+
+  poplar::InOut<poplar::Vector<FPType, poplar::VectorLayout::ONE_PTR, 8>> dLdweights;
+
+  bool compute() { // TODO vectorize operations instead of different threads for different neurons
+
+    unsigned start_idx_spikes{0};
+    unsigned neuron_state_id{0};
+    for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
+      const auto end{fwd_num_inp_spikes[ibatch]};
+      for (unsigned i = 0; i < end; ++i) {
+        const auto spike_idx = fwd_inp_spikes_ids[start_idx_spikes+i]*num_neurons;
+        // #pragma clang loop vectorize(enable) interleave(enable) // or -X -ffast-math to popc
+        #pragma clang loop unroll(enable)
+        for (unsigned ineuron = 0; ineuron < num_neurons; ++ineuron) {
+          dLdweights[spike_idx+ineuron] += dLdState[neuron_state_id+ineuron];
+          // ++neuron_state_id;
+        }
+      }
+      start_idx_spikes += sparse_out_dim;
+      neuron_state_id += num_neurons;
+    }
+    return true;
+  }
+};
+template class LIFWeightsGradMultiNeuronVectorized<float>;
+// template class LIFWeightsGradMultiNeuronVectorized<half>;
 
 
 template <typename FPType>
@@ -471,6 +515,81 @@ template class LIFInpSpikesGradMultiRow<float>;
 #ifdef __IPU__
 #include <ipu_vector_math>
 #include <ipu_memory_intrinsics>
+
+// class LIFWeightsGradTwoNeuronSIMD : public poplar::Vertex {
+class [[poplar::constraint("elem(*dLdweights) != elem(*dLdState)")]] LIFWeightsGradTwoNeuronSIMD : public poplar::Vertex {
+public:
+  poplar::Input<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> dLdState;
+  poplar::Input<poplar::Vector<unsigned>> fwd_inp_spikes_ids;
+  poplar::Input<poplar::Vector<unsigned>> fwd_num_inp_spikes;
+  poplar::Input<unsigned> sparse_out_dim;
+  poplar::Input<unsigned> batchsize;
+  poplar::Input<unsigned> num_neurons;
+  // poplar::Input<unsigned> num_weights_per_neuron;
+
+  poplar::InOut<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> dLdweights;
+
+  bool compute() { // TODO vectorize operations instead of different threads for different neurons
+
+    auto dLdweightsAsFloat2 = reinterpret_cast<float2 *>(&dLdweights[0]);
+    auto dLdStateFloat2 = reinterpret_cast<const float2 *>(&dLdState[0]);
+
+    unsigned start_idx_spikes{0};
+    unsigned neuron_state_id{0};
+    for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
+      const auto end{fwd_num_inp_spikes[ibatch]};
+      for (unsigned i = 0; i < end; ++i) {
+        const auto spike_idx = fwd_inp_spikes_ids[start_idx_spikes+i];
+        dLdweightsAsFloat2[spike_idx] += dLdStateFloat2[neuron_state_id];
+      }
+      start_idx_spikes += sparse_out_dim;
+      neuron_state_id += 1;
+    }
+    return true;
+  }
+};
+
+// class LIFWeightsGradMultiNeuronSIMD : public poplar::Vertex {
+class [[poplar::constraint("elem(*dLdweights) != elem(*dLdState)")]] LIFWeightsGradMultiNeuronSIMD : public poplar::Vertex {
+public:
+  poplar::Input<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> dLdState;
+  poplar::Input<poplar::Vector<unsigned>> fwd_inp_spikes_ids;
+  poplar::Input<poplar::Vector<unsigned>> fwd_num_inp_spikes;
+  poplar::Input<unsigned> sparse_out_dim;
+  poplar::Input<unsigned> batchsize;
+  poplar::Input<unsigned> num_neurons;
+  // poplar::Input<unsigned> num_weights_per_neuron;
+
+  poplar::InOut<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> dLdweights;
+
+  bool compute() { // TODO vectorize operations instead of different threads for different neurons
+
+    auto dLdweightsAsFloat2 = reinterpret_cast<float2 *>(&dLdweights[0]);
+    auto dLdStateFloat2 = reinterpret_cast<const float2 *>(&dLdState[0]);
+
+    const auto num_neurons_div2 = num_neurons / 2;
+
+    unsigned start_idx_spikes{0};
+    unsigned neuron_state_id{0};
+    for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
+      const auto end{fwd_num_inp_spikes[ibatch]};
+      for (unsigned i = 0; i < end; ++i) {
+        const auto spike_idx = fwd_inp_spikes_ids[start_idx_spikes+i]*num_neurons_div2;
+
+        // #pragma clang loop unroll(enable)
+        // #pragma clang loop unroll_count(4)
+        // #pragma clang loop unroll(full)
+        for (unsigned ineuron = 0; ineuron < num_neurons_div2; ++ineuron) {
+          dLdweightsAsFloat2[spike_idx+ineuron] += dLdStateFloat2[neuron_state_id+ineuron];
+          // ++neuron_state_id;
+        }
+      }
+      start_idx_spikes += sparse_out_dim;
+      neuron_state_id += num_neurons_div2;
+    }
+    return true;
+  }
+};
 
 class LIFInpSpikesGradTwoRowSIMD : public poplar::Vertex {
 public:
@@ -531,10 +650,11 @@ public:
 
 
 class LIFStateUpdateInPlaceTwoNeuronSIMD : public poplar::Vertex {
+// class [[poplar::constraint("elem(*weights) != elem(*syn_input)")]] LIFStateUpdateInPlaceTwoNeuronSIMD : public poplar::Vertex {
 public:
   poplar::Input<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> weights;
   poplar::InOut<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> state;
-  poplar::InOut<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> syn_input;
+  // poplar::InOut<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> syn_input;
   poplar::Input<poplar::Vector<unsigned, poplar::VectorLayout::ONE_PTR, 8>> inp_spikes_ids;
   poplar::Input<unsigned> num_inp_spikes;
   poplar::Input<poplar::Vector<float>> decay_constant; // TODO make sure it's contiguous
@@ -543,15 +663,23 @@ public:
   poplar::Input<unsigned> num_neurons;
 
   bool compute() {
-
+    float zero{0.0};
     auto weightsAsFloat2 = reinterpret_cast<const float2 *>(&weights[0]);
-    auto synInpFloat2 = reinterpret_cast<float2 *>(&syn_input[0]);
+    // auto synInpFloat2 = reinterpret_cast<float2 *>(&syn_input[0]);
+    float2 synInpFloat2 = {zero, zero};
 
-    for (unsigned i = 0; i < num_inp_spikes; ++i) {
-      synInpFloat2[0] += weightsAsFloat2[2*inp_spikes_ids[i]];
+    const auto end{num_inp_spikes}; // TODO WTF WHY DOES THIS MAKE A DIFFERENCE ?!
+    for (unsigned i = 0; i < end; ++i) {
+      // TODO what is
+      // synInpFloat2[0] += weightsAsFloat2[2*inp_spikes_ids[i]];
+      synInpFloat2 += weightsAsFloat2[inp_spikes_ids[i]];
     }
 
+    float* syn_input = reinterpret_cast<float *>(&synInpFloat2);
+
     // TODO vectorize this loop ?
+    // #pragma clang loop unroll_count(2)
+    #pragma clang loop unroll(enable)
     for (unsigned ineuron = 0; ineuron < num_neurons; ++ineuron) {
       if (state[ineuron] > threshold[ineuron]) {
         // *new_state = sum;
@@ -569,7 +697,7 @@ class LIFStateUpdateInPlaceMultiNeuronSIMD : public poplar::Vertex {
 public:
   poplar::Input<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> weights;
   poplar::InOut<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> state;
-  poplar::InOut<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> syn_input;
+  // poplar::InOut<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> syn_input;
   poplar::Input<poplar::Vector<unsigned, poplar::VectorLayout::ONE_PTR, 8>> inp_spikes_ids;
   poplar::Input<unsigned> num_inp_spikes;
   poplar::Input<poplar::Vector<float>> decay_constant; // TODO make sure it's contiguous
@@ -578,26 +706,49 @@ public:
   poplar::Input<unsigned> num_neurons;
 
   bool compute() {
-
+    float zero{0.0};
     auto weightsAsFloat2 = reinterpret_cast<const float2 *>(&weights[0]);
-    auto synInpFloat2 = reinterpret_cast<float2 *>(&syn_input[0]);
+    // auto synInpFloat2 = reinterpret_cast<float2 *>(&syn_input[0]);
+    unsigned num_neurons_div2 = num_neurons / 2;
 
-    for (unsigned i = 0; i < num_inp_spikes; ++i) {
-      for (unsigned ineuron = 0; ineuron < num_neurons / 2; ++ineuron) {
-        synInpFloat2[ineuron] += weightsAsFloat2[num_neurons*inp_spikes_ids[i]+ineuron];
+    const auto end{num_inp_spikes}; // TODO WTF WHY DOES THIS MAKE A DIFFERENCE ?!
+    for (unsigned ineuron2 = 0; ineuron2 < num_neurons_div2; ++ineuron2) {
+      float2 synInpFloat2 = {zero, zero};
+      for (unsigned i = 0; i < end; ++i) {
+        // store num_neurons_div2*inp_spikes_ids[i] somewhere to not always recompute it 
+        synInpFloat2 += weightsAsFloat2[num_neurons_div2*inp_spikes_ids[i]+ineuron2];
+      }
+
+      float* syn_input = reinterpret_cast<float *>(&synInpFloat2);
+
+      #pragma clang loop unroll(enable)
+      for (unsigned ineuron = 2*ineuron2; ineuron < 2*ineuron2+2; ++ineuron) {
+        if (state[ineuron] > threshold[ineuron]) {
+          // *new_state = sum;
+          state[ineuron] = oneMinus_decay_constant[ineuron] * syn_input[ineuron];
+        } else {
+          // *new_state = decay_constant * state + sum;
+          state[ineuron] = decay_constant[ineuron] * state[ineuron] + oneMinus_decay_constant[ineuron] * syn_input[ineuron];
+        }
       }
     }
 
-    // TODO vectorize this loop ?
-    for (unsigned ineuron = 0; ineuron < num_neurons; ++ineuron) {
+    // process remaining neuron if number of neurons not divisible by two
+    if (num_neurons % 2 != 0) {
+      const auto ineuron = num_neurons - 1;
+      float synInp = zero;
+      for (unsigned i = 0; i < end; ++i) {
+        synInp += weights[num_neurons*inp_spikes_ids[i]+ineuron];
+      }
       if (state[ineuron] > threshold[ineuron]) {
         // *new_state = sum;
-        state[ineuron] = oneMinus_decay_constant[ineuron] * syn_input[ineuron];
+        state[ineuron] = oneMinus_decay_constant[ineuron] * synInp;
       } else {
         // *new_state = decay_constant * state + sum;
-        state[ineuron] = decay_constant[ineuron] * state[ineuron] + oneMinus_decay_constant[ineuron] * syn_input[ineuron];
+        state[ineuron] = decay_constant[ineuron] * state[ineuron] + oneMinus_decay_constant[ineuron] * synInp;
       }
     }
+
     return true;
   }
 };
