@@ -91,7 +91,7 @@ extern "C" poplar::program::Program Build(
 
   // TODO cast for now
   auto out_spikes_ids_fptype = popops::cast(graph, out_spikes_ids, poplar::FLOAT, prog, {dnai, "cast spikes"});
-  auto num_out_spikes_int = popops::cast(graph, num_out_spikes, poplar::INT, prog, {dnai, "cast spikes"});
+  auto num_out_spikes_int = popops::cast(graph, num_out_spikes, poplar::FLOAT, prog, {dnai, "cast spikes"}); // TODO change back to INT
   outputs.push_back(out_spikes_ids_fptype);
   outputs.push_back(num_out_spikes_int);
   return prog;
@@ -168,9 +168,9 @@ poplar::program::Program Build_grad(
                                       dLdoutSpikes, out_spikes_ids, dLdState,
                                       startTile, endTile, prog, dnai);
 
-  poplar::Tensor dLdthreshs = graph.clone(thresholds, {dnai, "init dLdthreshs"});
-  popops::zero(graph, dLdthreshs, prog, {dnai, "zero dLdthreshs"});
-  outputs.push_back(dLdthreshs);
+  // poplar::Tensor dLdthreshs = graph.clone(thresholds, {dnai, "init dLdthreshs"});
+  // popops::zero(graph, dLdthreshs, prog, {dnai, "zero dLdthreshs"});
+  // outputs.push_back(dLdthreshs);
 
   return prog;
 }

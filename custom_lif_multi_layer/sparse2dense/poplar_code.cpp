@@ -8,15 +8,7 @@
 #include <poputil/VertexTemplates.hpp>
 #include <poputil/exceptions.hpp>
 #include <popops/Zero.hpp>
-// #include <poplibs_support/logging.hpp> // TODO no logging file...
-#include <popnn/Rnn.hpp>
-#include <popnn/NonLinearityDef.hpp> // TODO delete after sigmoid non-lin was replaced by custom non-lin
-// #include "RnnUtil.hpp"
-#include <popops/ElementWise.hpp>
-#include <popops/TopK.hpp>
-#include <popops/SortOrder.hpp>
-
-// #include "RnnUtil.hpp" // only for boost::optional
+#include <popops/Cast.hpp>
 
 //---------------------------------------------- Build functions -----------------------------------------
 
@@ -47,31 +39,39 @@ extern "C" poplar::program::Program Build(
     throw poputil::poplibs_error("Sparse2Dense requires 6 inputs");
   }
 
+  std::cout << "\nxparse2dense NUM_TILES: " << graph.getTarget().getNumTiles() << std::endl;
+
   poplar::DebugNameAndId dnai{debug_prefix};
 
-  poplar::Tensor spike_ids = inputs[0];
-  poplar::Tensor num_spikes = inputs[1];
-  
-  if (spike_ids.rank() != 3) {
+
+  poplar::Tensor spike_ids_fptype = inputs[0];
+  poplar::Tensor num_spikes_fptype = inputs[1];
+
+  if (spike_ids_fptype.rank() != 3) {
     throw poputil::poplibs_error("Input 'inputs[0]' must be tensor of rank 3 (seq_dim, batch_size, sparse_size).");
   }
 
-  if (num_spikes.rank() != 3) {
+  if (num_spikes_fptype.rank() != 3) {
     throw poputil::poplibs_error("Input 'inputs[1]' must be tensor of rank 3 (seq_dim, batch_size, 1).");
   }
+
+  poplar::program::Sequence fwdProg;
+
+  poplar::Tensor spike_ids{popops::cast(graph, spike_ids_fptype, poplar::UNSIGNED_INT, fwdProg, {dnai, "cast spike_ids"})};
+  poplar::Tensor num_spikes{popops::cast(graph, num_spikes_fptype, poplar::UNSIGNED_INT, fwdProg, {dnai, "cast num_spikes"})};
 
   size_t seq_len = spike_ids.dim(0);
   size_t batchsize = spike_ids.dim(1);
   size_t size_sparse = spike_ids.dim(2);
   size_t size_dense;
   sscanf(attributes.c_str(), "%zu", &size_dense);
-  auto dtype = spike_ids.elementType();
+  auto dtype = spike_ids_fptype.elementType();
 
   if (size_dense < size_sparse) {
     throw poputil::poplibs_error("Dense size must be larger than sparse size.");
   }
 
-  poplar::program::Sequence fwdProg;
+
 
   // Get the target, which descibes properties of the hardware.
   auto target = graph.getTarget();
@@ -149,13 +149,16 @@ poplar::program::Program Build_grad(
   poplar::program::Sequence bwdProg;
   poplar::DebugNameAndId dnai{debug_prefix};
 
-  poplar::Tensor spike_ids = fwd_inputs[0];
-  poplar::Tensor num_spikes = fwd_inputs[1];
+  poplar::Tensor spike_ids_fptype = fwd_inputs[0];
+  poplar::Tensor spike_ids{popops::cast(graph, spike_ids_fptype, poplar::UNSIGNED_INT, bwdProg, {dnai, "cast spike_ids"})};
+  // poplar::Tensor num_spikes = fwd_inputs[1];
   
+
+
   size_t seq_len = spike_ids.dim(0);
   size_t batchsize = spike_ids.dim(1);
   size_t size_sparse = spike_ids.dim(1);
-  auto dtype = spike_ids.elementType();
+  auto dtype = spike_ids_fptype.elementType();
 
   // Get the target, which descibes properties of the hardware.
   auto target = graph.getTarget();
@@ -163,11 +166,11 @@ poplar::program::Program Build_grad(
   // TODO determine best mapping, use existing functions ?
   size_t batchesPerTile = seq_len * batchsize / numTiles + 1;
 
-  poplar::Tensor dLdSpikeIds = graph.clone(spike_ids, {dnai, "dLdSpikeIds"});
-  poplar::Tensor dLdNumSpikes = graph.clone(num_spikes, {dnai, "dLdNumSpikes"});
-  popops::zero(graph, dLdNumSpikes, bwdProg, dnai);
-  outputs.push_back(dLdSpikeIds);
-  outputs.push_back(dLdNumSpikes);
+  poplar::Tensor dLdSpikeIds = graph.clone(spike_ids_fptype, {dnai, "dLdSpikeIds"});
+  // poplar::Tensor dLdNumSpikes = graph.clone(num_spikes, {dnai, "dLdNumSpikes"});
+  // popops::zero(graph, dLdNumSpikes, bwdProg, dnai);
+  
+  
 
   poplar::Tensor dLdDenseSpikes = gradients[0];
 
@@ -187,5 +190,8 @@ poplar::program::Program Build_grad(
   }
   bwdProg.add(poplar::program::Execute(cs));
  
+  outputs.push_back(dLdSpikeIds);
+  // outputs.push_back(dLdNumSpikes);
+
   return bwdProg;
 }

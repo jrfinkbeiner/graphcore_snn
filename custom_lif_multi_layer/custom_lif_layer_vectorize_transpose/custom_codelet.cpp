@@ -112,6 +112,7 @@ template class LIFOutSpikesFromTopK<float>;
 
 template <typename FPType>
 class LIFOutSpikes2Threshs : public poplar::Vertex {
+  // class [[poplar::constraint("elem(*state) != elem(*thresholds)")]] LIFOutSpikes2Threshs : public poplar::Vertex { // TODO maybe unnecessary here
 public:
 
   poplar::Input<poplar::Vector<FPType>> state;
@@ -223,22 +224,28 @@ public:
     unsigned numSpikesCounter{0};
     unsigned numGradsCounter{0};
     const FPType secThreshMul{0.9};
-    const size_t numStates = state.size();
+    const unsigned numStates = state.size();
     unsigned state_id{start_id};
-    auto sizeSparseOut = repeated_out_spikes_ids.size();
+    const unsigned sizeSparseOut = repeated_out_spikes_ids.size();
+    const unsigned sizeSparseOutmin1 = sizeSparseOut-1;
+    unsigned leftSideCounter{numStates};
+    const unsigned sizeSparseOutPlusNumStates = sizeSparseOut+numStates;
 
     for (unsigned i = 0; i < numStates; ++i) {
-      if ((state[i] > thresholds[i]*secThreshMul) || (numStates - i <= (sizeSparseOut-(numSpikesCounter+numGradsCounter)))) {
+      if ((state[i] > thresholds[i]*secThreshMul) || (leftSideCounter <= (sizeSparseOut + i))) {
+      // if ((state[i] > thresholds[i]*secThreshMul) || (numStates - i <= (sizeSparseOut-(numSpikesCounter+numGradsCounter)))) { // TODO uncomment
         if (state[i] > thresholds[i]) {
           repeated_out_spikes_ids[numSpikesCounter] = state_id;
           ++numSpikesCounter;
         } else {
           // Fill up the array with non-spike values in reverse from behind 
-          repeated_out_spikes_ids[sizeSparseOut-1-numGradsCounter] = state_id;
+          repeated_out_spikes_ids[sizeSparseOutmin1-numGradsCounter] = state_id;
           ++numGradsCounter;
         }
+        ++leftSideCounter;
+        if (leftSideCounter >= sizeSparseOutPlusNumStates) break; // TODO just implement as while
       }
-      if (numSpikesCounter+numGradsCounter >= sizeSparseOut) break; // TODO just implement as while
+      // if (numSpikesCounter+numGradsCounter >= sizeSparseOut) break; // TODO just implement as while
       ++state_id;
     }
     *repeated_num_out_spikes = numSpikesCounter;
@@ -327,6 +334,7 @@ FPType superspike_surrogate(FPType x, FPType beta) {
   return one / std::pow((beta * std::abs(x) + one), 2);
 }
 
+// TODO this can still be vectorized !!!
 template <typename FPType> 
 class LIFStateOutGrad : public poplar::Vertex {
 public:
@@ -531,6 +539,8 @@ public:
 
   bool compute() { // TODO vectorize operations instead of different threads for different neurons
 
+    // float one{1.0};
+
     auto dLdweightsAsFloat2 = reinterpret_cast<float2 *>(&dLdweights[0]);
     auto dLdStateFloat2 = reinterpret_cast<const float2 *>(&dLdState[0]);
 
@@ -541,6 +551,7 @@ public:
       for (unsigned i = 0; i < end; ++i) {
         const auto spike_idx = fwd_inp_spikes_ids[start_idx_spikes+i];
         dLdweightsAsFloat2[spike_idx] += dLdStateFloat2[neuron_state_id];
+        // dLdweightsAsFloat2[0] += {one, one};
       }
       start_idx_spikes += sparse_out_dim;
       neuron_state_id += 1;
@@ -579,7 +590,9 @@ public:
         // #pragma clang loop unroll(enable)
         // #pragma clang loop unroll_count(4)
         // #pragma clang loop unroll(full)
-        for (unsigned ineuron = 0; ineuron < num_neurons_div2; ++ineuron) {
+
+        // TODO with manual vectorization this neuron loop could again be the outer loop for better efficiency!
+        for (unsigned ineuron = 0; ineuron < num_neurons_div2; ++ineuron) { 
           dLdweightsAsFloat2[spike_idx+ineuron] += dLdStateFloat2[neuron_state_id+ineuron];
           // ++neuron_state_id;
         }
@@ -714,6 +727,7 @@ public:
     const auto end{num_inp_spikes}; // TODO WTF WHY DOES THIS MAKE A DIFFERENCE ?!
     for (unsigned ineuron2 = 0; ineuron2 < num_neurons_div2; ++ineuron2) {
       float2 synInpFloat2 = {zero, zero};
+      // #pragma clang loop unroll(full)
       for (unsigned i = 0; i < end; ++i) {
         // store num_neurons_div2*inp_spikes_ids[i] somewhere to not always recompute it 
         synInpFloat2 += weightsAsFloat2[num_neurons_div2*inp_spikes_ids[i]+ineuron2];
@@ -721,7 +735,7 @@ public:
 
       float* syn_input = reinterpret_cast<float *>(&synInpFloat2);
 
-      #pragma clang loop unroll(enable)
+      // #pragma clang loop unroll(full)
       for (unsigned ineuron = 2*ineuron2; ineuron < 2*ineuron2+2; ++ineuron) {
         if (state[ineuron] > threshold[ineuron]) {
           // *new_state = sum;

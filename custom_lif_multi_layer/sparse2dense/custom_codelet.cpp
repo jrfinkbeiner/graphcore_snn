@@ -7,8 +7,8 @@
 template <typename FPType>
 class Sparse2Dense : public poplar::Vertex {
 public:
-  poplar::Input<poplar::Vector<FPType>> spikeIds;
-  poplar::Input<int> numSpikes;
+  poplar::Input<poplar::Vector<unsigned>> spikeIds;
+  poplar::Input<unsigned> numSpikes;
 
   poplar::Output<poplar::Vector<FPType>> denseSpikes;
   bool compute() {
@@ -30,7 +30,7 @@ template <typename FPType>
 class Sparse2DenseGrad : public poplar::Vertex {
 public:
   poplar::Input<poplar::Vector<FPType>> dLdDenseSpikes;
-  poplar::Input<poplar::Vector<FPType>> spikeIds;
+  poplar::Input<poplar::Vector<unsigned>> spikeIds;
 
   poplar::Output<poplar::Vector<FPType>> dLdSpikeIds;
   bool compute() {

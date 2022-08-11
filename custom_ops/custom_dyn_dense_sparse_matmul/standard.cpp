@@ -156,9 +156,9 @@ extern "C" poplar::program::Program Build(
     throw poputil::poplibs_error("Dimension 1 of 'inputs[1]' must be smaller or equal to 'inputs[0]' dimension 1.");
   }
 
-  if (num_spikes_int.elementType() != poplar::INT) {
-    throw poputil::poplibs_error("Input 'inputs[2]' must be of type 'int'.");
-  }
+  // if (num_spikes_int.elementType() != poplar::INT) { // TODO uncomment
+  //   throw poputil::poplibs_error("Input 'inputs[2]' must be of type 'int'.");
+  // }
 
   poplar::DebugNameAndId dnai{debug_prefix, "/DynDenseBinarySparseMatmul"};
   auto prog = poplar::program::Sequence();
@@ -226,7 +226,8 @@ poplar::program::Program Build_grad(
   poplar::DebugNameAndId dnai{debug_prefix, "/DynDenseBinarySparseMatmulGrads"};
   auto prog = poplar::program::Sequence();
 
-  std::cout << "\nEntering Build_grad\n" << std::endl;
+  std::cout << "\nEntering Build_grad" << std::endl;
+  std::cout << "\nNUM_TILES: " << graph.getTarget().getNumTiles() << std::endl;
 
   // auto dLdy = gradients[0];
   // auto weights = fwd_inputs[0];

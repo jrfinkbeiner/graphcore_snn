@@ -13,7 +13,7 @@ benchmarking/convergence_learning_rate_sweep_512/
 benchmarking/convergence_sparsity_sweep_512/
 # benchmarking/create_sbatch.py
 benchmarking/reports_*/
-
+build*/
 *.bc
 
 # Graphcore/Poplar extensions

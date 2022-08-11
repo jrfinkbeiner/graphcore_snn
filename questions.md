@@ -3,6 +3,8 @@
 * How to make sure manual alloc is used?
 * Could the weird alloc be the reason that popops::zero doesn't work as expected?
 
+* why does `#pragma clang loop unroll(full)` not work in codelets/vertices ?
+
 * when using poplar 2.6 I get the error:
 
 ```bash

@@ -90,7 +90,7 @@ extern "C" poplar::program::Program Build(
   
   // TODO later just reinterpret cast !!!
   std::vector<poplar::Tensor> out_spikes_ids_fptype = cast_tensor_vector(graph, {out_spikes.begin(), out_spikes.begin()+num_layers}, poplar::FLOAT, prog, {dnai, "cast spikes"});
-  std::vector<poplar::Tensor> num_out_spikes_int = cast_tensor_vector(graph, {out_spikes.begin()+num_layers, out_spikes.begin()+2*num_layers}, poplar::INT, prog, {dnai, "cast spikes"});
+  std::vector<poplar::Tensor> num_out_spikes_int = cast_tensor_vector(graph, {out_spikes.begin()+num_layers, out_spikes.begin()+2*num_layers}, poplar::FLOAT, prog, {dnai, "cast spikes"}); // TODO change back to INT
   extend_tensor_vector(out_spikes_ids_fptype, outputs);
   extend_tensor_vector(num_out_spikes_int, outputs);
   return prog;

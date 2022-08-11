@@ -20,7 +20,69 @@ class TileMapping(NamedTuple):
     start_tile: int
     end_tile: int
 
-def determine_neuron_tileMappings(dense_sizes, sparse_sizes):
+def determine_neuron_tileMappings(dense_sizes, sparse_sizes, num_ipus=1, min_neurons_per_tile=1):
+
+    if num_ipus > 1:
+        tileMapping =  determine_neuron_tileMappings_multiIPU(dense_sizes, sparse_sizes, num_ipus, min_neurons_per_tile)
+    else:
+        tileMapping =  determine_neuron_tileMappings_singleIPU(dense_sizes, sparse_sizes, min_neurons_per_tile)
+    return tileMapping
+
+def determine_neuron_tileMappings_multiIPU(dense_sizes, sparse_sizes, num_ipus, min_neurons_per_tile):
+    
+    TILE_OFFSET = 1
+    TILES_PER_IPU = 1472 # hardcoded fpr IPUv2 MK2000
+    USABLE_TILES_PER_IPU = int(TILES_PER_IPU - TILE_OFFSET)
+    USABLE_TILES_TOTAL = int(USABLE_TILES_PER_IPU * num_ipus)
+
+    num_neurons = np.asarray(dense_sizes[1:], dtype=np.int64)
+    num_neurons_total = np.sum(num_neurons).astype(np.float64)
+    max_num_tiles_to_use = np.ceil(num_neurons_total / min_neurons_per_tile)
+    
+    if max_num_tiles_to_use < USABLE_TILES_PER_IPU:
+        tileMapping = determine_neuron_tileMappings_singleIPU(dense_sizes, sparse_sizes, min_neurons_per_tile, tile_offset=TILE_OFFSET)
+        return tileMapping
+    
+    layerwise_max_tiles = np.ceil(num_neurons / min_neurons_per_tile)
+    cumsum_num_neurons = np.cumsum(dense_sizes[1:])
+    cumsum_max_tiles = cumsum_num_neurons.astype(np.float64) / min_neurons_per_tile
+    max_tile_mapping_possible = True
+
+    cumsum_tiles = 0
+    ipu_id = 0
+    start_tiles = []
+    end_tiles = []
+    tileMappings = []
+    for ilay,max_tiles_ilay in enumerate(layerwise_max_tiles):
+        print(ilay, max_tiles_ilay)
+        if max_tiles_ilay > USABLE_TILES_PER_IPU:
+            max_tile_mapping_possible = False
+            break
+        new_cumsum_tiles = cumsum_tiles + max_tiles_ilay
+        # check whether additonal layer fits on current IPU, otherwise start mapping on next IPU
+        if new_cumsum_tiles > USABLE_TILES_PER_IPU:
+            cumsum_tiles = 0
+            new_cumsum_tiles = max_tiles_ilay
+            ipu_id += 1
+        
+        if ipu_id >= num_ipus:
+            max_tile_mapping_possible = False
+            break
+        
+        start_tile = int(cumsum_tiles + TILE_OFFSET + ipu_id * TILES_PER_IPU)
+        end_tile = int(start_tile + max_tiles_ilay)
+        tileMappings.append(TileMapping(start_tile, end_tile))
+        cumsum_tiles = new_cumsum_tiles
+
+    if max_tile_mapping_possible:
+        return tileMappings
+
+
+    raise NotImplementedError("multiIpu Mapping not fully impleneted yet. Tilemapping on one IPU was not desireable and mapping with min_neurons_per_tile not possible.")
+
+    
+
+def determine_neuron_tileMappings_singleIPU(dense_sizes, sparse_sizes, min_neurons_per_tile, tile_offset=1):
 
     neuron_tileMappings = []
 
@@ -29,7 +91,7 @@ def determine_neuron_tileMappings(dense_sizes, sparse_sizes):
     num_neurons_fptype = dense_sizes[1:].astype(np.float64)
 
     num_tiles = 1472 # hardcoded fpr IPUv2 MK2000
-    tile_offset = 1
+    # tile_offset = 1
     max_num_tiles_to_use = num_tiles-tile_offset # TODO substract batchsize because of mapped operations?
     num_layers = len(dense_sizes)-1
 
@@ -38,6 +100,7 @@ def determine_neuron_tileMappings(dense_sizes, sparse_sizes):
     weight_factor = sparse_sizes[:-1] # weighting based on input spikes for now
     num_tiles_fptype = (num_neurons_fptype * weight_factor * max_num_tiles_to_use).astype(np.float64) / float(weighted_num_neurons_total)
     num_neurons_per_tile_ilay = np.ceil(num_neurons_fptype / num_tiles_fptype)
+    num_neurons_per_tile_ilay = np.maximum(np.full_like(num_neurons_per_tile_ilay, min_neurons_per_tile), num_neurons_per_tile_ilay)
     num_tiles_ilay = np.ceil(num_neurons_fptype / num_neurons_per_tile_ilay).astype(np.int32)        
     num_neurons_per_tile_ilay = num_neurons_per_tile_ilay.astype(np.int32)
 
@@ -45,10 +108,6 @@ def determine_neuron_tileMappings(dense_sizes, sparse_sizes):
     start_tiles = np.empty_like(end_tiles)
     start_tiles[1:] = end_tiles[:-1]
     start_tiles[0] = tile_offset
-
-    print("\determine_neuron_tileMappings")
-    print(start_tiles)
-    print(end_tiles)
 
     tileMappings = [TileMapping(stt, endt) for stt, endt in zip(start_tiles, end_tiles)]
     return tileMappings
@@ -74,7 +133,7 @@ def gen_sparse_spikes(rng, seq_len, batchsize, size_dense, size_sparse):
     for ibatch in range(batchsize):
         for iseq in range(seq_len):
             sparse_spike_ids[iseq, ibatch, :] = rng.choice(size_dense, size_sparse, replace=False)
-    num_sparse_spikes = rng.choice(size_sparse, (seq_len, batchsize, 1), replace=True).astype(np.int32)
+    num_sparse_spikes = rng.choice(size_sparse, (seq_len, batchsize, 1), replace=True).astype(np.float32)
     return sparse_spike_ids, num_sparse_spikes
 
 def sparse2dense(spike_ids, num_spikes, dense_size, values=None, sparse_dim=-1):
@@ -93,7 +152,7 @@ def sparse2dense(spike_ids, num_spikes, dense_size, values=None, sparse_dim=-1):
             if num_spikes is None:
                 ids = spike_ids[iseq, ibatch, :].astype(np.int32)
             else:
-                ids = spike_ids[iseq, ibatch, :num_spikes[iseq, ibatch, 0]].astype(np.int32)
+                ids = spike_ids[iseq, ibatch, :int(num_spikes[iseq, ibatch, 0])].astype(np.int32)
 
             if values is None:
                 dense_tensor[iseq, ibatch, ids] = 1
@@ -121,6 +180,7 @@ def sparse2dense_ipu(spikes: SparseBinaryVec, dense_size: int):
                                               gp_path,
                                               outs=outputs,
                                               separate_gradients=False, # to calculate gradients separately
+                                              inputs_with_gradients=[0], # TODO is this working ?
                                               attributes=f"{dense_size}",
                                             )[0]
 
@@ -171,6 +231,12 @@ def dyn_dense_binary_sparse_matmul_op_parallel(matrix: List[tf.Tensor], sparse_v
         "output_shapes": [tf.TensorShape([*spids.shape[:-1], mat.shape[0]]) for spids, mat in zip(sparse_ids, matrix)],
     }
 
+    # inp_types = [tensor.dtype for tensor in [*matrix, *sparse_ids, *num_nzelements]]
+    # print("inp_types")
+    # print(inp_types)
+    # print("outputs['output_types']")
+    # print(outputs["output_types"])
+    # # sys.exit()
     base_path = os.path.realpath(os.path.dirname(__file__))
     # lib_path = os.path.join(base_path, "..", "custom_dyn_dense_sparse_matmul", "batched", "libcustom_op.so")
     # gp_path  = os.path.join(base_path, "..", "custom_dyn_dense_sparse_matmul", "batched", "custom_codelet.gp")
@@ -190,7 +256,7 @@ def dyn_dense_binary_sparse_matmul_op_parallel(matrix: List[tf.Tensor], sparse_v
                                               name="dyn_dense_binary_sparse_matmul_parallel_op", # TF operation name
                                               op_name="Build",
                                               attributes=attributes,
-                                              gradient_attributes=attributes, # TODO only because of not working automatic alloc
+                                              gradient_attributes=attributes, # TODO only because automatic alloc is not working 
                                               inputs_with_gradients=inputs_with_gradients, # TODO is this working ?
                                               separate_gradients=False, # to calculate gradients separately. Allows to only calculate weight gradient without implementing the others
                                               outs=outputs)
@@ -238,7 +304,8 @@ def compute_sparse_spikes_parallel(states: List[tf.Tensor], thresholds: List[tf.
     outputs = {
         "output_types": [
             *[state.dtype for state in states], 
-            *[tf.int32 for _ in range(num_layers)]
+            # *[tf.int32 for _ in range(num_layers)] # TODO change when possible
+            *[tf.float32 for _ in range(num_layers)]
         ],
         "output_shapes": [
             *[tf.TensorShape((batch_size, sparse_size)) for sparse_size in sparse_sizes],
@@ -272,7 +339,7 @@ def compute_sparse_spikes_parallel(states: List[tf.Tensor], thresholds: List[tf.
 
 
 # TODO could also implement a self-recurrent version
-def custom_multi_lif_layer_sparse(sparse_sizes, transpose_weights, weights, init_state, sparse_inp_spikes, decay_constants, thresholds):
+def custom_multi_lif_layer_sparse(sparse_sizes, transpose_weights, weights, init_state, sparse_inp_spikes, decay_constants, thresholds, tileMappings):
 
     inp_spike_ids = [t.ids for t in sparse_inp_spikes] 
     num_inp_spikes = [t.num_nzelements for t in sparse_inp_spikes]
@@ -287,7 +354,8 @@ def custom_multi_lif_layer_sparse(sparse_sizes, transpose_weights, weights, init
 
     output_types = [
         *[inp_spike_ids[ilay].dtype for ilay in range(num_layers)],
-        *[num_inp_spikes[ilay].dtype for ilay in range(num_layers)],
+        # *[num_inp_spikes[ilay].dtype for ilay in range(num_layers)],  # TODO uncomment
+        *[tf.float32 for ilay in range(num_layers)],
         *[init_state[ilay].dtype for ilay in range(num_layers)],
     ]
     output_shapes = [
@@ -331,45 +399,46 @@ def custom_multi_lif_layer_sparse(sparse_sizes, transpose_weights, weights, init
 
     inputs = [*weights, *init_state, *inp_spike_ids, *num_inp_spikes, *decay_constants, *thresholds]
 
-
-    print("\ncustom_multi_lif_layer_sparse")
-    print(dense_sizes)
-    print([[w.shape for w in weights]])
-
     sizes_str = "_".join([str(val) for val in [*dense_sizes, *sparse_sizes, batch_size]])
-    return ipu.custom_ops.precompiled_user_op(inputs,
+    start_tiles = [tileMapping.start_tile for tileMapping in tileMappings]
+    end_tiles = [tileMapping.end_tile for tileMapping in tileMappings]
+    tileMapping_str = "_".join([str(val) for val in [*start_tiles, *end_tiles]])
+    attributes_str = "_".join([sizes_str, tileMapping_str]) if transpose_weights else sizes_str
+    print(start_tiles)
+    print(end_tiles)
+    print(attributes_str)
+    # sys.exit()
+    # TODO implement for all
+    inputs_with_gradients = [*list(range(num_layers)), *list(range(2*num_layers, 3*num_layers))] if transpose_weights else None
+    out = ipu.custom_ops.precompiled_user_op(inputs,
                                               lib_path,
                                               gp_path,
+                                              name="custom_multi_lif_layer_sparse", # TF operation name
+                                              op_name="Build",
                                               outs=outputs,
+                                            #   inputs_with_gradients=inputs_with_gradients,
                                               separate_gradients=False, # to calculate gradients separately. Allows to only calculate weight gradient without implementing the others
-                                              attributes=sizes_str,
+                                              attributes=attributes_str,
                                             )
+    return out
 
 class KerasMultiLIFLayerSparse(KerasMultiLIFLayerBase):
-    def __init__(self, dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights=False, seed=None):
+    def __init__(self, dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights=False, seed=None, num_ipus=1):
         super().__init__(dense_shapes, decay_constant, threshold, transpose_weights, seed)
         assert len(dense_shapes) == len(sparse_shapes), "`dense_shapes` and `sparse_shapes` must have the same nmber of elements."
         self.sparse_shapes = sparse_shapes
+        self.neuron_tileMappings = determine_neuron_tileMappings(dense_shapes, sparse_shapes, num_ipus, min_neurons_per_tile=2 if transpose_weights else 1)
+        print(self.neuron_tileMappings)
+        # sys.exit()
 
     def call(self, inp_spikes, init_states):
-        return custom_multi_lif_layer_sparse(self.sparse_shapes, self.transpose_weights, self.ws, init_states, inp_spikes, self.decay_constants, self.thresholds)
+        return custom_multi_lif_layer_sparse(self.sparse_shapes, self.transpose_weights, self.ws, init_states, inp_spikes, self.decay_constants, self.thresholds, self.neuron_tileMappings)
 
 
 def pure_tf_lif_step_sparse(weights, state, inp_, decay_constants, thresholds, sparse_dim, neuron_tileMapping, spikeGen_tileMapping):
     syn_inp = dyn_dense_binary_sparse_matmul_op(weights, inp_, neuron_tileMapping)
     state = state - tf.stop_gradient(state * tf.experimental.numpy.heaviside(state-thresholds, 1))
     new_state = state * decay_constants + (1 - decay_constants) * syn_inp
-    # new_state = decay_constants*state * tf.experimental.numpy.heaviside(thresholds-state, 1) + (1-decay_constants)*syn_inp
-    # spikes_out = heaviside_with_super_spike_surrogate(new_state-thresholds) # TODO this has to be a custom_op as well, select spikes_op
-    # warnings.warn("Implement proper spike selection and its gradient.", UserWarning)
-
-    # top_k_neurons = tf.cast(tf.math.top_k(spikes_out, k=sparse_dim, sorted=True).indices, tf.float32)
-    # # TODO multiply with sum here
-    # num_spikes = tf.expand_dims(tf.cast(tf.stop_gradient(tf.math.reduce_sum(spikes_out, axis=-1)), dtype=tf.int32), axis=-1)
-    # spikes_out = SparseBinaryVec(top_k_neurons, num_spikes)
-
-    # start_tile = 1
-    # end_tile = int(new_state.shape[0]+1)
 
     spikes_out = compute_sparse_spikes(new_state, thresholds, sparse_dim, spikeGen_tileMapping)
     return spikes_out, new_state
@@ -378,7 +447,7 @@ def pure_tf_lif_step_sparse_parallel(weights, neuron_states, input_spikes, decay
     
     num_layers = len(weights)
     # syn_inps = [dyn_dense_binary_sparse_matmul_op(weights[i], input_spikes[i], neuron_tileMapping[i]) for i in range(num_layers)]
-    syn_inps = dyn_dense_binary_sparse_matmul_op_parallel(weights, input_spikes[:-1], neuron_tileMapping, False)
+    syn_inps = dyn_dense_binary_sparse_matmul_op_parallel(weights, input_spikes[:len(weights)], neuron_tileMapping, False)
 
     decay_constants_concat = tf.concat(decay_constants, axis=0)
     thresholds_concat = tf.concat(thresholds, axis=0)
@@ -433,6 +502,7 @@ class KerasMultiLIFLayerSparseCell(KerasMultiLIFLayerBase):
         else:
             all_out_spikes = []
             all_neuron_states = []
+
             for ilay in range(self.num_layers):
                 inp_ = inp_spikes if ilay==0 else outs[ilay-1]
                 spikes_out, neuron_stat = pure_tf_lif_step_sparse(self.ws[ilay], neuron_states[ilay], inp_, self.decay_constants[ilay], 
@@ -453,14 +523,14 @@ class KerasMultiLIFLayerSparseCell(KerasMultiLIFLayerBase):
         # return [tf.zeros((batch_size, *stat_shape.as_list())) for stat_shape in self.state_size]
         init_state = [tf.zeros((batch_size, dim), dtype=tf.float32) for dim in self.dense_shapes[1:]]
         for sparse_dim in self.sparse_shapes[1:]:
-            init_state.extend((tf.zeros((batch_size, sparse_dim), dtype=tf.float32), tf.zeros((batch_size, 1), dtype=tf.int32)))
+            init_state.extend((tf.zeros((batch_size, sparse_dim), dtype=tf.float32), tf.zeros((batch_size, 1), dtype=tf.float32)))
         return init_state
 
 def KerasMultiLIFLayerSparseOps(dense_shapes, sparse_shapes, decay_constant, threshold, batchsize, seed=None, **kwargs):
     return tf.keras.layers.RNN(KerasMultiLIFLayerSparseCell(dense_shapes, sparse_shapes, decay_constant, threshold, batchsize, seed), **kwargs)
 
 
-def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None):
+def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None, num_ipus=1):
     if return_all:
         warnings.warn("All layers outputs will be returned. But note that only gradient propagation through the last layers outputs is implemented."
                     " Adding loss terms to other layers outputs will be ignored and will result in a wrong gradient.", UserWarning)
@@ -476,7 +546,7 @@ def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, 
 
     init_states = [tf.zeros((batchsize_per_step, dense_shapes[i+1]), dtype=tf.float32) for i in range(num_layers)]
     out = KerasMultiLIFLayerSparse(
-            dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed
+            dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed, num_ipus
         )(inp_spikes, init_states)
     out_spike_ids, num_out_spikes, states = out[:num_layers], out[num_layers:2*num_layers], out[2*num_layers:]
 
@@ -494,6 +564,27 @@ def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, 
     return (inp_spike_ids, num_inp_spikes), out
 
 
+class KerasSparseIdentity(keras.layers.Layer):
+    def __init__(self):
+        super().__init__()
+
+    def build(self, input_shape):
+
+        print(input_shape)
+        last_dim = input_shape.ids[-1]
+
+        self.eye = tf.Variable(
+            initial_value=tf.eye(last_dim),
+            trainable=True,
+            name=f"identity_eye",
+        )
+
+    def call(self, x):
+        print("\nIDENTITY")
+        print(x)
+        return type(x)(x.ids @ self.eye, x.num_nzelements)
+
+
 def model_fn_sparse_ops(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None):
 
     if transpose_weights:
@@ -504,20 +595,27 @@ def model_fn_sparse_ops(sparse_shapes, seq_len, dense_shapes, decay_constant, th
     
     inp_spikes = SparseBinaryVec(inp_spike_ids, num_inp_spikes)
 
-    out_spikes = KerasMultiLIFLayerSparseOps(
-            dense_shapes, sparse_shapes, decay_constant, threshold, batchsize_per_step, seed, return_sequences=True
-        )(inp_spikes)
-    # if return_all:
-    #     out = [tf.transpose(sparse2dense_ipu(SparseBinaryVec(ids, tf.cast(num_nzelements, tf.int32)), dense_shapes[-1]), perm=[1, 0, 2]) for ids,num_nzelements in zip(out_spike_ids, num_out_spikes)]
-    # else:
-    #     sparse_out_spikes_last_layer = SparseBinaryVec(out_spike_ids[-1], tf.cast(num_out_spikes[-1], tf.int32))
-    #     dense_out_spikes_last_layer = sparse2dense_ipu(sparse_out_spikes_last_layer, dense_shapes[-1])
-    #     out = tf.transpose(dense_out_spikes_last_layer, perm=[1, 0, 2])
 
-    if return_all:
-        out = out_spikes
-    else:
-        out = out_spikes[-1]
+    with ipu.keras.PipelineStage(0):
+        out_spikes = KerasMultiLIFLayerSparseOps(
+                dense_shapes, sparse_shapes, decay_constant, threshold, batchsize_per_step, seed, return_sequences=True
+            )(inp_spikes)
+        # if return_all:
+        #     out = [tf.transpose(sparse2dense_ipu(SparseBinaryVec(ids, tf.cast(num_nzelements, tf.int32)), dense_shapes[-1]), perm=[1, 0, 2]) for ids,num_nzelements in zip(out_spike_ids, num_out_spikes)]
+        # else:
+        #     sparse_out_spikes_last_layer = SparseBinaryVec(out_spike_ids[-1], tf.cast(num_out_spikes[-1], tf.int32))
+        #     dense_out_spikes_last_layer = sparse2dense_ipu(sparse_out_spikes_last_layer, dense_shapes[-1])
+        #     out = tf.transpose(dense_out_spikes_last_layer, perm=[1, 0, 2])
+
+
+        if return_all:
+            out = out_spikes
+        else:
+            out = out_spikes[-1]
+    
+    with ipu.keras.PipelineStage(1):
+        out = KerasSparseIdentity()(out)
+
     return (inp_spike_ids, num_inp_spikes), out
 
 def simple_loss_fn_dense(y_target, y_pred):
@@ -559,10 +657,11 @@ def train_ipu(
         return_all=False,
         transpose_weights=False,
         learning_rate=1e-2,
+        num_ipus=1,
     ):
     # set ipu config and strategy 
     ipu_config = ipu.config.IPUConfig()
-    ipu_config.auto_select_ipus = 1
+    ipu_config.auto_select_ipus = 2
     ipu_config.configure_ipu_system()
     strategy = ipu.ipu_strategy.IPUStrategy()
 
@@ -574,7 +673,7 @@ def train_ipu(
     method_to_model_fn = {
         "dense": model_fn_dense, 
         "sparse_ops": ft.partial(model_fn_sparse_ops, sparse_shapes, transpose_weights=transpose_weights), 
-        "sparse_layer": ft.partial(model_fn_sparse_layer, sparse_shapes, transpose_weights=transpose_weights),
+        "sparse_layer": ft.partial(model_fn_sparse_layer, sparse_shapes, transpose_weights=transpose_weights, num_ipus=num_ipus),
     }
 
     with strategy.scope():
@@ -583,7 +682,8 @@ def train_ipu(
         inputs, outputs = method_to_model_fn[method](seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, return_all=return_all)
         targets = keras.Input((1,), name="targets")
         model = keras.Model([inputs, targets], outputs)
-
+        model.set_pipelining_options(gradient_accumulation_steps_per_replica=4,
+                               device_mapping=[ ipu.pipelining_ops._ALL_DEVICES, 1])
         # model.load_weights("./model_save_weights")
         # # model = tf.keras.models.load_model("./model_save", compile=False)
 
@@ -656,14 +756,24 @@ def test_sparse_vs_dense():
     num_sequences = 24
     batchsize = num_sequences
     batchsize_per_step = batchsize
-    seq_len = 2 
-    # dense_sizes = [102, 801, 799]
-    dense_sizes = [128, 256, 64]
-    # dense_sizes = [4, 4, 4]
-    # dense_sizes = [4*1024, 1024, 1024, 1024]
+    seq_len = 10
+    # # dense_sizes = [102, 801, 799]
+    # dense_sizes = [128, 256, 64]
+    # # dense_sizes = [4, 4, 4]
+    # # dense_sizes = [4*1024, 1024, 1024, 1024]
+    # sparse_sizes = dense_sizes
+    # # sparse_sizes = [2*1024, 1024, 1024, 1024]
+    # # sparse_sizes = [3, 3] #dense_sizes
+
+    # dense_sizes =  list(range(32, 32+5))
+    # sparse_sizes = list(range(32, 32+5))
+
+    # dense_sizes = [100, 256, 256, 8]
+    # sparse_sizes = [32, 64, 64, 8]
+    dense_sizes = [100, 128, 126, 8]
     sparse_sizes = dense_sizes
-    # sparse_sizes = [2*1024, 1024, 1024, 1024]
-    # sparse_sizes = [3, 3] #dense_sizes
+    # sparse_sizes = [32, 64, 64, 8]
+
     decay_constant = 0.9
     threshold = 1.0
     num_layers = len(dense_sizes)-1
@@ -678,9 +788,11 @@ def test_sparse_vs_dense():
     inp_spikes = sparse2dense(inp_spike_ids, num_inp_spikes, dense_sizes[0])
     dataset_dense = create_dataset_dense(inp_spikes.transpose(1, 0, 2), targets, batchsize, shuffle=False)
 
+    num_ipus = 1
+
     # set ipu config and strategy 
     ipu_config = ipu.config.IPUConfig()
-    ipu_config.auto_select_ipus = 1
+    ipu_config.auto_select_ipus = num_ipus
     ipu_config.configure_ipu_system()
     strategy = ipu.ipu_strategy.IPUStrategy()
 
@@ -693,12 +805,15 @@ def test_sparse_vs_dense():
     #     out_ipu_dense, grad_ipu_dense =  strategy.run(value_and_grad_on_batch, args=[model_dense_ipu, *data_dense, False])
 
     with strategy.scope():
-        model_sparse_layer = keras.Model(*model_fn_sparse_layer(sparse_sizes, seq_len, dense_sizes, decay_constant, threshold, batchsize_per_step, seed=model_seed, return_all=False, transpose_weights=True))
+        model_sparse_layer = keras.Model(*model_fn_sparse_layer(sparse_sizes, seq_len, dense_sizes, decay_constant, threshold, batchsize_per_step, seed=model_seed, return_all=False, transpose_weights=True, num_ipus=num_ipus))
         out_sparse_layer, grad_sparse_layer =  strategy.run(value_and_grad_on_batch, args=[model_sparse_layer, *data_sparse, True, False])
 
     # with strategy.scope():
     #     model_sparse_ops = keras.Model(*model_fn_sparse_ops(sparse_sizes, seq_len, dense_sizes, decay_constant, threshold, batchsize_per_step, seed=model_seed, return_all=False))
-    #     out_sparse_ops, grad_sparse_ops =  strategy.run(value_and_grad_on_batch, args=[model_sparse_ops, *data_sparse, True])
+    #     model_sparse_ops.set_pipelining_options(gradient_accumulation_steps_per_replica=4,
+    #                            device_mapping=[ ipu.pipelining_ops._ALL_DEVICES, 1])
+    #     out_sparse_ops, grad_sparse_ops = strategy.run(value_and_grad_on_batch, args=[model_sparse_ops, *data_sparse, True])
+    #     # out_sparse_layer, grad_sparse_layer =  strategy.run(value_and_grad_on_batch, args=[model_sparse_ops, *data_sparse, True])
 
     model_dense = keras.Model(*model_fn_dense(seq_len, dense_sizes, decay_constant, threshold, batchsize, seed=model_seed, return_all=False))
     out_dense, grad_dense = value_and_grad_on_batch(model_dense, *data_dense, False)
