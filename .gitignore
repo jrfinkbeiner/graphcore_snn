@@ -1,3 +1,6 @@
+check_tile_allocation.py
+good_runs/
+results/
 test_top_k.py
 slurm*.out
 **/log/

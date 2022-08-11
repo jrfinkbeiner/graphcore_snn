@@ -5,6 +5,7 @@
 #include <cmath> // ceil
 #include <poplar/Graph.hpp>
 #include <poplar/Tensor.hpp>
+#include <poplar/TargetType.hpp>
 #include <poputil/Util.hpp>
 #include <poputil/VertexTemplates.hpp>
 #include <poputil/exceptions.hpp>
@@ -160,12 +161,16 @@ void performBatchedLIFStateUpdateInPlace(poplar::Graph &graph, std::vector<popla
                             poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai) {
 
   auto cs = graph.addComputeSet({dnai, "performBatchedLIFStateUpdateInPlace"});
-
+  poplar::TargetType target_type = graph.getTarget().getTargetType();
   const auto numTiles = graph.getTarget().getNumTiles();
   size_t num_layers = weights.size();
 
-  // std::vector<poplar::Tensor> syn_input = clone_tensor_vector(graph, state, {dnai, "syn_input"});
-  // zero_tensor_vector(graph, syn_input, prog, {dnai, "zero_syn_input"});
+
+  std::vector<poplar::Tensor> syn_input;
+  if (target_type != poplar::TargetType::IPU) {
+    syn_input = clone_tensor_vector(graph, state, {dnai, "syn_input"});
+    zero_tensor_vector(graph, syn_input, prog, {dnai, "zero_syn_input"});
+  }
 
   for (unsigned ilay=0; ilay<num_layers; ++ilay){
     auto dtype = weights[ilay].elementType();
@@ -214,45 +219,65 @@ void performBatchedLIFStateUpdateInPlace(poplar::Graph &graph, std::vector<popla
         // }
 
         poplar::Tensor neuronWeights = weights[ilay].slice(neuronRange, 1);
-        // poplar::Tensor neuronSyn_input = syn_input[ilay].slice(neuronRange, 1);
+        poplar::Tensor neuronSyn_input;
+        if (target_type != poplar::TargetType::IPU) {
+          neuronSyn_input = syn_input[ilay].slice(neuronRange, 1);
+        }
+        
 
         const auto num_neurons = neuronWeights.dim(1);
         std::string vertexType;
-        if ((num_neurons == 2) && (dtype == poplar::FLOAT)) {
-          vertexType = "LIFStateUpdateInPlaceTwoNeuronSIMD";
-        } else if (dtype == poplar::FLOAT) {
-          // // if ((num_neurons % 2 == 0) && (dtype == poplar::FLOAT)) {
-          //   if (dtype == poplar::FLOAT) {
-          vertexType = "LIFStateUpdateInPlaceMultiNeuronSIMD";
+        if (target_type == poplar::TargetType::IPU) {
+          if ((num_neurons == 2) && (dtype == poplar::FLOAT)) {
+            vertexType = "LIFStateUpdateInPlaceTwoNeuronSIMD";
+          } else if (dtype == poplar::FLOAT) {
+            // // if ((num_neurons % 2 == 0) && (dtype == poplar::FLOAT)) {
+            //   if (dtype == poplar::FLOAT) {
+            vertexType = "LIFStateUpdateInPlaceMultiNeuronSIMD";
+          }
+          // could vectorize batches for multiple of 6
+          for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
+            auto v = graph.addVertex(cs, vertexType,
+                                      // {{"weights", weights[ilay][neuronId]},
+                                      {{"weights", neuronWeights.flatten()},
+                                      {"state", neuronStates[ibatch]},
+                                      // {"syn_input", neuronSyn_input[ibatch]}, // TODO necessary for LIFStateUpdateInPlaceMultiNeuron
+                                      {"inp_spikes_ids", inp_spikes[ilay].spike_ids[ibatch]}, // TODO does this move the tensors for every vertex operation or once for all vertices on the tile ?
+                                      {"num_inp_spikes", inp_spikes[ilay].num_spikes[ibatch][0]},
+                                      {"decay_constant", neuronDecay_constants},
+                                      {"oneMinus_decay_constant", neuronOneMinus_decay_constants},
+                                      {"threshold", neuronThresholds},
+                                      {"num_neurons", neuronWeights.dim(1)}});
+            // !!! TODO !!! totally bogus tile mapping, must be improved
+            // should be based on weights mapping
+            graph.setTileMapping(v, tile);
+            // Provide a cycle count estimate for the profiler. // TODO make educated guess/provide equation
+            graph.setPerfEstimate(v, 1);
+          }
         } else {
           vertexType = poputil::templateVertex("LIFStateUpdateInPlaceMultiNeuron", dtype);
-        }
 
-        // std::cout << "vertexType: " << vertexType << std::endl;
-
-        // could vectorize batches for multiple of 6
-        for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
-          auto v = graph.addVertex(cs, vertexType,
-                                    // {{"weights", weights[ilay][neuronId]},
-                                    {{"weights", neuronWeights.flatten()},
-                                    {"state", neuronStates[ibatch]},
-                                    // {"syn_input", neuronSyn_input[ibatch]}, // TODO necessary for LIFStateUpdateInPlaceMultiNeuron
-                                    {"inp_spikes_ids", inp_spikes[ilay].spike_ids[ibatch]}, // TODO does this move the tensors for every vertex operation or once for all vertices on the tile ?
-                                    {"num_inp_spikes", inp_spikes[ilay].num_spikes[ibatch][0]},
-                                    {"decay_constant", neuronDecay_constants},
-                                    {"oneMinus_decay_constant", neuronOneMinus_decay_constants},
-                                    {"threshold", neuronThresholds},
-                                    {"num_neurons", neuronWeights.dim(1)}});
-          // !!! TODO !!! totally bogus tile mapping, must be improved
-          // should be based on weights mapping
+          for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
+            auto v = graph.addVertex(cs, vertexType,
+                                      // {{"weights", weights[ilay][neuronId]},
+                                      {{"weights", neuronWeights.flatten()},
+                                      {"state", neuronStates[ibatch]},
+                                      {"syn_input", neuronSyn_input[ibatch]}, // TODO necessary for LIFStateUpdateInPlaceMultiNeuron
+                                      {"inp_spikes_ids", inp_spikes[ilay].spike_ids[ibatch]}, // TODO does this move the tensors for every vertex operation or once for all vertices on the tile ?
+                                      {"num_inp_spikes", inp_spikes[ilay].num_spikes[ibatch][0]},
+                                      {"decay_constant", neuronDecay_constants},
+                                      {"oneMinus_decay_constant", neuronOneMinus_decay_constants},
+                                      {"threshold", neuronThresholds},
+                                      {"num_neurons", neuronWeights.dim(1)}});
           graph.setTileMapping(v, tile);
           // Provide a cycle count estimate for the profiler. // TODO make educated guess/provide equation
           graph.setPerfEstimate(v, 1);
+          }
         }
       }
     }
   }
-
+  std::cout << "DONE" << std::endl;
   prog.add(poplar::program::Execute(cs));
 }
 
@@ -583,11 +608,12 @@ void calcLIFWeightGrad_singleThread(poplar::Graph &graph, std::vector<poplar::Te
 
         const unsigned num_neurons = neuronDLdWeights.dim(1);
         std::string vertexType;
-        if ((num_neurons == 2) && (dtype == poplar::FLOAT)) {
+        poplar::TargetType target_type = graph.getTarget().getTargetType();
+        if ((target_type == poplar::TargetType::IPU) && (num_neurons == 2) && (dtype == poplar::FLOAT)) {
           vertexType = "LIFWeightsGradTwoNeuronSIMD";
           // vertexType = "LIFWeightsGradMultiNeuronSIMD";
           // vertexType = poputil::templateVertex("LIFWeightsGradMultiNeuronVectorized", dtype);
-        } else if  ((num_neurons % 2 == 0) && (dtype == poplar::FLOAT)) {
+        } else if ((target_type == poplar::TargetType::IPU) && (num_neurons % 2 == 0) && (dtype == poplar::FLOAT)) {
           vertexType = "LIFWeightsGradMultiNeuronSIMD";
           // vertexType = poputil::templateVertex("LIFWeightsGradMultiNeuronVectorized", dtype);
         } else {
@@ -685,11 +711,12 @@ void calcLIFWeightGrad(poplar::Graph &graph, std::vector<poplar::Tensor> &dLdwei
         const unsigned num_neurons = neuronDLdWeights.dim(2);
         
         std::string vertexType;
-        if ((num_neurons == 2) && (dtype == poplar::FLOAT)) {
+        poplar::TargetType target_type = graph.getTarget().getTargetType();
+        if ((target_type == poplar::TargetType::IPU) && (num_neurons == 2) && (dtype == poplar::FLOAT)) {
           vertexType = "LIFWeightsGradTwoNeuronSIMD";
           // vertexType = "LIFWeightsGradMultiNeuronSIMD";
           // vertexType = poputil::templateVertex("LIFWeightsGradMultiNeuronVectorized", dtype);
-        } else if  ((num_neurons % 2 == 0) && (dtype == poplar::FLOAT)) {
+        } else if  ((target_type == poplar::TargetType::IPU) && (num_neurons % 2 == 0) && (dtype == poplar::FLOAT)) {
           vertexType = "LIFWeightsGradMultiNeuronSIMD";
           // vertexType = poputil::templateVertex("LIFWeightsGradMultiNeuronVectorized", dtype);
         } else {
@@ -800,7 +827,8 @@ void calcLIFInpSpikesGradRowWise(poplar::Graph &graph, const std::vector<poplar:
         const auto weights_per_neuron = neuronWeights.dim(0);
         const auto num_neurons = neuronWeights.dim(1);
 
-        if ((num_neurons == 2) && (dtype == poplar::FLOAT)) {
+        poplar::TargetType target_type = graph.getTarget().getTargetType();
+        if ((target_type == poplar::TargetType::IPU) && (num_neurons == 2) && (dtype == poplar::FLOAT)) {
         // if (false) {
           // std::cout << "2 ROW SIMD" << std::endl;
           // std::cout << "num_neurons: " << num_neurons << std::endl;
@@ -817,7 +845,7 @@ void calcLIFInpSpikesGradRowWise(poplar::Graph &graph, const std::vector<poplar:
             graph.setTileMapping(v, tile); 
             graph.setPerfEstimate(v, 1);
           }
-        } else if ((num_neurons % 2 == 0) && (dtype == poplar::FLOAT)) {
+        } else if ((target_type == poplar::TargetType::IPU) && (num_neurons % 2 == 0) && (dtype == poplar::FLOAT)) {
           for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
             auto v = graph.addVertex(cs, "LIFInpSpikesGradMultiRowSIMD",
                                       {{"weights_rows", neuronWeights.flatten()},
@@ -1221,6 +1249,7 @@ extern "C" poplar::Tensor Build_allocator(
   size_t ipu_id_to_use;
   poplar::Graph virtualGraph;
 
+  std::cout << "case " << operand/num_layers << std::endl;
 
   switch (operand/num_layers) {
     case 0: neuronDim = 1; 
@@ -1267,15 +1296,15 @@ extern "C" poplar::Tensor Build_allocator(
             break;
     case 4: neuronDim = 0;
             tensor_name = "decay_constants";
-            // neuron_mapping = determine_neuron_mapping(numTiles, layer_id, dense_sizes, sparse_sizes, batchsize);
-            // allocTensor = alloc_neuronwise(graph, shape, type, neuronDim, neuron_mapping, {dnai, tensor_name});
-            alloc_neuronwise_contiguous(graph, shape, type, neuronDim, start_tiles[layer_id], end_tiles[layer_id], {dnai, tensor_name});
+            neuron_mapping = determine_neuron_mapping(numTiles, layer_id, dense_sizes, sparse_sizes, batchsize);
+            allocTensor = alloc_neuronwise(graph, shape, type, neuronDim, neuron_mapping, {dnai, tensor_name});
+            // alloc_neuronwise_contiguous(graph, shape, type, neuronDim, start_tiles[layer_id], end_tiles[layer_id], {dnai, tensor_name});
             break;
     case 5: neuronDim = 0;
             tensor_name = "thresholds";
-            // neuron_mapping = determine_neuron_mapping(numTiles, layer_id, dense_sizes, sparse_sizes, batchsize);
-            // allocTensor = alloc_neuronwise(graph, shape, type, neuronDim, neuron_mapping, {dnai, tensor_name});
-            allocTensor = alloc_neuronwise_contiguous(graph, shape, type, neuronDim, start_tiles[layer_id], end_tiles[layer_id], {dnai, tensor_name});
+            neuron_mapping = determine_neuron_mapping(numTiles, layer_id, dense_sizes, sparse_sizes, batchsize);
+            allocTensor = alloc_neuronwise(graph, shape, type, neuronDim, neuron_mapping, {dnai, tensor_name});
+            // allocTensor = alloc_neuronwise_contiguous(graph, shape, type, neuronDim, start_tiles[layer_id], end_tiles[layer_id], {dnai, tensor_name});
             break;
   }
   return allocTensor;
@@ -1373,6 +1402,11 @@ extern "C" poplar::program::Program Build(
   auto target = graph.getTarget();
   size_t numTiles = target.getNumTiles();
   size_t numTilesPerIPU = target.getTilesPerIPU();
+
+  poplar::TargetType target_type = poplar::TargetType::IPU;
+  std::cout << "target.getTargetType(): " << poplar::toString(target.getTargetType()) << std::endl;
+  std::cout << "target.getTargetSystemString(): " << target.getTargetSystemString() << std::endl;
+  // std::cout << "target.getTargetArchString(): " << target.getTargetArchString() << std::endl;
 
   // // Get the vector width of the particular data type, so that later we can
   // // divide the tensor up between workers in an appropriate way.
@@ -1487,6 +1521,24 @@ extern "C" poplar::program::Program Build(
   // slicedNumInpSpikes.push_back(alloc_perneuron_2d(graph, {batchsize, 1}, num_out_spikes.back().elementType(), 1, {dnai, "slicedNumOutSpikes"}));  // TODO improve alloc
   std::transform(num_inp_spikes.begin()+1, num_inp_spikes.end(), std::back_inserter(slicedNumInpSpikes), 
                   [&graph, &dnai](poplar::Tensor &t) -> poplar::Tensor {return graph.clone(t, {dnai, "initial clone num_inp_spikes"});});
+
+
+  std::cout << "tile mappings" << std::endl;
+  std::cout << "inp_spike_ids" << std::endl;
+  
+  auto tile_map_inp_ids = graph.getTileMapping(inp_spike_ids[1]);
+  auto tile_map_num_ins = graph.getTileMapping(num_inp_spikes[1]);
+  std::cout << "\ntile_map_inp_ids[0].size(): " << tile_map_inp_ids[0].size() << std::endl;
+  std::cout << "tile_map_inp_ids[1].size(): " << tile_map_inp_ids[1].size() << std::endl;
+  std::cout << "tile_map_num_ins[0].size(): " << tile_map_num_ins[0].size() << std::endl;
+  std::cout << "tile_map_num_ins[1].size(): " << tile_map_num_ins[1].size() << std::endl;
+
+  auto tile_map_sl_inp_ids = graph.getTileMapping(slicedInpSpikeIds[1]);
+  auto tile_map_sl_num_ins = graph.getTileMapping(slicedNumInpSpikes[1]);
+  std::cout << "\ntile_map_sl_inp_ids[0].size(): " << tile_map_sl_inp_ids[0].size() << std::endl;
+  std::cout << "tile_map_sl_inp_ids[1].size(): " << tile_map_sl_inp_ids[1].size() << std::endl;
+  std::cout << "tile_map_sl_num_ins[0].size(): " << tile_map_sl_num_ins[0].size() << std::endl;
+  std::cout << "tile_map_sl_num_ins[1].size(): " << tile_map_sl_num_ins[1].size() << std::endl;
 
   //----------------------------------------- REPEAT -------------------------------------------------  
   auto loopFwd = [&graph, &weights, &decay_constants, &oneMinus_decay_constants, &thresholds, &currentState, &inp_spike_ids, &num_inp_spikes, &out_spike_ids, &num_out_spikes, 

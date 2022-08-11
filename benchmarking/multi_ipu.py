@@ -2,6 +2,7 @@
 import os
 import functools as ft
 from typing import Union, NamedTuple, List
+import warnings
 
 import numpy as np
 import tensorflow as tf
@@ -18,7 +19,8 @@ from keras_train_util_ipu import (
     simple_loss_fn_dense, 
     dyn_dense_binary_sparse_matmul_op,
     sparse2dense_ipu,
-    gen_sparse_spikes
+    gen_sparse_spikes,
+    # model_fn_sparse_layer,
 )
 
 class SparseBinaryVec(NamedTuple):
@@ -346,8 +348,45 @@ def model_fn_sparse_ops(sparse_shapes, seq_len, dense_shapes, decay_constant, th
 
     return (inp_spike_ids, num_inp_spikes), output
 
-
 def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None, num_ipus=1):
+    if return_all:
+        warnings.warn("All layers outputs will be returned. But note that only gradient propagation through the last layers outputs is implemented."
+                    " Adding loss terms to other layers outputs will be ignored and will result in a wrong gradient.", UserWarning)
+
+    num_layers = len(dense_shapes)-1
+
+    inp_spike_ids = keras.Input(shape=(seq_len, sparse_shapes[0]), batch_size=batchsize_per_step, dtype=tf.float32, name="inp_spike_ids")
+    num_inp_spikes = keras.Input(shape=(seq_len, 1), batch_size=batchsize_per_step, dtype=tf.int32, name="num_inp_spikes")
+    
+    spike_ids = [tf.transpose(inp_spike_ids, perm=[1, 0, 2]), *[tf.zeros((batchsize_per_step, sparse_shapes[ilay]), dtype=inp_spike_ids.dtype ) for ilay in range(1, num_layers)]]
+    num_spikes = [tf.transpose(num_inp_spikes, perm=[1, 0, 2]), *[tf.zeros((batchsize_per_step,1), dtype=num_inp_spikes.dtype ) for ilay in range(1, num_layers)]]
+    inp_spikes = [SparseBinaryVec(ids,nz_elemts) for ids,nz_elemts in zip(spike_ids, num_spikes)]
+
+    init_states = [tf.zeros((batchsize_per_step, dense_shapes[i+1]), dtype=tf.float32) for i in range(num_layers)]
+    out = KerasMultiLIFLayerSparse(
+            dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed, num_ipus
+        )(inp_spikes, init_states)
+    out_spike_ids, num_out_spikes, states = out[:num_layers], out[num_layers:2*num_layers], out[2*num_layers:]
+
+    # if return_all:
+    #     out = [tf.transpose(sparse2dense_ipu(SparseBinaryVec(ids, tf.cast(num_nzelements, tf.int32)), dense_shapes[-1]), perm=[1, 0, 2]) for ids,num_nzelements in zip(out_spike_ids, num_out_spikes)]
+    # else:
+    #     sparse_out_spikes_last_layer = SparseBinaryVec(out_spike_ids[-1], tf.cast(num_out_spikes[-1], tf.int32))
+    #     dense_out_spikes_last_layer = sparse2dense_ipu(sparse_out_spikes_last_layer, dense_shapes[-1])
+    #     out = tf.transpose(dense_out_spikes_last_layer, perm=[1, 0, 2])
+
+    if return_all:
+        out = [SparseBinaryVec(ids, num_nzelements) for ids,num_nzelements in zip(out_spike_ids, num_out_spikes)]
+    else:
+        out = SparseBinaryVec(out_spike_ids[-1], num_out_spikes[-1])
+
+    dense_spikes = sparse2dense_ipu(out, dense_shapes[-1])
+    output = tf.transpose(dense_spikes, perm=[1, 0, 2])
+
+    return (inp_spike_ids, num_inp_spikes), output
+
+
+def model_fn_sparse_layer_multi_ipu(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None, num_ipus=1):
     if return_all:
         warnings.warn("All layers outputs will be returned. But note that only gradient propagation through the last layers outputs is implemented."
                     " Adding loss terms to other layers outputs will be ignored and will result in a wrong gradient.", UserWarning)
@@ -405,7 +444,7 @@ def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, 
     return (inp_spike_ids, num_inp_spikes), output
 
 
-def train_ipu(method):
+def train_ipu(method, NUM_IPUS):
 
     rng = np.random.default_rng(1)
 
@@ -434,7 +473,8 @@ def train_ipu(method):
     sparse_sizes = [32, 64, 64, 8]
     dense_sizes = [100, 128, 126, 8]
     sparse_sizes = [32, 64, 64, 8]
-
+    dense_sizes = [100, 128, 8]
+    sparse_sizes = [32, 48, 8]
     # dense_sizes =  list(range(32, 32+4))
     # # sparse_sizes = list(range(15, 15+5))
     # sparse_sizes = list(range(32, 32+4))
@@ -450,7 +490,7 @@ def train_ipu(method):
     loss_fn = simple_loss_fn_dense
     # loss_fn = ft.partial(simple_loss_fn_dense_multi_ipu, 1)
 
-    NUM_IPUS = 2
+    # NUM_IPUS = 1
 
     # set ipu config and strategy 
     ipu_config = ipu.config.IPUConfig()
@@ -463,12 +503,19 @@ def train_ipu(method):
 
     assert method in ["dense", "sparse_ops", "sparse_layer"], f"`method` must be one of 'dense', 'sparse_ops', 'sparse_layer' or None, got '{method}'."
 
-    method_to_model_fn = {
-        # "dense": model_fn_dense, 
-        "sparse_ops": ft.partial(model_fn_sparse_ops, sparse_sizes, transpose_weights=False),
-        "sparse_layer": ft.partial(model_fn_sparse_layer, sparse_sizes, transpose_weights=True, num_ipus=NUM_IPUS),
-    }
 
+    if NUM_IPUS > 1:
+        method_to_model_fn = {
+            # "dense": model_fn_dense, 
+            "sparse_ops": ft.partial(model_fn_sparse_ops, sparse_sizes, transpose_weights=False),
+            "sparse_layer": ft.partial(model_fn_sparse_layer_multi_ipu, sparse_sizes, transpose_weights=True, num_ipus=NUM_IPUS),
+        }
+    else:
+        method_to_model_fn = {
+            # "dense": model_fn_dense, 
+            "sparse_ops": ft.partial(model_fn_sparse_ops, sparse_sizes, transpose_weights=False),
+            "sparse_layer": ft.partial(model_fn_sparse_layer, sparse_sizes, transpose_weights=True),
+        }
 
     input_1, input_2 = gen_sparse_spikes(rng, seq_len, num_samples, dense_sizes[0], sparse_sizes[0])
     output = tf.random.normal([num_samples, dense_sizes[-1]])
@@ -494,17 +541,18 @@ def train_ipu(method):
         # model = keras.Model([inputs, targets], outputs)
         model = keras.Model(inputs, outputs)
 
-        device_mapping = [ ipu.pipelining_ops._ALL_DEVICES, *[NUM_IPUS-1]*(NUM_IPUS-1)]
-        # print("\ndevice_mapping")
-        # print(device_mapping)
-        # sys.exit()
-        model.set_pipelining_options(
-            # pipeline_schedule=ipu.keras.pipeline.SequentialPipelineModel,
-            pipeline_schedule=ipu.ops.pipelining_ops.PipelineSchedule.Sequential,
-            gradient_accumulation_steps_per_replica=4,
-            device_mapping=device_mapping
-            # device_mapping=[0, 1]
-        )
+        if NUM_IPUS > 1:
+            device_mapping = [ ipu.pipelining_ops._ALL_DEVICES, *[NUM_IPUS-1]*(NUM_IPUS-1)]
+            # print("\ndevice_mapping")
+            # print(device_mapping)
+            # sys.exit()
+            model.set_pipelining_options(
+                # pipeline_schedule=ipu.keras.pipeline.SequentialPipelineModel,
+                pipeline_schedule=ipu.ops.pipelining_ops.PipelineSchedule.Sequential,
+                gradient_accumulation_steps_per_replica=4,
+                device_mapping=device_mapping
+                # device_mapping=[0, 1]
+            )
         # model.load_weights("./model_save_weights")
         # # model = tf.keras.models.load_model("./model_save", compile=False)
 
@@ -526,7 +574,7 @@ def train_ipu(method):
         )
 
         model.summary()
-        print(model.get_pipeline_stage_assignment())
+        # print(model.get_pipeline_stage_assignment())
         # print(model._pipeline_stage_assignment)
         # _pipeline_stage_assignment
 
@@ -534,12 +582,9 @@ def train_ipu(method):
         model.fit(dataset, epochs=10)
 
 
-
-
-
 if __name__ == "__main__":
     # sparse2dense() # TODO broken
     # sparse_matmul()
     # train_ipu("sparse_ops")
-    train_ipu("sparse_layer")
+    train_ipu("sparse_layer", NUM_IPUS=2)
     # main()
