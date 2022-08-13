@@ -975,7 +975,7 @@ extern "C" void Build_metadata(
   bool& is_stateless,
   bool& is_hashable,
   std::uint32_t num_inputs) {
-  num_inputs = 6*2;
+  num_inputs = 6*8;
   // allocating_indices = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
   for (std::int64_t i=0; i<num_inputs; ++i){
     allocating_indices.push_back(i);
