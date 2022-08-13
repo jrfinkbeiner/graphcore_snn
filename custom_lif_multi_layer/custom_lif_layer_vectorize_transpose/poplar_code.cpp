@@ -90,9 +90,19 @@ std::vector<poplar::Tensor> clone_tensor_vector(poplar::Graph& graph, const std:
   return dst;
 }
 
-std::vector<poplar::Tensor> cast_tensor_vector(poplar::Graph& graph, const std::vector<poplar::Tensor> &src, poplar::Type &dtype, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai = {}) {
+std::vector<poplar::Tensor> clone_tensor_vector(poplar::Graph& graph, const poplar::Type &type, const std::vector<poplar::Tensor> &src, size_t offset, const poplar::DebugNameAndId &dnai = {}) {
   std::vector<poplar::Tensor> dst;
-  std::transform(src.begin(), src.end(), std::back_inserter(dst), [&graph, &dtype, &prog,  &dnai](const poplar::Tensor &t) -> poplar::Tensor {return popops::cast(graph, t, dtype, prog, dnai);});
+  std::transform(src.begin()+offset, src.end(), std::back_inserter(dst), [&graph, &type, &dnai](const poplar::Tensor &t){return graph.clone(type, t, dnai);});
+  return dst;
+}
+
+std::vector<poplar::Tensor> cast_tensor_vector(poplar::Graph& graph, const std::vector<poplar::Tensor> &src, poplar::Type &dtype, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai = {}) {
+  // std::vector<poplar::Tensor> dst;
+  // std::transform(src.begin(), src.end(), dst.begin(), [&graph, &dtype, &prog,  &dnai](const poplar::Tensor &t) -> poplar::Tensor {return popops::cast(graph, t, dtype, prog, dnai);});
+  std::vector<poplar::Tensor> dst = clone_tensor_vector(graph, dtype, src, 0);
+  for (unsigned i=0; i<src.size(); ++i){
+    prog.add(popops::cast(graph, src[i], dst[i], dnai));
+  }
   return dst;
 }
 
@@ -667,7 +677,8 @@ void calcLIFWeightGrad(poplar::Graph &graph, std::vector<poplar::Tensor> &dLdwei
       throw poputil::poplibs_error("For `calcLIFWeightGrad`: `batchsize` must be greater or equal to `num_threads`.");
     }
     
-    auto neuronTileMapping = graph.getTileMapping(dLdweights[ilay][0][0], true);
+    // [0][0] because of replicated tensor due to multi thread approach
+    auto neuronTileMapping = graph.getTileMapping(dLdweights[ilay][0][0], true); 
 
     for (unsigned tile = 0; tile < numTiles; ++tile) {
       // If a tile contains no elements of the tensor then do not create any
@@ -906,11 +917,19 @@ void calcLIFInpSpikesGradRowWise(poplar::Graph &graph, const std::vector<poplar:
 }
 
 
-const std::vector<poplar::Tensor> preformSharedUpdate(poplar::Graph &graph, const std::vector<poplar::Tensor> &oneMinus_decay_constants, 
+const std::vector<poplar::Tensor> performSharedUpdate(poplar::Graph &graph, const std::vector<poplar::Tensor> &oneMinus_decay_constants, 
                                                       std::vector<poplar::Tensor> &dLdState, poplar::program::Sequence &prog, 
                                                       const poplar::DebugNameAndId &dnai = {}){
 
-  std::vector<poplar::Tensor> intermediate_dLdState = clone_tensor_vector(graph, dLdState, {dnai, "dLdweights"});
+  std::vector<poplar::Tensor> intermediate_dLdState = clone_tensor_vector(graph, dLdState, {dnai, "intermediate_dLdState"});
+
+  auto tile_map_dLdState = graph.getTileMapping(dLdState[0]);
+  auto tile_map_iter_dLdState = graph.getTileMapping(intermediate_dLdState[0]);
+  std::cout << "\ntile_map_dLdState[0].size(): " << tile_map_dLdState[0].size() << std::endl;
+  std::cout << "tile_map_dLdState[1].size(): " << tile_map_dLdState[1].size() << std::endl;
+  std::cout << "tile_map_iter_dLdState[0].size(): " << tile_map_iter_dLdState[0].size() << std::endl;
+  std::cout << "tile_map_iter_dLdState[1].size(): " << tile_map_iter_dLdState[1].size() << std::endl;
+
 
   const auto num_lays{dLdState.size()};
   for (unsigned ilay=0; ilay<num_lays; ++ilay){
@@ -932,7 +951,7 @@ void performLIFStepBackwardPass(poplar::Graph &graph, const std::vector<poplar::
   allDLdOutSpikes.push_back(dLdOutSpikes);
   calcLIFStateGrad(graph, weights, fwdState, decay_constants, thresholds, fwdOutSpikes, dLdState, allDLdOutSpikes, prog, dnai);
  
-  const std::vector<poplar::Tensor> intermediate_dLdState = preformSharedUpdate(graph, oneMinus_decay_constants, dLdState, prog, {dnai, "preformSharedUpdate"});
+  const std::vector<poplar::Tensor> intermediate_dLdState = performSharedUpdate(graph, oneMinus_decay_constants, dLdState, prog, {dnai, "performSharedUpdate"});
 
   // calcLIFWeightGrad_singleThread(graph, dLdweights, fwdInpSpikes, intermediate_dLdState, prog, dnai);
   calcLIFWeightGrad(graph, dLdweights, fwdInpSpikes, intermediate_dLdState, prog, dnai);
@@ -956,10 +975,14 @@ extern "C" void Build_metadata(
   bool& is_stateless,
   bool& is_hashable,
   std::uint32_t num_inputs) {
-  allocating_indices = {0, 1, 2, 3, 4, 5};
+  num_inputs = 6*2;
+  // allocating_indices = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+  for (std::int64_t i=0; i<num_inputs; ++i){
+    allocating_indices.push_back(i);
+  }
   is_elementwise = false;
   is_stateless = true;
-  num_inputs = 6;
+  // num_inputs = 6;
 }
 
 
@@ -1213,7 +1236,7 @@ extern "C" poplar::Tensor Build_allocator(
 
   size_t batchsize = atrribute_sizes[2*(num_layers+1)];
 
-  std::cout << "\nBuild_allocator" << std::endl;
+  std::cout << "\nBuild_allocator: " << operand << std::endl;
   // std::cout << "num_layers: " << num_layers << std::endl;
   // std::cout << "batchsize: " << batchsize << std::endl;
 
@@ -1260,10 +1283,13 @@ extern "C" poplar::Tensor Build_allocator(
             break;
     case 1: neuronDim = 1;
             tensor_name = "init_state";
+            std::cout << "Build alloc init_state" << std::endl;
             // neuron_mapping = determine_neuron_mapping(numTiles, layer_id, dense_sizes, sparse_sizes, batchsize);
             // // allocTensor = alloc_neuronwise(graph, shape, type, neuronDim, neuron_mapping, {dnai, tensor_name});
             // allocTensor = alloc_neuronwise_contiguous(graph, shape, type, neuronDim, neuron_mapping, {dnai, tensor_name});
             allocTensor = alloc_neuronwise_contiguous(graph, shape, type, neuronDim, start_tiles[layer_id], end_tiles[layer_id], {dnai, tensor_name});
+            std::cout << "\nalloc_tensor tileMap[0].size(): " << graph.getTileMapping(allocTensor)[0].size() << std::endl;
+            std::cout << "alloc_tensor tileMap[1].size(): " << graph.getTileMapping(allocTensor)[1].size() << std::endl;
             break;
     case 2: tensor_name = "inp_spike_ids";
             ipu_id_to_use = (layer_id == 0)? ipu_id : ipu_id_prev;
@@ -1330,6 +1356,17 @@ extern "C" poplar::program::Program Build(
   std::vector<poplar::Tensor> decay_constants(inputs.begin()+4*num_layers,inputs.begin()+5*num_layers);
   std::vector<poplar::Tensor> thresholds(inputs.begin()+5*num_layers,inputs.begin()+6*num_layers);
   
+
+  std::cout << "RUN Build" << std::endl;
+
+  auto tile_map_init_state0 = graph.getTileMapping(init_state[0]);
+  auto tile_map_init_state1 = graph.getTileMapping(init_state[1]);
+  std::cout << "\ntile_map_init_state0[0].size(): " << tile_map_init_state0[0].size() << std::endl;
+  std::cout << "tile_map_init_state0[1].size(): " << tile_map_init_state0[1].size() << std::endl;
+  std::cout << "tile_map_init_state1[0].size(): " << tile_map_init_state1[0].size() << std::endl;
+  std::cout << "tile_map_init_state1[1].size(): " << tile_map_init_state1[1].size() << std::endl;
+
+
   for (unsigned ilay=0; ilay<num_layers; ++ilay){
     if (weights[ilay].rank() != 2) {
       throw poputil::poplibs_error("Input 'inputs[0]' must be matrices (tensor of rank 2, (size_out, size_in)).");
@@ -1425,11 +1462,15 @@ extern "C" poplar::program::Program Build(
     arange_vec.push_back(i);
   }
   
-  auto castVecElements = [&graph, &fwdProg, &dnai](poplar::Tensor &t) -> poplar::Tensor { return popops::cast(graph, t, poplar::UNSIGNED_INT, fwdProg, {dnai, "cast spikes"}); };
-  std::vector<poplar::Tensor> inp_spike_ids;
-  std::vector<poplar::Tensor> num_inp_spikes;
-  std::transform(inp_spike_ids_fptype.begin(), inp_spike_ids_fptype.end(), std::back_inserter(inp_spike_ids), castVecElements);
-  std::transform(num_inp_spikes_int.begin(), num_inp_spikes_int.end(), std::back_inserter(num_inp_spikes), castVecElements);
+  // auto castVecElements = [&graph, &fwdProg, &dnai](poplar::Tensor &t) -> poplar::Tensor { return popops::cast(graph, t, poplar::UNSIGNED_INT, fwdProg, {dnai, "cast spikes"}); };
+  // std::vector<poplar::Tensor> inp_spike_ids;
+  // std::vector<poplar::Tensor> num_inp_spikes;
+  // std::transform(inp_spike_ids_fptype.begin(), inp_spike_ids_fptype.end(), std::back_inserter(inp_spike_ids), castVecElements);
+  // std::transform(num_inp_spikes_int.begin(), num_inp_spikes_int.end(), std::back_inserter(num_inp_spikes), castVecElements);
+
+  std::vector<poplar::Tensor> inp_spike_ids = cast_tensor_vector(graph, inp_spike_ids_fptype, poplar::UNSIGNED_INT, fwdProg, {dnai, "cast inp_spike_ids"});
+  std::vector<poplar::Tensor> num_inp_spikes = cast_tensor_vector(graph, num_inp_spikes_int, poplar::UNSIGNED_INT, fwdProg, {dnai, "cast num_inp_spikes"});
+
 
   std::vector<size_t> layer_to_ipu_id;
   std::transform(start_tiles.begin(), start_tiles.end(), std::back_inserter(layer_to_ipu_id), [&numTilesPerIPU](size_t &start_tile){return start_tile / numTilesPerIPU;});
@@ -1488,8 +1529,19 @@ extern "C" poplar::program::Program Build(
 
   //----------------------------------------- Prepare inital state for REPEAT -------------------------------------------------  
   // TODO later maybe better clone and copy to not create unintended behaviour
-  std::vector<poplar::Tensor> currentState = init_state;
-  
+  std::vector<poplar::Tensor> currentState = clone_tensor_vector(graph, init_state, {dnai, "clone_into_currentState"});
+  for (unsigned i=0; i<num_layers; ++i){
+    fwdProg.add(poplar::program::Copy(init_state[i], currentState[i], false, {dnai, "copy_to_currenState"}));
+  }
+
+  // auto tile_map_currentState0 = graph.getTileMapping(currentState[0]);
+  // auto tile_map_currentState1 = graph.getTileMapping(currentState[1]);
+  // std::cout << "\ntile_map_currentState0[0].size(): " << tile_map_currentState0[0].size() << std::endl;
+  // std::cout << "tile_map_currentState0[1].size(): " << tile_map_currentState0[1].size() << std::endl;
+  // std::cout << "tile_map_currentState1[0].size(): " << tile_map_currentState1[0].size() << std::endl;
+  // std::cout << "tile_map_currentState1[1].size(): " << tile_map_currentState1[1].size() << std::endl;
+
+
   // // As the netowrk is purely feed forward, generate the output spikes tensors from the initial input spikes tensors of the next layer
   // std::vector<poplar::Tensor> slicedOutSpikeIds;
   // // std::transform(inp_spike_ids.begin()+1, inp_spike_ids.end(), std::back_inserter(slicedOutSpikeIds), 
@@ -1526,6 +1578,14 @@ extern "C" poplar::program::Program Build(
   std::cout << "tile mappings" << std::endl;
   std::cout << "inp_spike_ids" << std::endl;
   
+
+  auto tile_map_inp_ids_fptype = graph.getTileMapping(inp_spike_ids_fptype[1]);
+  auto tile_map_num_ins_int = graph.getTileMapping(num_inp_spikes_int[1]);
+  std::cout << "\ntile_map_inp_ids_fptype[0].size(): " << tile_map_inp_ids_fptype[0].size() << std::endl;
+  std::cout << "tile_map_inp_ids_fptype[1].size(): " << tile_map_inp_ids_fptype[1].size() << std::endl;
+  std::cout << "tile_map_num_ins_int[0].size(): " << tile_map_num_ins_int[0].size() << std::endl;
+  std::cout << "tile_map_num_ins_int[1].size(): " << tile_map_num_ins_int[1].size() << std::endl;
+
   auto tile_map_inp_ids = graph.getTileMapping(inp_spike_ids[1]);
   auto tile_map_num_ins = graph.getTileMapping(num_inp_spikes[1]);
   std::cout << "\ntile_map_inp_ids[0].size(): " << tile_map_inp_ids[0].size() << std::endl;
@@ -1642,16 +1702,74 @@ poplar::program::Program Build_grad(
   //   throw poputil::poplibs_error("Gradient calculation only defined for weight tensor ('inputs[0]').");
   // }
 
+  // Get the target, which descibes properties of the hardware.
+  auto target = graph.getTarget();
+  size_t numTiles = target.getNumTiles();
+  size_t numTilesPerIPU = target.getTilesPerIPU();
+
   poplar::program::Sequence bwdProg;
   poplar::DebugNameAndId dnai{debug_prefix};
 
   size_t num_layers = fwd_inputs.size() / 6;
   const std::vector<poplar::Tensor> weights(fwd_inputs.begin(),fwd_inputs.begin()+num_layers);
-  const std::vector<poplar::Tensor> init_state(fwd_inputs.begin()+1*num_layers,fwd_inputs.begin()+2*num_layers);
-  const std::vector<poplar::Tensor> inp_spike_ids_fptype(fwd_inputs.begin()+2*num_layers,fwd_inputs.begin()+3*num_layers);
-  const std::vector<poplar::Tensor> num_inp_spikes_int(fwd_inputs.begin()+3*num_layers,fwd_inputs.begin()+4*num_layers);
+  const std::vector<poplar::Tensor> init_state_preReAlloc(fwd_inputs.begin()+1*num_layers,fwd_inputs.begin()+2*num_layers);
+  const std::vector<poplar::Tensor> inp_spike_ids_fptype_preReAlloc(fwd_inputs.begin()+2*num_layers,fwd_inputs.begin()+3*num_layers);
+  const std::vector<poplar::Tensor> num_inp_spikes_int_preReAlloc(fwd_inputs.begin()+3*num_layers,fwd_inputs.begin()+4*num_layers);
   const std::vector<poplar::Tensor> decay_constants(fwd_inputs.begin()+4*num_layers,fwd_inputs.begin()+5*num_layers);
   const std::vector<poplar::Tensor> thresholds(fwd_inputs.begin()+5*num_layers,fwd_inputs.begin()+6*num_layers);
+
+  std::vector<size_t> atrribute_sizes = convert_vecOfStr_to_vecOfSizet(attributes, '_');
+  // size_t num_layers = (atrribute_sizes.size()-3) / 4;
+  std::vector<size_t> dense_sizes(atrribute_sizes.begin(), atrribute_sizes.begin()+num_layers+1);
+  std::vector<size_t> sparse_sizes(atrribute_sizes.begin()+num_layers+1, atrribute_sizes.begin()+2*(num_layers+1));
+  size_t sizes_offset = 2*(num_layers+1)+1;
+  auto tiles_iterator = atrribute_sizes.begin() + sizes_offset;
+  std::vector<size_t> start_tiles(tiles_iterator, tiles_iterator+num_layers);
+  std::vector<size_t> end_tiles(tiles_iterator+num_layers, tiles_iterator+2*num_layers);
+
+  std::vector<poplar::Tensor> init_state;
+  for (unsigned i=0; i<num_layers; ++i){
+    init_state.push_back(alloc_neuronwise_contiguous(graph, init_state_preReAlloc[i].shape(), init_state_preReAlloc[i].elementType(), 1, start_tiles[i], end_tiles[i], {dnai, "alloc_init_state_bwd"}));
+  }
+  for (unsigned i=0; i<num_layers; ++i){
+    bwdProg.add(poplar::program::Copy(init_state_preReAlloc[i], init_state[i], false, {dnai, "copy_to_currenState"}));
+  }
+
+  // auto tile_map_init_state0 = graph.getTileMapping(init_state[0]);
+  // auto tile_map_init_state1 = graph.getTileMapping(init_state[1]);
+  // std::cout << "\ntile_map_init_state0[0].size(): " << tile_map_init_state0[0].size() << std::endl;
+  // std::cout << "tile_map_init_state0[1].size(): " << tile_map_init_state0[1].size() << std::endl;
+  // std::cout << "tile_map_init_state1[0].size(): " << tile_map_init_state1[0].size() << std::endl;
+  // std::cout << "tile_map_init_state1[1].size(): " << tile_map_init_state1[1].size() << std::endl;
+
+  std::vector<size_t> layer_to_ipu_id;
+  std::transform(start_tiles.begin(), start_tiles.end(), std::back_inserter(layer_to_ipu_id), [&numTilesPerIPU](size_t &start_tile){return start_tile / numTilesPerIPU;});
+  
+  std::vector<poplar::Graph> ipu_to_virtualGraph;
+  size_t num_ipus = target.getNumIPUs();
+  size_t num_tiles_per_ipu = target.getTilesPerIPU();
+  for (unsigned iipu=0; iipu<num_ipus; ++iipu){
+    ipu_to_virtualGraph.push_back(graph.createVirtualGraph(numTilesPerIPU * iipu + 1, numTilesPerIPU * (iipu+1)));
+  }
+
+  std::vector<poplar::Tensor> inp_spike_ids_fptype = {inp_spike_ids_fptype_preReAlloc[0], };
+  // std::vector<poplar::Tensor> num_inp_spikes_int = {num_inp_spikes_int_preReAlloc[0], };
+  for (unsigned ilay=1; ilay<num_layers; ++ilay){
+    inp_spike_ids_fptype.push_back(alloc_linearly(ipu_to_virtualGraph[layer_to_ipu_id[ilay]], inp_spike_ids_fptype_preReAlloc[ilay].shape(), inp_spike_ids_fptype_preReAlloc[ilay].elementType(), 1, {dnai, "alloc_inp_spike_ids_fptype_bwd"}));
+    // num_inp_spikes_int.push_back(alloc_linearly(ipu_to_virtualGraph[layer_to_ipu_id[ilay]], num_inp_spikes_int_preReAlloc[ilay].shape(), num_inp_spikes_int_preReAlloc[ilay].elementType(), 1, {dnai, "alloc_num_inp_spikes_int_bwd"}));
+  }
+  for (unsigned i=1; i<num_layers; ++i){
+    bwdProg.add(poplar::program::Copy(inp_spike_ids_fptype_preReAlloc[i], inp_spike_ids_fptype[i], false, {dnai, "copy_to_inp_spike_ids_fptype_bwd"}));
+    // bwdProg.add(poplar::program::Copy(num_inp_spikes_int_preReAlloc[i], num_inp_spikes_int[i], false, {dnai, "copy_to_num_inp_spikes_int_bwd"}));
+  }
+  std::vector<poplar::Tensor> num_inp_spikes_int = num_inp_spikes_int_preReAlloc;
+
+  auto tile_map_inp_spike_ids_fptype1 = graph.getTileMapping(inp_spike_ids_fptype[1]);
+  auto tile_map_inp_spike_ids_fptype_preAlloc = graph.getTileMapping(inp_spike_ids_fptype_preReAlloc[1]);
+  std::cout << "\ntile_map_inp_spike_ids_fptype[0].size(): " << tile_map_inp_spike_ids_fptype1[0].size() << std::endl;
+  std::cout << "tile_map_inp_spike_ids_fptype[1].size(): " << tile_map_inp_spike_ids_fptype1[1].size() << std::endl;
+  std::cout << "tile_map_inp_spike_ids_fptype_preAlloc[0].size(): " << tile_map_inp_spike_ids_fptype_preAlloc[0].size() << std::endl;
+  std::cout << "tile_map_inp_spike_ids_fptype_preAlloc[1].size(): " << tile_map_inp_spike_ids_fptype_preAlloc[1].size() << std::endl;
 
   std::vector<poplar::Tensor> oneMinus_decay_constants;
   for (unsigned i=0; i<num_layers ; ++i) {
@@ -1696,8 +1814,17 @@ poplar::program::Program Build_grad(
   // poplar::Tensor dLdfwd_states_seq = gradients[2]; // Ignore this possibility for now. Essentially assume 0
 
   // init reverse state
-  std::vector<poplar::Tensor> dLdstate = clone_tensor_vector(graph, init_state, {dnai, "dLdstate"});
+  std::vector<poplar::Tensor> dLdstate = clone_tensor_vector(graph, init_state, {dnai, "dLdstate_clone"});
   zero_tensor_vector(graph, dLdstate, bwdProg, dnai);
+
+  
+  auto tile_map_init_state = graph.getTileMapping(init_state[0]);
+  auto tile_map_dLdState = graph.getTileMapping(dLdstate[0]);
+  std::cout << "\ntile_map_init_state[0].size(): " << tile_map_init_state[0].size() << std::endl;
+  std::cout << "tile_map_init_state[1].size(): " << tile_map_init_state[1].size() << std::endl;
+  std::cout << "tile_map_dLdState[0].size(): " << tile_map_dLdState[0].size() << std::endl;
+  std::cout << "tile_map_dLdState[1].size(): " << tile_map_dLdState[1].size() << std::endl;
+
 
   std::vector<poplar::Tensor> inp_spike_ids = cast_tensor_vector(graph, inp_spike_ids_fptype, poplar::UNSIGNED_INT, bwdProg, {dnai, "cast inp_spike_ids"});
   std::vector<poplar::Tensor> num_inp_spikes = cast_tensor_vector(graph, num_inp_spikes_int, poplar::UNSIGNED_INT, bwdProg, {dnai, "cast num_inp_spikes"});
@@ -1710,6 +1837,13 @@ poplar::program::Program Build_grad(
   zero_tensor_vector(graph, slicedDLdInpSpikes, bwdProg, dnai);
   // std::vector<poplar::Tensor> slicedDLdOutSpikes(num_layers);
   // std::transform(slicedDLdInpSpikes.begin()+1, slicedDLdInpSpikes.end(), slicedDLdOutSpikes.begin(), [&graph, &dnai](const poplar::Tensor &t){return graph.clone(t, dnai);});
+
+  auto tile_map_inp_spike_ids_fptype = graph.getTileMapping(inp_spike_ids_fptype[1]);
+  auto tile_map_slicedDLdinpSpikes = graph.getTileMapping(slicedDLdInpSpikes[0]);
+  std::cout << "\ntile_map_inp_spike_ids_fptype[0].size(): " << tile_map_inp_spike_ids_fptype[0].size() << std::endl;
+  std::cout << "tile_map_inp_spike_ids_fptype[1].size(): " << tile_map_inp_spike_ids_fptype[1].size() << std::endl;
+  std::cout << "tile_map_slicedDLdinpSpikes[0].size(): " << tile_map_slicedDLdinpSpikes[0].size() << std::endl;
+  std::cout << "tile_map_slicedDLdinpSpikes[1].size(): " << tile_map_slicedDLdinpSpikes[1].size() << std::endl;
 
   //------------------------------------------- Repeat -------------------------------------------------  
   // poplar::Tensor dLdstate = init_reverse_state;
