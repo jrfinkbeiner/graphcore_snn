@@ -452,8 +452,8 @@ def train_ipu(method, NUM_IPUS):
     num_samples = 16*batch_size
     # dense_sizes = [32, 33, 34]
     # sparse_sizes = [15, 16, 17]
-    # # dense_sizes = [2942, 2942, 1470, 1470, 1000, 1000, 1000, 256, 8]
-    # # sparse_sizes = [32, 128, 64, 64, 48, 48, 48, 16, 8]
+    dense_sizes = [2942, 2942, 1470, 1470, 1000, 1000, 1000, 256, 8]
+    sparse_sizes = [32, 128, 64, 64, 48, 48, 48, 16, 8]
     # dense_sizes = [2942, 1472, 1468, 1002, 1000, 256, 8]
     # sparse_sizes = [32, 64, 64, 48, 48, 16, 8]
     
@@ -469,15 +469,15 @@ def train_ipu(method, NUM_IPUS):
     # dense_sizes = [100, 256, 256, 8]
     # sparse_sizes = [32, 64, 64, 8]
 
-    dense_sizes = [100, 256, 254, 8]
-    sparse_sizes = [32, 64, 64, 8]
-    dense_sizes = [100, 128, 126, 8]
-    sparse_sizes = [32, 64, 64, 8]
-    dense_sizes = [100, 128, 8]
-    sparse_sizes = [32, 48, 8]
-    # dense_sizes =  list(range(32, 32+4))
-    # # sparse_sizes = list(range(15, 15+5))
-    # sparse_sizes = list(range(32, 32+4))
+    # dense_sizes = [100, 256, 256, 8]
+    # sparse_sizes = [32, 64, 64, 8]
+    # dense_sizes = [100, 128, 126, 8]
+    # sparse_sizes = [32, 64, 64, 8]
+    # dense_sizes = [100, 128, 8]
+    # sparse_sizes = [32, 48, 8]
+    # # dense_sizes =  list(range(32, 32+4))
+    # # # sparse_sizes = list(range(15, 15+5))
+    # # sparse_sizes = list(range(32, 32+4))
 
 
     seq_len = 12
@@ -586,5 +586,5 @@ if __name__ == "__main__":
     # sparse2dense() # TODO broken
     # sparse_matmul()
     # train_ipu("sparse_ops")
-    train_ipu("sparse_layer", NUM_IPUS=2)
+    train_ipu("sparse_layer", NUM_IPUS=4)
     # main()
