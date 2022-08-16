@@ -292,74 +292,116 @@ void performBatchedLIFStateUpdateInPlace(poplar::Graph &graph, std::vector<popla
 }
 
 
-void genBatchedLIFOutSpikesTopK(poplar::Graph &graph, std::vector<poplar::Tensor> &state, std::vector<poplar::Tensor> &thresholds, 
-              std::vector<BatchedSparseSpikes> &out_spikes, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai = {}) {
+// void genBatchedLIFOutSpikesTopK(poplar::Graph &graph, std::vector<poplar::Tensor> &state, std::vector<poplar::Tensor> &thresholds, 
+//               std::vector<BatchedSparseSpikes> &out_spikes, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai = {}) {
 
-  // popops::SortOrder sortOrder = None;
-  // popops::SortOrder sortOrder = popops::SortOrder::NONE;
-  size_t num_layers = state.size();
+//   // popops::SortOrder sortOrder = None;
+//   // popops::SortOrder sortOrder = popops::SortOrder::NONE;
+//   size_t num_layers = state.size();
 
-  std::vector<poplar::Tensor> topKStateVals;
-  std::vector<poplar::Tensor> topKStateIds;
-  for (unsigned ilay=0; ilay<num_layers; ++ilay){
-    auto numSparseOutSpikes = out_spikes[ilay].spike_ids.dim(1);
-    // popops::TopKParams topKparams(numSparseOutSpikes, true, popops::SortOrder::DESCENDING);
-    popops::TopKParams topKparams(numSparseOutSpikes, true, popops::SortOrder::NONE);
+//   std::vector<poplar::Tensor> topKStateVals;
+//   std::vector<poplar::Tensor> topKStateIds;
+//   for (unsigned ilay=0; ilay<num_layers; ++ilay){
+//     auto numSparseOutSpikes = out_spikes[ilay].spike_ids.dim(1);
+//     // popops::TopKParams topKparams(numSparseOutSpikes, true, popops::SortOrder::DESCENDING);
+//     popops::TopKParams topKparams(numSparseOutSpikes, true, popops::SortOrder::NONE);
 
-    std::pair<poplar::Tensor, poplar::Tensor> topKStatesPair{popops::topKWithPermutation(graph, prog, state[ilay], topKparams, dnai)};
-    topKStateVals.push_back(topKStatesPair.first);
-    topKStateIds.push_back(topKStatesPair.second);
-  }
+//     std::pair<poplar::Tensor, poplar::Tensor> topKStatesPair{popops::topKWithPermutation(graph, prog, state[ilay], topKparams, dnai)};
+//     topKStateVals.push_back(topKStatesPair.first);
+//     topKStateIds.push_back(topKStatesPair.second);
+//   }
 
-  auto cs = graph.addComputeSet({dnai, "genBatchedLIFOutSpikesFromTopK"});
-  for (unsigned ilay=0; ilay<num_layers; ++ilay){
-    auto dtype = state[ilay].elementType();
-    size_t batchsize = state[ilay].dim(0);
-    for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
-      auto v = graph.addVertex(cs, poputil::templateVertex("LIFOutSpikesFromTopK", dtype),
-                                {{"topKStateVals", topKStateVals[ilay][ibatch]},
-                                {"topKStateIds", topKStateIds[ilay][ibatch]},
-                                {"thresholds", thresholds[ilay]},
-                                {"out_spikes_ids", out_spikes[ilay].spike_ids[ibatch]},
-                                {"num_out_spikes", out_spikes[ilay].num_spikes[ibatch][0]}});
-      // !!! TODO !!! totally bogus tile mapping, must be improved
-      // most likely should be based on out_spikes mapping
-      graph.setTileMapping(v, 1471-ibatch-batchsize*ilay);
-      // Provide a cycle count estimate for the profiler. // TODO make educated guess/provide equation
-      graph.setPerfEstimate(v, 1);
+//   auto cs = graph.addComputeSet({dnai, "genBatchedLIFOutSpikesFromTopK"});
+//   for (unsigned ilay=0; ilay<num_layers; ++ilay){
+//     auto dtype = state[ilay].elementType();
+//     size_t batchsize = state[ilay].dim(0);
+//     for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
+//       auto v = graph.addVertex(cs, poputil::templateVertex("LIFOutSpikesFromTopK", dtype),
+//                                 {{"topKStateVals", topKStateVals[ilay][ibatch]},
+//                                 {"topKStateIds", topKStateIds[ilay][ibatch]},
+//                                 {"thresholds", thresholds[ilay]},
+//                                 {"out_spikes_ids", out_spikes[ilay].spike_ids[ibatch]},
+//                                 {"num_out_spikes", out_spikes[ilay].num_spikes[ibatch][0]}});
+//       // !!! TODO !!! totally bogus tile mapping, must be improved
+//       // most likely should be based on out_spikes mapping
+//       graph.setTileMapping(v, 1471-ibatch-batchsize*ilay);
+//       // Provide a cycle count estimate for the profiler. // TODO make educated guess/provide equation
+//       graph.setPerfEstimate(v, 1);
+//     }
+//   }
+//   prog.add(poplar::program::Execute(cs));
+// }
+
+
+// // TODO !!! think about tile mapping !!!
+// void genBatchedLIFOutSpikes2Threshs(poplar::Graph &graph, std::vector<poplar::Tensor> &state, std::vector<poplar::Tensor> &thresholds, 
+//                             std::vector<BatchedSparseSpikes> &out_spikes, 
+//                             poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai = {}) {
+
+//   auto cs = graph.addComputeSet({dnai, "genBatchedLIFOutSpikes2Threshs"});
+//   size_t num_layers = state.size();
+
+//   for (unsigned ilay=0; ilay<num_layers; ++ilay){
+//     auto dtype = state[ilay].elementType();
+//     size_t batchsize = state[ilay].dim(0);
+//     for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
+//       auto v = graph.addVertex(cs, poputil::templateVertex("LIFOutSpikes2Threshs", dtype),
+//                                 {{"state", state[ilay][ibatch]},
+//                                 {"thresholds", thresholds[ilay]},
+//                                 {"out_spikes_ids", out_spikes[ilay].spike_ids[ibatch]},
+//                                 {"num_out_spikes", out_spikes[ilay].num_spikes[ibatch][0]}});
+//       // !!! TODO !!! totally bogus tile mapping, must be improved
+//       // most likely should be based on out_spikes mapping
+//       // graph.setTileMapping(v, (ibatch+1)*32);
+//       graph.setTileMapping(v, 1471-ibatch-batchsize*ilay);
+//       // Provide a cycle count estimate for the profiler. // TODO make educated guess/provide equation
+//       graph.setPerfEstimate(v, 1);
+//     }
+//   }
+//   prog.add(poplar::program::Execute(cs));
+// }     
+
+unsigned get_tensor_ipu_id(poplar::Graph &graph, poplar::Tensor &t){
+  auto tile_mapping = graph.getTileMapping(t);
+  unsigned num_tiles = tile_mapping.size();
+  unsigned num_tiles_per_ipu = graph.getTarget().getTilesPerIPU();
+  unsigned ipu_id;
+  for (unsigned i=0; i<num_tiles; ++i){
+    if (tile_mapping.size() > 0){
+      ipu_id = i / num_tiles_per_ipu;
+      break;
     }
   }
-  prog.add(poplar::program::Execute(cs));
+  return ipu_id;
 }
 
+std::vector<unsigned> get_tensor_ipu_id(poplar::Graph &graph, std::vector<poplar::Tensor> &ts){
+  std::vector<unsigned> ipu_ids;
+  std::transform(ts.begin(), ts.end(), std::back_inserter(ipu_ids), [&graph](poplar::Tensor &t){return get_tensor_ipu_id(graph, t);});
+  return ipu_ids;
+}
 
-// TODO !!! think about tile mapping !!!
-void genBatchedLIFOutSpikes2Threshs(poplar::Graph &graph, std::vector<poplar::Tensor> &state, std::vector<poplar::Tensor> &thresholds, 
-                            std::vector<BatchedSparseSpikes> &out_spikes, 
-                            poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai = {}) {
-
-  auto cs = graph.addComputeSet({dnai, "genBatchedLIFOutSpikes2Threshs"});
-  size_t num_layers = state.size();
-
-  for (unsigned ilay=0; ilay<num_layers; ++ilay){
-    auto dtype = state[ilay].elementType();
-    size_t batchsize = state[ilay].dim(0);
-    for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
-      auto v = graph.addVertex(cs, poputil::templateVertex("LIFOutSpikes2Threshs", dtype),
-                                {{"state", state[ilay][ibatch]},
-                                {"thresholds", thresholds[ilay]},
-                                {"out_spikes_ids", out_spikes[ilay].spike_ids[ibatch]},
-                                {"num_out_spikes", out_spikes[ilay].num_spikes[ibatch][0]}});
-      // !!! TODO !!! totally bogus tile mapping, must be improved
-      // most likely should be based on out_spikes mapping
-      // graph.setTileMapping(v, (ibatch+1)*32);
-      graph.setTileMapping(v, 1471-ibatch-batchsize*ilay);
-      // Provide a cycle count estimate for the profiler. // TODO make educated guess/provide equation
-      graph.setPerfEstimate(v, 1);
-    }
+std::vector<unsigned> get_layer_id_per_ipu(const std::vector<unsigned> &layer_to_ipu_id){
+  std::cout << "\nget_layer_id_per_ipu" << std::endl;
+  std::vector<unsigned> layer_id_per_ipu(layer_to_ipu_id.size());
+  size_t num_layers{layer_to_ipu_id.size()};
+  auto num_ipus_it = std::max_element(layer_to_ipu_id.begin(), layer_to_ipu_id.end());
+  unsigned num_ipus = *num_ipus_it + 1;
+  std::cout << "\nnum_ipus" << num_ipus << std::endl;
+  std::vector<unsigned> num_layers_per_ipu(num_ipus, 0);
+  for (unsigned i=0; i<num_layers; ++i){
+    layer_id_per_ipu[i] = num_layers_per_ipu[layer_to_ipu_id[i]];
+    num_layers_per_ipu[layer_to_ipu_id[i]] += 1;
   }
-  prog.add(poplar::program::Execute(cs));
-}     
+  return layer_id_per_ipu;
+} 
+
+
+unsigned determine_start_tile_spike_gen(const unsigned &layer_to_ipu_mapping, const unsigned &layer_id_per_ipu, const unsigned &batchsize, const unsigned &num_tiles_per_ipu){
+  unsigned tile_offset = 1;
+  return num_tiles_per_ipu * layer_to_ipu_mapping + batchsize * layer_id_per_ipu + tile_offset;
+}
+
 
 // TODO !!! think about tile mapping !!!
 void genBatchedLIFOutSpikes2ThreshsMutliWorker(poplar::Graph &graph, std::vector<poplar::Tensor> &state, std::vector<poplar::Tensor> &thresholds, 
@@ -368,6 +410,7 @@ void genBatchedLIFOutSpikes2ThreshsMutliWorker(poplar::Graph &graph, std::vector
 
   auto cs = graph.addComputeSet({dnai, "LIFOutSpikes2ThreshsMultiVertex"});
   const size_t num_layers = state.size();
+  const unsigned num_tiles_per_ipu = graph.getTarget().getTilesPerIPU();
   // std::vector<unsigned> indices;
   // for( unsigned i = 0; i < numWorkers; ++i ) indices.push_back( i );
   // printVector(indices);
@@ -376,11 +419,16 @@ void genBatchedLIFOutSpikes2ThreshsMutliWorker(poplar::Graph &graph, std::vector
   std::vector<poplar::Tensor> repeated_num_out_spikes;
 
 
-  for (unsigned ilay=0; ilay<num_layers; ++ilay){
+  const std::vector<unsigned> layers_to_ipu_mapping(get_tensor_ipu_id(graph, state));
+  const std::vector<unsigned> layer_ids_per_ipu(get_layer_id_per_ipu(layers_to_ipu_mapping));
 
+  for (unsigned ilay=0; ilay<num_layers; ++ilay){
     auto dtype = state[ilay].elementType();
     const size_t batchsize = state[ilay].dim(0);
     const size_t sparse_size = out_spikes[ilay].spike_ids.dim(1);
+
+    const unsigned layer_vertex_start_tile = determine_start_tile_spike_gen(layers_to_ipu_mapping[ilay], layer_ids_per_ipu[ilay], batchsize, num_tiles_per_ipu);
+    std::cout << ilay << ": layer_vertex_start_tile" << layer_vertex_start_tile << std::endl; 
 
     // std::cout << "ilay: " << ilay << std::endl;
     // std::cout << "sparse_size: " << sparse_size << std::endl;
@@ -439,7 +487,7 @@ void genBatchedLIFOutSpikes2ThreshsMutliWorker(poplar::Graph &graph, std::vector
                                   {"repeated_out_spikes_ids", out_spike_ids_worker[ibatch]},
                                   {"repeated_num_out_spikes", repeated_num_out_spikes[ilay][ibatch][iwor]}});
 
-        size_t tile{1471-ibatch-batchsize*ilay};
+        size_t tile{layer_vertex_start_tile+ibatch};
         graph.setTileMapping(repeated_out_spikes_ids[ilay][ibatch], tile);
         graph.setTileMapping(repeated_num_out_spikes[ilay][ibatch], tile);
         graph.setTileMapping(v, tile);
@@ -462,6 +510,8 @@ void genBatchedLIFOutSpikes2ThreshsMutliWorker(poplar::Graph &graph, std::vector
     auto dtype = state[ilay].elementType();
     const size_t batchsize = state[ilay].dim(0);
 
+    const unsigned layer_vertex_start_tile = determine_start_tile_spike_gen(layers_to_ipu_mapping[ilay], layer_ids_per_ipu[ilay], batchsize, num_tiles_per_ipu);
+    std::cout << ilay << ": layer_vertex_start_tile" << layer_vertex_start_tile << std::endl;
     for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
       auto v = graph.addVertex(cs2, poputil::templateVertex("LIFOutSpikes2ThreshsCombine", dtype),
                                 // {{"repeated_out_spikes_ids", repeated_out_spikes_ids[ilay][ibatch]},
@@ -472,7 +522,8 @@ void genBatchedLIFOutSpikes2ThreshsMutliWorker(poplar::Graph &graph, std::vector
       // !!! TODO !!! totally bogus tile mapping, must be improved
       // most likely should be based on out_spikes mapping
       // graph.setTileMapping(v, (ibatch+1)*32);
-      size_t tile{1471-ibatch-batchsize*ilay};
+      // size_t tile{1471-ibatch-batchsize*ilay};
+      size_t tile{layer_vertex_start_tile+ibatch};
       graph.setTileMapping(v, tile);
       // Provide a cycle count estimate for the profiler. // TODO make educated guess/provide equation
       graph.setPerfEstimate(v, 1);
@@ -1347,6 +1398,10 @@ extern "C" poplar::program::Program Build(
   }
   size_t num_layers = inputs.size() / 6;
 
+  if (num_layers > 8){
+    throw poputil::poplibs_error("Program compiled with max 8 layers. For more adjust `Build_metadata`.");
+  }
+
   poplar::DebugNameAndId dnai{debug_prefix};
 
   std::vector<poplar::Tensor> weights(inputs.begin(),inputs.begin()+num_layers);
@@ -1356,7 +1411,6 @@ extern "C" poplar::program::Program Build(
   std::vector<poplar::Tensor> decay_constants(inputs.begin()+4*num_layers,inputs.begin()+5*num_layers);
   std::vector<poplar::Tensor> thresholds(inputs.begin()+5*num_layers,inputs.begin()+6*num_layers);
   
-
   std::cout << "RUN Build" << std::endl;
 
   auto tile_map_init_state0 = graph.getTileMapping(init_state[0]);

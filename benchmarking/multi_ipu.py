@@ -452,13 +452,17 @@ def train_ipu(method, NUM_IPUS):
     num_samples = 16*batch_size
     # dense_sizes = [32, 33, 34]
     # sparse_sizes = [15, 16, 17]
-    dense_sizes = [2942, 2942, 1470, 1470, 1000, 1000, 1000, 256, 8]
-    sparse_sizes = [32, 128, 64, 64, 48, 48, 48, 16, 8]
+    # dense_sizes = [2942, 2942, 1470, 1470, 1000, 1000, 1000, 256, 8]
+    # sparse_sizes = [32, 128, 64, 64, 48, 48, 48, 16, 8]
     # dense_sizes = [2942, 1472, 1468, 1002, 1000, 256, 8]
     # sparse_sizes = [32, 64, 64, 48, 48, 16, 8]
     
     # dense_sizes = [100, 1470, 1370, 8]
     # sparse_sizes = [32, 64, 64, 8]
+    dense_sizes = [100, 1470, 1470, 1470, 8]
+    # dense_sizes = [100, 70, 70, 70, 8]
+    sparse_sizes = [32, 64, 64, 64, 8]
+
 
 
     # # # weird error:
@@ -586,5 +590,5 @@ if __name__ == "__main__":
     # sparse2dense() # TODO broken
     # sparse_matmul()
     # train_ipu("sparse_ops")
-    train_ipu("sparse_layer", NUM_IPUS=4)
+    train_ipu("sparse_layer", NUM_IPUS=2)
     # main()
