@@ -1,4 +1,4 @@
-CC = g++
+CC = g++ -std=c++17
 
 all: libcustom_op.so
 

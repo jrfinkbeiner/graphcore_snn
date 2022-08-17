@@ -363,7 +363,7 @@ def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, 
     num_spikes = [tf.transpose(num_inp_spikes, perm=[1, 0, 2]), *[tf.zeros((batchsize_per_step,1), dtype=num_inp_spikes.dtype ) for ilay in range(1, num_layers)]]
     inp_spikes = [SparseBinaryVec(ids,nz_elemts) for ids,nz_elemts in zip(spike_ids, num_spikes)]
 
-    init_states = [tf.zeros((batchsize_per_step, dense_shapes[i+1]), dtype=tf.float32) for i in range(num_layers)]
+    init_states = [tf.zeros((batchsize_per_step, dense_shapes[i+1]), dtype=tf.float32, name=f"init_state_{i}") for i in range(num_layers)]
     out = KerasMultiLIFLayerSparse(
             dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed, num_ipus
         )(inp_spikes, init_states)
@@ -407,7 +407,7 @@ def model_fn_sparse_layer_multi_ipu(sparse_shapes, seq_len, dense_shapes, decay_
         num_spikes = [tf.transpose(num_inp_spikes, perm=[1, 0, 2], name="nup_inp_spikes_0_transp"), *[tf.zeros((batchsize_per_step,1), dtype=num_inp_spikes.dtype, name=f"intial_num_spikes_{ilay}") for ilay in range(1, num_layers)]]
         inp_spikes = [SparseBinaryVec(ids,nz_elemts) for ids,nz_elemts in zip(spike_ids, num_spikes)]
 
-        init_states = [tf.zeros((batchsize_per_step, dense_shapes[i+1]), dtype=tf.float32) for i in range(num_layers)]
+        init_states = [tf.zeros((batchsize_per_step, dense_shapes[i+1]), dtype=tf.float32, name=f"init_state_{i}") for i in range(num_layers)]
     
         out = KerasMultiLIFLayerSparse(
                 dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed, num_ipus
@@ -467,6 +467,8 @@ def train_ipu(method, NUM_IPUS):
     dense_sizes = [2940, 1470, 1470, 1470, 1370, 8]
     sparse_sizes = [32, 64, 64, 64, 64, 8]
 
+    # dense_sizes = [2940, 1472, 1470, 1474, 1370, 8]
+    # sparse_sizes = [32, 64, 64, 64, 64, 8]
 
 
     # # # weird error:
