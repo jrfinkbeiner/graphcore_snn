@@ -2,7 +2,7 @@ check_tile_allocation.py
 good_runs/
 results/
 test_top_k.py
-slurm*.out
+slurm*
 **/log/
 .vscode
 custom_lif_single_layer/util_and_experiments/figures/

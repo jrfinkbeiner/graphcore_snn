@@ -3,6 +3,7 @@ import os
 import functools as ft
 from typing import Union, NamedTuple, List
 import warnings
+import time
 
 import numpy as np
 import tensorflow as tf
@@ -463,6 +464,9 @@ def train_ipu(method, NUM_IPUS):
     # dense_sizes = [100, 70, 70, 70, 8]
     sparse_sizes = [32, 64, 64, 64, 8]
 
+    dense_sizes = [2940, 1470, 1470, 1470, 1370, 8]
+    sparse_sizes = [32, 64, 64, 64, 64, 8]
+
 
 
     # # # weird error:
@@ -582,8 +586,13 @@ def train_ipu(method, NUM_IPUS):
         # print(model._pipeline_stage_assignment)
         # _pipeline_stage_assignment
 
+        start_time = time.time()
+
         print('\nTraining')
-        model.fit(dataset, epochs=10)
+        model.fit(dataset, epochs=4)
+
+
+        print("\nFinal time: ", time.time()-start_time)
 
 
 if __name__ == "__main__":

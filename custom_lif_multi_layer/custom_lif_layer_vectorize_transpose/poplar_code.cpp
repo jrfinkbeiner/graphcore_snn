@@ -367,7 +367,7 @@ unsigned get_tensor_ipu_id(poplar::Graph &graph, poplar::Tensor &t){
   unsigned num_tiles_per_ipu = graph.getTarget().getTilesPerIPU();
   unsigned ipu_id;
   for (unsigned i=0; i<num_tiles; ++i){
-    if (tile_mapping.size() > 0){
+    if (tile_mapping[i].size() > 0){
       ipu_id = i / num_tiles_per_ipu;
       break;
     }
@@ -421,6 +421,11 @@ void genBatchedLIFOutSpikes2ThreshsMutliWorker(poplar::Graph &graph, std::vector
 
   const std::vector<unsigned> layers_to_ipu_mapping(get_tensor_ipu_id(graph, state));
   const std::vector<unsigned> layer_ids_per_ipu(get_layer_id_per_ipu(layers_to_ipu_mapping));
+
+  std::cout << "\nlayers_to_ipu_mapping" << std::endl;
+  printVector(layers_to_ipu_mapping);
+  printVector(layer_ids_per_ipu);
+
 
   for (unsigned ilay=0; ilay<num_layers; ++ilay){
     auto dtype = state[ilay].elementType();
@@ -1653,6 +1658,15 @@ extern "C" poplar::program::Program Build(
   std::cout << "tile_map_sl_inp_ids[1].size(): " << tile_map_sl_inp_ids[1].size() << std::endl;
   std::cout << "tile_map_sl_num_ins[0].size(): " << tile_map_sl_num_ins[0].size() << std::endl;
   std::cout << "tile_map_sl_num_ins[1].size(): " << tile_map_sl_num_ins[1].size() << std::endl;
+
+  std::cout << "\nthresholds " << std::endl;
+  for (unsigned ilay=0; ilay<num_layers; ++ilay){
+    auto tile_map_threshs = graph.getTileMapping(thresholds[ilay]);
+    std::vector<size_t> tile_map_threshs_sizes;
+    std::transform(tile_map_threshs.begin(), tile_map_threshs.end(), std::back_inserter(tile_map_threshs_sizes), [](std::vector<poplar::Interval> &vec) {return vec.size();});
+    std::cout << ilay << ": ";
+    printVector(tile_map_threshs_sizes);
+  }
 
   //----------------------------------------- REPEAT -------------------------------------------------  
   auto loopFwd = [&graph, &weights, &decay_constants, &oneMinus_decay_constants, &thresholds, &currentState, &inp_spike_ids, &num_inp_spikes, &out_spike_ids, &num_out_spikes, 
