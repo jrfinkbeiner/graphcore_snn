@@ -387,6 +387,27 @@ def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, 
     return (inp_spike_ids, num_inp_spikes), output
 
 
+class KerasSparseIdentity(keras.layers.Layer):
+    def __init__(self):
+        super().__init__()
+
+    def build(self, input_shape):
+
+        print(input_shape)
+        last_dim = input_shape.ids[-1]
+
+        self.eye = tf.Variable(
+            initial_value=tf.eye(last_dim),
+            trainable=True,
+            name=f"identity_eye",
+        )
+
+    def call(self, x):
+        print("\nIDENTITY")
+        print(x)
+        return type(x)(x.ids @ self.eye, x.num_nzelements)
+
+
 def model_fn_sparse_layer_multi_ipu(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None, num_ipus=1):
     if return_all:
         warnings.warn("All layers outputs will be returned. But note that only gradient propagation through the last layers outputs is implemented."
@@ -422,12 +443,19 @@ def model_fn_sparse_layer_multi_ipu(sparse_shapes, seq_len, dense_shapes, decay_
         #     out = tf.transpose(dense_out_spikes_last_layer, perm=[1, 0, 2])
 
         if return_all:
+            raise ValueError("curretly `return_all=True` is not supported")
             out = [SparseBinaryVec(ids, num_nzelements) for ids,num_nzelements in zip(out_spike_ids, num_out_spikes)]
         else:
             out = SparseBinaryVec(out_spike_ids[-1], num_out_spikes[-1])
 
 
-    with ipu.keras.PipelineStage(1):
+    for iipu in range(1,num_ipus-1):
+        with ipu.keras.PipelineStage(iipu):
+            out = KerasSparseIdentity()(out)
+
+
+
+    with ipu.keras.PipelineStage(num_ipus-1):
         print("\nOut shapes")
         print(out)
         print(out.ids.shape)
@@ -466,6 +494,10 @@ def train_ipu(method, NUM_IPUS):
 
     dense_sizes = [2940, 1470, 1470, 1470, 1370, 8]
     sparse_sizes = [32, 64, 64, 64, 64, 8]
+
+
+    dense_sizes = [2940, *[1470, 1470]*(NUM_IPUS-1), 1470, 1370, 8]
+    sparse_sizes = [32, *[64, 64]*(NUM_IPUS-1), 64, 64, 8]
 
     # dense_sizes = [2940, 1472, 1470, 1474, 1370, 8]
     # sparse_sizes = [32, 64, 64, 64, 64, 8]
@@ -601,5 +633,5 @@ if __name__ == "__main__":
     # sparse2dense() # TODO broken
     # sparse_matmul()
     # train_ipu("sparse_ops")
-    train_ipu("sparse_layer", NUM_IPUS=2)
+    train_ipu("sparse_layer", NUM_IPUS=4)
     # main()

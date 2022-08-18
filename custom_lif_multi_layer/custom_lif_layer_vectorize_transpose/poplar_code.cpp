@@ -1347,7 +1347,7 @@ extern "C" void Build_metadata(
   bool& is_stateless,
   bool& is_hashable,
   std::uint32_t num_inputs) {
-  num_inputs = 6*8;
+  num_inputs = 6*12;
   // allocating_indices = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
   for (std::int64_t i=0; i<num_inputs; ++i){
     allocating_indices.push_back(i);
@@ -1573,8 +1573,8 @@ extern "C" poplar::program::Program Build(
   }
   size_t num_layers = inputs.size() / 6;
 
-  if (num_layers > 8){
-    throw poputil::poplibs_error("Program compiled with max 8 layers. For more adjust `Build_metadata`.");
+  if (num_layers > 12){
+    throw poputil::poplibs_error("Program compiled with max 12 layers. For more adjust `Build_metadata`.");
   }
 
   poplar::DebugNameAndId dnai{debug_prefix};
