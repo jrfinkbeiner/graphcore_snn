@@ -103,7 +103,7 @@ def heaviside_with_super_spike_surrogate(x):
 def pure_tf_lif_step_dense(weights, state, inp_, decay_constants, thresholds):
     syn_inp = tf.matmul(inp_, weights, transpose_b=True)
     state = state - tf.stop_gradient(state * tf.experimental.numpy.heaviside(state-thresholds, 1))
-    new_state = state * decay_constants + (1 - decay_constants) * syn_inp
+    new_state = state * decay_constants + (1 - decay_constants) * 20.0 * syn_inp # hard coded factor 20 in IPU code
     # new_state = decay_constants*state * tf.experimental.numpy.heaviside(thresholds-state, 1) + (1-decay_constants)*syn_inp
     spikes_out = heaviside_with_super_spike_surrogate(new_state-thresholds)
     return spikes_out, new_state

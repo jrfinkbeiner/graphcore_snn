@@ -1696,8 +1696,13 @@ extern "C" poplar::program::Program Build(
   std::vector<poplar::Tensor> oneMinus_decay_constants;
   for (unsigned i=0; i<num_layers ; ++i) {
     auto ones = graph.addConstant(decay_constants[i].elementType(), decay_constants[i].shape(), 1.0, {dnai, "ones"});
+    auto mulFac = graph.addConstant(decay_constants[i].elementType(), decay_constants[i].shape(), 20.0, {dnai, "mulFac"});
     graph.setTileMapping(ones, graph.getTileMapping(decay_constants[i]));
-    oneMinus_decay_constants.push_back(popops::sub(graph, ones, decay_constants[i], fwdProg, {dnai, "itime"}));
+    graph.setTileMapping(mulFac, graph.getTileMapping(decay_constants[i]));
+    poplar::Tensor oneMinus_decay_constant = graph.clone(decay_constants[i], {dnai, "alloc_oneMinus_decay_constant"});
+    popops::subWithOutput(graph, ones, decay_constants[i], oneMinus_decay_constant, fwdProg, {dnai, "fill_oneMinus_decay_constant"});
+    popops::mulInPlace(graph, oneMinus_decay_constant, mulFac, fwdProg, {dnai, "mul_oneMinus_decay_constant"});
+    oneMinus_decay_constants.push_back(oneMinus_decay_constant);
   }
 
   //-------------------------------------------- arguments to specify -------------------------------------------------
@@ -2081,9 +2086,15 @@ poplar::program::Program Build_grad(
   std::vector<poplar::Tensor> oneMinus_decay_constants;
   for (unsigned i=0; i<num_layers ; ++i) {
     auto ones = graph.addConstant(decay_constants[i].elementType(), decay_constants[i].shape(), 1.0, {dnai, "ones"});
+    auto mulFac = graph.addConstant(decay_constants[i].elementType(), decay_constants[i].shape(), 20.0, {dnai, "mulFac"});
     graph.setTileMapping(ones, graph.getTileMapping(decay_constants[i]));
-    oneMinus_decay_constants.push_back(popops::sub(graph, ones, decay_constants[i], bwdProg, {dnai, "itime"}));
+    graph.setTileMapping(mulFac, graph.getTileMapping(decay_constants[i]));
+    poplar::Tensor oneMinus_decay_constant = graph.clone(decay_constants[i], {dnai, "alloc_oneMinus_decay_constant"});
+    popops::subWithOutput(graph, ones, decay_constants[i], oneMinus_decay_constant, bwdProg, {dnai, "fill_oneMinus_decay_constant"});
+    popops::mulInPlace(graph, oneMinus_decay_constant, mulFac, bwdProg, {dnai, "mul_oneMinus_decay_constant"});
+    oneMinus_decay_constants.push_back(oneMinus_decay_constant);
   }
+
 
   std::vector<poplar::Tensor> out_spike_ids_fptype(fwd_outputs.begin(),fwd_outputs.begin()+num_layers);
   std::vector<poplar::Tensor> num_out_spikes_int(fwd_outputs.begin()+1*num_layers,fwd_outputs.begin()+2*num_layers);
