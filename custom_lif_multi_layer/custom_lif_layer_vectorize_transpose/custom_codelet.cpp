@@ -255,7 +255,7 @@ public:
 template class LIFOutSpikes2ThreshsSplitWorker<float>;
 // template class LIFOutSpikes2ThreshsSplitWorker<half>;
 
-template <typename FPType>
+// template <typename FPType>
 class LIFOutSpikes2ThreshsCombine : public poplar::Vertex {
 public:
 
@@ -303,7 +303,7 @@ public:
     return true;
   }
 };
-template class LIFOutSpikes2ThreshsCombine<float>;
+// template class LIFOutSpikes2ThreshsCombine<float>;
 // template class LIFOutSpikes2ThreshsCombine<half>;
 
 

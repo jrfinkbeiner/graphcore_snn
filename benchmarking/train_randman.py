@@ -155,10 +155,10 @@ def main(args):
         NUM_EPOCHS = 1
         SEQ_LEN = 10
     else:
-        NUM_EPOCHS = 100
+        NUM_EPOCHS = 35
         SEQ_LEN = 100
 
-    DENSE_SIZES = [64, 512, 512, NUM_CLASSES]
+    DENSE_SIZES = [128, 512, 128, NUM_CLASSES]
     SPARSE_SIZES_BASE = [1, 2, 2, 1]
     SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE, DENSE_SIZES)]
     # SPARSE_SIZES = DENSE_SIZES # [20, 100, 10]
@@ -188,13 +188,14 @@ def main(args):
     rng = np.random.default_rng(42)
 
     BATCHSIZE_PER_STEP = BATCHSIZE
-    STEPS_PER_EPOCH = int(NUM_SAMPLES_TRAIN/BATCHSIZE)
+    STEPS_PER_EPOCH = int(NUM_SAMPLES_TRAIN/BATCHSIZE/4)
     TRAIN_STEPS_PER_EXECUTION = STEPS_PER_EPOCH
 
-    DECAY_CONSTANT = 0.9    
+    DECAY_CONSTANT = 0.92
     THRESHOLD = 1.0
 
-    LOG_FILE = f"convergence_sparsity_sweep_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_topK_sparse_multiplier_{SPARSE_MULTIPLIER}.csv"
+    LOG_FILE = f"improve_convergence_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_twoThresh_mulFac_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
+    # LOG_FILE = f"convergence_sparsity_sweep_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_topK_sparse_multiplier_{SPARSE_MULTIPLIER}.csv"
     # LOG_FILE = f"convergence_learning_rate_sweep_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_topK_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
     # LOG_FILE = None
 
@@ -259,7 +260,7 @@ def main(args):
             NUM_EPOCHS, 
             TRAIN_STEPS_PER_EXECUTION, 
             BATCHSIZE_PER_STEP,
-            dataloader_train,
+            dataloader_train.repeat(),
             SEQ_LEN, 
             DENSE_SIZES, 
             SPARSE_SIZES, 
@@ -270,15 +271,16 @@ def main(args):
             steps_per_epoch=STEPS_PER_EPOCH,
             callbacks=callbacks,
             return_all=True if CALC_ACTIVITY else False,
-            transpose_weights=False,
+            transpose_weights=bool(args.transpose_weights),
             learning_rate=LEARNING_RATE,
+            seed=44,
         )
     else:
         train_gpu(
             NUM_EPOCHS, 
             TRAIN_STEPS_PER_EXECUTION, 
             BATCHSIZE_PER_STEP,
-            dataloader_train,
+            dataloader_train.repeat(),
             SEQ_LEN, 
             DENSE_SIZES, 
             DECAY_CONSTANT, 
@@ -315,6 +317,8 @@ if __name__ == "__main__":
                                                                     "Only used for `use_ipu=1`")
     parser.add_argument('--profile_run', type=int, default=0, help="Whether this is a profiling run (default is `0` therefore `Flase`), "
                                                                     "which uses shorter squence length, less data and only one epoch.")
+    parser.add_argument('--transpose_weights', type=int, default=0, help="Whether to use transpose weights and vectorization (default is `0` therefore `Flase`).")
+                                                                    
     parser.add_argument('--sparse_multiplier', type=int, default=8, help="Factor to multiply sparse sizes with, default is 16.")
     parser.add_argument('--lr', type=float, default=1e-2, help="Learning rate for optimizer, default `1e-2`.")
 

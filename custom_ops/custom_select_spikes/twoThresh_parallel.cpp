@@ -150,6 +150,20 @@ poplar::program::Program Build_grad(
   std::vector<poplar::Tensor> out_spikes_ids = cast_tensor_vector(graph, out_spikes_ids_fptype, poplar::UNSIGNED_INT, prog, {dnai, "cast spikes"});
 
   std::vector<poplar::Tensor> dLdState = clone_tensor_vector(graph, state, {dnai, "init dLdState"});
+  // std::vector<poplar::Tensor> dLdState;
+  // std::transform(state.begin(), state.end(), std::back_inserter(dLdState), [&graph, &dnai](poplar::Tensor &t){
+  //   return graph.addVariable(t.elementType(), t.shape(), {dnai, "add dLdState"});});
+
+  // for (unsigned ilay=0; ilay<dLdState.size(); ++ilay){
+  //   const size_t batchsize = state[ilay].dim(0);
+  //   const size_t numTilesToUse{endTile[ilay] - startTile[ilay]};
+  //   const size_t batchesPerTile = batchsize / numTilesToUse + (batchsize % numTilesToUse > 0); // integer ceil div 
+
+  //   for (unsigned ibatch=0; ibatch<batchsize; ++ibatch){
+  //     graph.setTileMapping(dLdState[ilay], startTile[ilay] + (ibatch / batchesPerTile));
+  //   }
+  // }
+
   zero_tensor_vector(graph, dLdState, prog,  {dnai, "zero dLdState"});
 
   select_spikes_two_threshs_dLdState(graph, state, thresholds,

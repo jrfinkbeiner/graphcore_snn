@@ -1,5 +1,7 @@
 # TODO
 
+* wtf: tensor allocation, popops::zero, slice operation: combination somehow creates BUGS! 
+
 ## custom_lif_multi_layer_vectorize_transpose for multi IPU
 
 * create seperate operation for multi IPU

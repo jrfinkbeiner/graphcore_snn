@@ -745,7 +745,7 @@ void genBatchedLIFOutSpikes2ThreshsMutliWorker(poplar::Graph &graph, std::vector
     const unsigned layer_vertex_start_tile = determine_start_tile_spike_gen(layers_to_ipu_mapping[ilay], layer_ids_per_ipu[ilay], batchsize, num_tiles_per_ipu);
     std::cout << ilay << ": layer_vertex_start_tile" << layer_vertex_start_tile << std::endl;
     for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
-      auto v = graph.addVertex(cs2, poputil::templateVertex("LIFOutSpikes2ThreshsCombine", dtype),
+      auto v = graph.addVertex(cs2, "LIFOutSpikes2ThreshsCombine",
                                 // {{"repeated_out_spikes_ids", repeated_out_spikes_ids[ilay][ibatch]},
                                 {{"repeated_out_spikes_ids", repeated_out_spikes_ids[ilay][ibatch]},
                                 {"repeated_num_out_spikes", repeated_num_out_spikes[ilay][ibatch]},
@@ -1696,7 +1696,7 @@ extern "C" poplar::program::Program Build(
   std::vector<poplar::Tensor> oneMinus_decay_constants;
   for (unsigned i=0; i<num_layers ; ++i) {
     auto ones = graph.addConstant(decay_constants[i].elementType(), decay_constants[i].shape(), 1.0, {dnai, "ones"});
-    auto mulFac = graph.addConstant(decay_constants[i].elementType(), decay_constants[i].shape(), 20.0, {dnai, "mulFac"});
+    auto mulFac = graph.addConstant(decay_constants[i].elementType(), decay_constants[i].shape(), 10.0, {dnai, "mulFac"});
     graph.setTileMapping(ones, graph.getTileMapping(decay_constants[i]));
     graph.setTileMapping(mulFac, graph.getTileMapping(decay_constants[i]));
     poplar::Tensor oneMinus_decay_constant = graph.clone(decay_constants[i], {dnai, "alloc_oneMinus_decay_constant"});
@@ -2086,7 +2086,7 @@ poplar::program::Program Build_grad(
   std::vector<poplar::Tensor> oneMinus_decay_constants;
   for (unsigned i=0; i<num_layers ; ++i) {
     auto ones = graph.addConstant(decay_constants[i].elementType(), decay_constants[i].shape(), 1.0, {dnai, "ones"});
-    auto mulFac = graph.addConstant(decay_constants[i].elementType(), decay_constants[i].shape(), 20.0, {dnai, "mulFac"});
+    auto mulFac = graph.addConstant(decay_constants[i].elementType(), decay_constants[i].shape(), 10.0, {dnai, "mulFac"});
     graph.setTileMapping(ones, graph.getTileMapping(decay_constants[i]));
     graph.setTileMapping(mulFac, graph.getTileMapping(decay_constants[i]));
     poplar::Tensor oneMinus_decay_constant = graph.clone(decay_constants[i], {dnai, "alloc_oneMinus_decay_constant"});

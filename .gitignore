@@ -5,6 +5,8 @@ test_top_k.py
 slurm*
 **/log/
 .vscode
+benchmarking/convergence_*/
+benchmarking/improve_convergence*/
 custom_lif_single_layer/util_and_experiments/figures/
 custom_lif_single_layer/reports/
 custom_lif_single_layer/optimization/

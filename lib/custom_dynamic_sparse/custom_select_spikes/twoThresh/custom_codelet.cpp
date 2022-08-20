@@ -81,10 +81,50 @@ public:
 template class SpikesTwoThreshs<float>;
 // template class SpikesTwoThreshs<half>;
 
-// the only real difference to `SpikesTwoThreshs` is the additional counter `state_id`, 
-// as in the parallel/splitWorker case the loop iteration `i` is not equal to the state id. 
-// TODO for code readability could just remove the base call and only kepp the 
-// (slightly less efficient) one with the additional `state_id` counter
+// // the only real difference to `SpikesTwoThreshs` is the additional counter `state_id`, 
+// // as in the parallel/splitWorker case the loop iteration `i` is not equal to the state id. 
+// // TODO for code readability could just remove the base call and only kepp the 
+// // (slightly less efficient) one with the additional `state_id` counter
+// template <typename FPType>
+// class SpikesTwoThreshsSplitWorker : public poplar::Vertex {
+// public:
+
+//   poplar::Input<poplar::Vector<FPType>> state;
+//   poplar::Input<poplar::Vector<FPType>> thresholds;
+//   poplar::Input<unsigned> start_id;
+//   poplar::Output<poplar::Vector<unsigned>> repeated_out_spikes_ids;
+//   poplar::Output<unsigned> repeated_num_out_spikes;
+
+//   bool compute() {
+//     unsigned numSpikesCounter{0};
+//     unsigned numGradsCounter{0};
+//     const FPType secThreshMul{0.9};
+//     const size_t numStates = state.size();
+//     unsigned state_id{start_id};
+//     auto sizeSparseOut = repeated_out_spikes_ids.size();
+
+//     for (unsigned i = 0; i < numStates; ++i) {
+//       // TODO reformulate to not use + instead of - operations 
+//       if ((state[i] > thresholds[i]*secThreshMul) || (numStates - i <= (sizeSparseOut-(numSpikesCounter+numGradsCounter)))) {
+//         if (state[i] > thresholds[i]) {
+//           repeated_out_spikes_ids[numSpikesCounter] = state_id;
+//           ++numSpikesCounter;
+//         } else {
+//           // Fill up the array with non-spike values in reverse from behind 
+//           repeated_out_spikes_ids[sizeSparseOut-1-numGradsCounter] = state_id;
+//           ++numGradsCounter;
+//         }
+//       }
+//       if (numSpikesCounter+numGradsCounter >= sizeSparseOut) break; // TODO just implement as while
+//       ++state_id;
+//     }
+//     *repeated_num_out_spikes = numSpikesCounter;
+//     return true;
+//   }
+// };
+// template class SpikesTwoThreshsSplitWorker<float>;
+// // template class SpikesTwoThreshsSplitWorker<half>;
+
 template <typename FPType>
 class SpikesTwoThreshsSplitWorker : public poplar::Vertex {
 public:
@@ -95,27 +135,33 @@ public:
   poplar::Output<poplar::Vector<unsigned>> repeated_out_spikes_ids;
   poplar::Output<unsigned> repeated_num_out_spikes;
 
+
   bool compute() {
     unsigned numSpikesCounter{0};
     unsigned numGradsCounter{0};
     const FPType secThreshMul{0.9};
-    const size_t numStates = state.size();
+    const unsigned numStates = state.size();
     unsigned state_id{start_id};
-    auto sizeSparseOut = repeated_out_spikes_ids.size();
+    const unsigned sizeSparseOut = repeated_out_spikes_ids.size();
+    const unsigned sizeSparseOutmin1 = sizeSparseOut-1;
+    unsigned leftSideCounter{numStates};
+    const unsigned sizeSparseOutPlusNumStates = sizeSparseOut+numStates;
 
     for (unsigned i = 0; i < numStates; ++i) {
-      // TODO reformulate to not use + instead of - operations 
-      if ((state[i] > thresholds[i]*secThreshMul) || (numStates - i <= (sizeSparseOut-(numSpikesCounter+numGradsCounter)))) {
+      if ((state[i] > thresholds[i]*secThreshMul) || (leftSideCounter <= (sizeSparseOut + i))) {
+      // if ((state[i] > thresholds[i]*secThreshMul) || (numStates - i <= (sizeSparseOut-(numSpikesCounter+numGradsCounter)))) { // TODO uncomment
         if (state[i] > thresholds[i]) {
           repeated_out_spikes_ids[numSpikesCounter] = state_id;
           ++numSpikesCounter;
         } else {
           // Fill up the array with non-spike values in reverse from behind 
-          repeated_out_spikes_ids[sizeSparseOut-1-numGradsCounter] = state_id;
+          repeated_out_spikes_ids[sizeSparseOutmin1-numGradsCounter] = state_id;
           ++numGradsCounter;
         }
+        ++leftSideCounter;
+        if (leftSideCounter >= sizeSparseOutPlusNumStates) break; // TODO just implement as while
       }
-      if (numSpikesCounter+numGradsCounter >= sizeSparseOut) break; // TODO just implement as while
+      // if (numSpikesCounter+numGradsCounter >= sizeSparseOut) break; // TODO just implement as while
       ++state_id;
     }
     *repeated_num_out_spikes = numSpikesCounter;
@@ -195,6 +241,12 @@ public:
     FPType beta = 10.0; // TODO  don't hardcode here but give as input
     int sum{0};
     size_t size_sparse_out = fwd_out_spikes_ids.size();
+    
+    // TODO wtf why here ?!
+    for (unsigned i=0; i<dLdState.size(); ++i){
+      dLdState[i] = 0.0;
+    }
+
     for (unsigned i = 0; i < size_sparse_out; ++i) { 
       unsigned idx = fwd_out_spikes_ids[i];
       dLdState[idx] = dLdoutSpikes[i] * superspike_surrogate(fwdState[idx] - thresholds[idx], beta);

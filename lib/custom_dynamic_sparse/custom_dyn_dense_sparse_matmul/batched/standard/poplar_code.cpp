@@ -130,10 +130,8 @@ void calcWeightsGrad(poplar::Graph &graph, poplar::Tensor &dLdweights, poplar::T
 
     for (const auto &neuronRange: neuronTileMapping[tile]) {
       const auto numNeuronsThisThile = neuronRange.size();
-      poplar::Tensor neuronDLdWeights = dLdweights.slice(neuronRange); // TODO does this create new tensors ?
+      poplar::Tensor neuronDLdWeights = dLdweights.slice(neuronRange, 0); // TODO does this create new tensors ?
       poplar::Tensor neuronDLdy = dLdy.slice(neuronRange, 1);
-
-      // popops::zero(graph, neuronDLdWeights, prog, {dnai, "zero neuronDLdWeights"}); // debug, zero should happen in the custom op
 
       // TODO ? should perform worker spilt and rewrite Vertex code to take multiple neurons ?
       // TODO ? does that reduce memory for code and potentially overhead for spawning vertices ?

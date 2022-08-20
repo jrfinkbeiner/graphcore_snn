@@ -15,7 +15,7 @@ from tensorflow.python import ipu
 from keras_train_util_ipu import (
     KerasMultiLIFLayerSparse, 
     KerasMultiLIFLayerSparseOps, 
-    KerasSparseIdentity, 
+    # KerasSparseIdentity, 
     simple_loss_fn_sparse, 
     simple_loss_fn_dense, 
     dyn_dense_binary_sparse_matmul_op,
@@ -39,6 +39,26 @@ def simple_loss_fn_dense_multi_ipu(pipeline_stage, y_target, y_pred):
         loss = tf.math.reduce_sum((sum_spikes-y_target)**2)/y_target.shape[-1]
     return loss
 
+
+class KerasSparseIdentity(keras.layers.Layer):
+    def __init__(self):
+        super().__init__()
+
+    def build(self, input_shape):
+
+        print(input_shape)
+        last_dim = input_shape.ids[-1]
+
+        self.eye = tf.Variable(
+            initial_value=tf.eye(last_dim),
+            trainable=True,
+            name=f"identity_eye",
+        )
+
+    def call(self, x):
+        print("\nIDENTITY")
+        print(x)
+        return type(x)(x.ids @ self.eye, x.num_nzelements)
 
 
 # def sparse2dense_ipu(spike_ids, num_spikes, dense_size):
@@ -591,8 +611,9 @@ def train_ipu(method, NUM_IPUS):
             model.set_pipelining_options(
                 # pipeline_schedule=ipu.keras.pipeline.SequentialPipelineModel,
                 pipeline_schedule=ipu.ops.pipelining_ops.PipelineSchedule.Sequential,
-                gradient_accumulation_steps_per_replica=4,
-                device_mapping=device_mapping
+                gradient_accumulation_steps_per_replica=1,
+                device_mapping=device_mapping,
+                offload_weight_update_variables=False,
                 # device_mapping=[0, 1]
             )
         # model.load_weights("./model_save_weights")
@@ -612,7 +633,7 @@ def train_ipu(method, NUM_IPUS):
         #     for metric in metrics:
         #         model.add_metric(metric(targets, outputs), metric.__name__)
         model.compile(optim, loss_fn,
-                    steps_per_execution=4,
+                    steps_per_execution=4, # TODO change this
         )
 
         model.summary()
@@ -633,5 +654,5 @@ if __name__ == "__main__":
     # sparse2dense() # TODO broken
     # sparse_matmul()
     # train_ipu("sparse_ops")
-    train_ipu("sparse_layer", NUM_IPUS=4)
+    train_ipu("sparse_layer", NUM_IPUS=2)
     # main()

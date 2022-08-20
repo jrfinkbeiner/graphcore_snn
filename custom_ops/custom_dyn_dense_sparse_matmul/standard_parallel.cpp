@@ -29,6 +29,13 @@ extern "C" void Build_metadata(
   bool& is_stateless,
   bool& is_hashable,
   std::uint32_t num_inputs) {
+
+  num_inputs = 3*6;
+  // allocating_indices = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+  for (std::int64_t i=0; i<num_inputs; ++i){
+    allocating_indices.push_back(i);
+  }
+
   is_elementwise = false;
   is_stateless = true;
 }
@@ -67,47 +74,6 @@ poplar::Tensor alloc_neuronwise(poplar::Graph& graph, const std::vector<size_t>&
 }
 
 
-extern "C" poplar::Tensor Build_allocator(
-    poplar::Graph& graph,
-    std::uint32_t operand,
-    const std::vector<size_t>& shape,
-    poplar::Type type,
-    const std::string& attributes,
-    const std::string& debug_prefix) {
-  
-  std::cout << "\nBuild_allocator\n" << std::endl;
-
-  poplar::DebugNameAndId dnai{debug_prefix};
-
-  // {*dense_sizes, *sparse_sizes, batchsize}
-  std::vector<size_t> atrribute_sizes = convert_vecOfStr_to_vecOfSizet(attributes, '_');
-  size_t start_tile = atrribute_sizes[0];
-  size_t end_tile = atrribute_sizes[1];
-  // size_t num_neurons = atrribute_sizes[2];
-  // size_t batchsize = atrribute_sizes[4];
-
-  size_t neuronDim = 0;
-  std::string tensor_name;
-  poplar::Tensor allocTensor;
-
-  std::cout << "\noperand: " << operand << std::endl;
-  printVector(atrribute_sizes);
-
-  switch (operand) {
-    case 0: tensor_name = "weights";
-            // neuron_mapping = determine_neuron_mapping(numTiles, layer_id, dense_sizes, sparse_sizes, batchsize);
-            allocTensor = alloc_neuronwise(graph, shape, type, neuronDim, start_tile, end_tile, {dnai, tensor_name});
-            break;
-    case 1: tensor_name = "inp_spike_ids";
-            allocTensor = alloc_linearly(graph, shape, type, 0, {dnai, tensor_name});
-            break;
-    case 2: tensor_name = "num_inp_spikes";
-            allocTensor = alloc_linearly(graph, shape, type, 0, {dnai, tensor_name});
-            break;
-  }
-  return allocTensor;
-}
-
 
 poplar::Tensor alloc_matrix_manually(poplar::Graph& graph, poplar::Tensor &matrix_bad_alloc, size_t start_tile, size_t end_tile, bool copy_values, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai = {}) {
   std::cout << matrix_bad_alloc.shapeToString() <<std::endl;
@@ -141,6 +107,47 @@ std::vector<poplar::Tensor> alloc_tensor_vector_manually(poplar::Graph& graph, s
   return dst;
 }
 
+extern "C" poplar::Tensor Build_allocator(
+    poplar::Graph& graph,
+    std::uint32_t operand,
+    const std::vector<size_t>& shape,
+    poplar::Type type,
+    const std::string& attributes,
+    const std::string& debug_prefix) {
+  
+  std::vector<size_t> atrribute_sizes = convert_vecOfStr_to_vecOfSizet(attributes, '_');
+  size_t num_layers = atrribute_sizes.size() / 2;
+  const std::vector<size_t> start_tiles(atrribute_sizes.begin(), atrribute_sizes.begin()+num_layers);
+  const std::vector<size_t> end_tiles(atrribute_sizes.begin()+num_layers, atrribute_sizes.begin()+2*num_layers);
+  std::cout << "\nBuild_allocator: " << operand << ", " << operand / num_layers << std::endl;
+
+  poplar::DebugNameAndId dnai{debug_prefix};
+
+
+
+  size_t layer_id = operand % num_layers;
+  size_t neuronDim = 0;
+  std::string tensor_name;
+  poplar::Tensor allocTensor;
+
+  // std::cout << "\noperand: " << operand << std::endl;
+  // printVector(atrribute_sizes);
+
+  switch (operand / num_layers ) {
+    case 0: tensor_name = "weights";
+            // neuron_mapping = determine_neuron_mapping(numTiles, layer_id, dense_sizes, sparse_sizes, batchsize);
+            allocTensor = alloc_neuronwise(graph, shape, type, neuronDim, start_tiles[layer_id], end_tiles[layer_id], {dnai, tensor_name});
+            break;
+    case 1: tensor_name = "inp_spike_ids";
+            allocTensor = alloc_linearly(graph, shape, type, 0, {dnai, tensor_name});
+            break;
+    case 2: tensor_name = "num_inp_spikes";
+            allocTensor = alloc_linearly(graph, shape, type, 0, {dnai, tensor_name});
+            break;
+  }
+  return allocTensor;
+}
+
 
 // The Build function constructs the Poplar graph that computes the custom op.
 extern "C" poplar::program::Program Build(
@@ -152,6 +159,10 @@ extern "C" poplar::program::Program Build(
   }  
 
   size_t num_layers = inputs.size() / 3;
+  
+  if (num_layers > 6) {
+    throw poputil::poplibs_error("Program compiled with max 6 layers. For more adjust `Build_metadata`.");
+  }
 
   std::vector<poplar::Tensor> matrix_bad_alloc(inputs.begin(),inputs.begin()+num_layers);
   std::vector<poplar::Tensor> spike_ids_fptype(inputs.begin()+num_layers,inputs.begin()+2*num_layers);
@@ -228,7 +239,6 @@ void Build_grad_metadata(
   bool& is_stateless,
   bool& is_hashable,
   std::uint32_t num_inputs) {
-
   is_stateless = true;
 }
 

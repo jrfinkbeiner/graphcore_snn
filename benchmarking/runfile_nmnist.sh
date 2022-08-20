@@ -9,10 +9,10 @@ POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./report
 
 # # for VARIABLE in 1 2 4 8 16 32 64 128 256
 
-# for BATCHSIZE in 6 48 96
-# do
-#     for VARIABLE in 1 2 4 8 16 32 64 128 256
-#     do
-#         python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=0 --sparse_multiplier=$VARIABLE --batchsize=$BATCHSIZE --transpose_weights=0
-#     done
-# done
+for BATCHSIZE in 6 48 96
+do
+    for VARIABLE in 1 2 4 8 16 32 64 128 256
+    do
+        python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=0 --sparse_multiplier=$VARIABLE --batchsize=$BATCHSIZE --transpose_weights=0
+    done
+done

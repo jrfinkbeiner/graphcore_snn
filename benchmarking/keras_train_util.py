@@ -63,17 +63,21 @@ class KerasMultiLIFLayerBase(keras.layers.Layer):
     def build(self, input_shape):
 
         def custom_init(in_feat, out_feat, dtype):
-            limit = (6/(in_feat + out_feat))**0.5 * 10
+            limit = (6/(in_feat + out_feat))**0.5
             shape = get_shape(in_feat, out_feat, self.transpose_weights)
+            print(f"limit={limit}")
             return tf.random.uniform(shape, minval=-limit, maxval=limit, dtype=dtype)
 
         # w_init = tf.random_normal_initializer(0.0, 10.0, self.seed)
         w_init = tf.random_normal_initializer(0.0, 2.0, self.seed)
 
+        if self.seed is not None:
+            tf.random.set_seed(self.seed+2)
+
         self.ws = [tf.Variable(
-            initial_value=w_init(shape=get_shape(self.dense_shapes[ilay], self.dense_shapes[ilay+1], self.transpose_weights), dtype=tf.float32),
-            # initial_value=custom_init(in_feat=self.dense_shapes[ilay], out_feat=self.dense_shapes[ilay+1], dtype=tf.float32),
-            # initial_value=1*tf.ones(shape=get_shape(self.dense_shapes[ilay], self.dense_shapes[ilay+1], self.transpose_weights), dtype=tf.float32),
+            # initial_value=w_init(shape=get_shape(self.dense_shapes[ilay], self.dense_shapes[ilay+1], self.transpose_weights), dtype=tf.float32),
+            initial_value=custom_init(in_feat=self.dense_shapes[ilay], out_feat=self.dense_shapes[ilay+1], dtype=tf.float32),
+            # initial_value=0.1*tf.ones(shape=get_shape(self.dense_shapes[ilay], self.dense_shapes[ilay+1], self.transpose_weights), dtype=tf.float32),
             trainable=True,
             name=f"weights_{ilay}",
         ) for ilay in range(self.num_layers)]
@@ -103,7 +107,7 @@ def heaviside_with_super_spike_surrogate(x):
 def pure_tf_lif_step_dense(weights, state, inp_, decay_constants, thresholds):
     syn_inp = tf.matmul(inp_, weights, transpose_b=True)
     state = state - tf.stop_gradient(state * tf.experimental.numpy.heaviside(state-thresholds, 1))
-    new_state = state * decay_constants + (1 - decay_constants) * 20.0 * syn_inp # hard coded factor 20 in IPU code
+    new_state = state * decay_constants + (1 - decay_constants) * 10 * syn_inp # hard coded factor 20 in IPU code
     # new_state = decay_constants*state * tf.experimental.numpy.heaviside(thresholds-state, 1) + (1-decay_constants)*syn_inp
     spikes_out = heaviside_with_super_spike_surrogate(new_state-thresholds)
     return spikes_out, new_state
