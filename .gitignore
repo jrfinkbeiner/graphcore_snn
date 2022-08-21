@@ -7,6 +7,7 @@ slurm*
 .vscode
 benchmarking/convergence_*/
 benchmarking/improve_convergence*/
+benchmarking/nmnist_sweep*/
 custom_lif_single_layer/util_and_experiments/figures/
 custom_lif_single_layer/reports/
 custom_lif_single_layer/optimization/

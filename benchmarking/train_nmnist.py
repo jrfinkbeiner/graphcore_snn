@@ -131,6 +131,7 @@ def main(args):
     MULTIPROCESSING = True
     TRANSPOSE_WEIGHTS = bool(args.transpose_weights)
     BATCHSIZE = args.batchsize
+    LEARNING_RATE = args.lr
 
     if USE_IPU:
         assert IMPL_METHOD is not None, "If `USE_IPU=True` the variable `IMPL_METHOD` must be set."
@@ -142,7 +143,7 @@ def main(args):
         NUM_EPOCHS = 1
         SEQ_LEN = 10
     else:
-        NUM_EPOCHS = 5
+        NUM_EPOCHS = 25
         SEQ_LEN = 100 # 300
 
 
@@ -196,6 +197,8 @@ def main(args):
     print("USE_IPU: ", USE_IPU)
     print("IMPL_METHOD: ", IMPL_METHOD)
     print("TRANSPOSE_WEIGHTS: ", TRANSPOSE_WEIGHTS)
+    print("LEARNING_RATE: ", LEARNING_RATE)
+    LEARNING_RATE
     # sys.exit()
 
     rng = np.random.default_rng(42)
@@ -207,7 +210,7 @@ def main(args):
     DECAY_CONSTANT = 0.9
     THRESHOLD = 1.0
 
-    LOG_FILE = None # f"log_sparse_bs{BATCHSIZE}.csv"
+    LOG_FILE = f"nmnist_sweep/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
 
     # if SPARSE_METHOD:
     #     sys.exit()
@@ -246,6 +249,7 @@ def main(args):
     # metrics[f"rnn_{num_layers-1}"] = calc_accuracy
 
     if LOG_FILE is not None:
+        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
         csv_logger = keras.callbacks.CSVLogger(LOG_FILE, append=True, separator=';')
         callbacks = [csv_logger]
     else:
@@ -328,6 +332,7 @@ def main(args):
             callbacks=callbacks,
             return_all=True if CALC_ACTIVITY else False,
             transpose_weights=TRANSPOSE_WEIGHTS,
+            learning_rate=LEARNING_RATE,
         )
     else:
         train_gpu(
@@ -377,7 +382,7 @@ if __name__ == "__main__":
     parser.add_argument('--transpose_weights', type=int, default=0, help="Whether to use the transposed weight matrix to better make use of vectorization."
                                                                         " For now only used with `impl_method=sparse_layer`. Default is 0 (False).")
     parser.add_argument('--batchsize', type=int, default=48, help="batchsize to use for training, default is 48.")
-
+    parser.add_argument('--lr', type=float, default=1e-2, help="Learning rate for optimizer, default `1e-2`.")
 
     args = parser.parse_args()
     main(args)

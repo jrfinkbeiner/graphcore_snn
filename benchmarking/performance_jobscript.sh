@@ -6,5 +6,5 @@
 
 # srun hostname |sort
 
-# srun singularity run ~/tf2tonic.sif -- ./runfile_nmnist.sh
-srun singularity run ~/tf2.sif -- ./runfile_randman.sh
+srun singularity run ~/tf2tonic.sif -- ./runfile_nmnist.sh
+# srun singularity run ~/tf2.sif -- ./runfile_randman.sh

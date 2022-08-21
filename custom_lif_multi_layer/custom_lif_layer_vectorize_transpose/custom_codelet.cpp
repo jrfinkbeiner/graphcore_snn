@@ -2,7 +2,6 @@
 #include <poplar/HalfFloat.hpp>
 #include <cmath> // for std::abs, std::pow
 
-
 //---------------------------------------------- forward -----------------------------------------
 
 template <typename FPType>
@@ -254,6 +253,86 @@ public:
 };
 template class LIFOutSpikes2ThreshsSplitWorker<float>;
 // template class LIFOutSpikes2ThreshsSplitWorker<half>;
+
+
+template <typename FPType>
+class SpikesTwoThreshsSplitWorkerRandOffset : public poplar::Vertex {
+public:
+
+  poplar::Input<poplar::Vector<FPType>> state;
+  poplar::Input<poplar::Vector<FPType>> thresholds;
+  poplar::Input<unsigned> start_id;
+  poplar::Input<int> random_offset;
+  poplar::Output<poplar::Vector<unsigned>> repeated_out_spikes_ids;
+  poplar::Output<unsigned> repeated_num_out_spikes;
+
+
+  bool compute() {
+    unsigned numSpikesCounter{0};
+    unsigned numGradsCounter{0};
+    const FPType secThreshMul{0.9};
+    const unsigned numStates = state.size();
+    const unsigned sizeSparseOut = repeated_out_spikes_ids.size();
+    const unsigned sizeSparseOutmin1 = sizeSparseOut-1;
+    unsigned leftSideCounter{numStates};
+    const unsigned sizeSparseOutPlusNumStates = sizeSparseOut+numStates;
+    const unsigned random_offset_ = (random_offset > numStates) ? numStates : random_offset;
+    unsigned state_id{start_id+random_offset_};
+    unsigned counter{0};
+    bool vector_notFull{true};
+
+    for (unsigned i = random_offset_; i < numStates; ++i) {
+      if ((state[i] > thresholds[i]*secThreshMul) || (leftSideCounter <= (sizeSparseOut + counter))) {
+      // if ((state[i] > thresholds[i]*secThreshMul) || (numStates - i <= (sizeSparseOut-(numSpikesCounter+numGradsCounter)))) { // TODO uncomment
+        if (state[i] > thresholds[i]) {
+          repeated_out_spikes_ids[numSpikesCounter] = state_id;
+          ++numSpikesCounter;
+        } else {
+          // Fill up the array with non-spike values in reverse from behind 
+          repeated_out_spikes_ids[sizeSparseOutmin1-numGradsCounter] = state_id;
+          ++numGradsCounter;
+        }
+        ++leftSideCounter;
+        if (leftSideCounter >= sizeSparseOutPlusNumStates) {
+          vector_notFull = false;          
+          break; // TODO just implement as while
+        }
+      }
+      // if (numSpikesCounter+numGradsCounter >= sizeSparseOut) break; // TODO just implement as while
+      ++state_id;
+      ++counter;
+    }
+
+    if (vector_notFull) {
+      unsigned state_id = start_id;
+      for (unsigned i = 0; i < random_offset_; ++i) {
+      // for (unsigned i = 0; i < numStates; ++i) {
+        if ((state[i] > thresholds[i]*secThreshMul) || (leftSideCounter <= (sizeSparseOut + counter))) {
+        // if ((state[i] > thresholds[i]*secThreshMul) || (numStates - i <= (sizeSparseOut-(numSpikesCounter+numGradsCounter)))) { // TODO uncomment
+          if (state[i] > thresholds[i]) {
+            repeated_out_spikes_ids[numSpikesCounter] = state_id;
+            ++numSpikesCounter;
+          } else {
+            // Fill up the array with non-spike values in reverse from behind 
+            repeated_out_spikes_ids[sizeSparseOutmin1-numGradsCounter] = state_id;
+            ++numGradsCounter;
+          }
+          ++leftSideCounter;
+          if (leftSideCounter >= sizeSparseOutPlusNumStates) break; // TODO just implement as while
+        }
+        // if (numSpikesCounter+numGradsCounter >= sizeSparseOut) break; // TODO just implement as while
+        ++state_id;
+        ++counter;
+      }
+    }
+
+    *repeated_num_out_spikes = numSpikesCounter;
+    return true;
+  }
+};
+template class SpikesTwoThreshsSplitWorkerRandOffset<float>;
+// template class SpikesTwoThreshsSplitWorkerRandOffset<half>;
+
 
 // template <typename FPType>
 class LIFOutSpikes2ThreshsCombine : public poplar::Vertex {

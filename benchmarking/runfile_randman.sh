@@ -11,10 +11,10 @@ export PYTHONPATH="${PYTHONPATH}:/p/home/jusers/finkbeiner1/jureca/util/randman"
 # done
 
 # for LEARNING_RATE in 3.0 1.0 0.3 0.1 0.03 0.01 0.003
-# for LEARNING_RATE in 0.1 0.03 0.01 0.003
-for LEARNING_RATE in 1.0 0.3
+# for LEARNING_RATE in 1.0 0.3
+for LEARNING_RATE in 1.0 0.3 0.1 0.03 0.01 0.003
 do
-    python3 train_randman.py --use_ipu=1 --profile_run=0 --lr=$LEARNING_RATE --impl_method=dense
+    # python3 train_randman.py --use_ipu=1 --profile_run=0 --lr=$LEARNING_RATE --impl_method=dense
     # for SPARSE_MUL in 4 8 16
     for SPARSE_MUL in 16
     do

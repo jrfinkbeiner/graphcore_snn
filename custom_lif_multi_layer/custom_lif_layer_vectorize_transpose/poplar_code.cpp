@@ -24,6 +24,7 @@
 #include <popops/Reduce.hpp>
 // #include <popops/Operation.hpp>
 #include <popops/Cast.hpp>
+#include <poprand/RandomGen.hpp>
 
 #include <poplar/StringRef.hpp>
 
@@ -692,6 +693,14 @@ void genBatchedLIFOutSpikes2ThreshsMutliWorker(poplar::Graph &graph, std::vector
     // }
 
 
+    poplar::Tensor reference = graph.addVariable(poplar::INT, {batchsize, numWorkers}, {dnai, "reference_tensor"});
+
+    for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
+      size_t tile{layer_vertex_start_tile+ibatch};
+      graph.setTileMapping(reference, tile);
+    }
+    // max_val not perfect and will slihgtly bias first neurons
+    poplar::Tensor random_offset = poprand::uniform(graph, NULL, 0, reference, poplar::INT, 0, state[ilay].dim(1) / numWorkers, prog, {dnai, "randomInds"});
 
     size_t worker_start{0};
     size_t worker_end{0};
@@ -712,10 +721,12 @@ void genBatchedLIFOutSpikes2ThreshsMutliWorker(poplar::Graph &graph, std::vector
       // printVector(out_spike_ids_worker.shape());
 
       for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
-        auto v = graph.addVertex(cs, poputil::templateVertex("LIFOutSpikes2ThreshsSplitWorker", dtype),
+        // auto v = graph.addVertex(cs, poputil::templateVertex("LIFOutSpikes2ThreshsSplitWorker", dtype),
+        auto v = graph.addVertex(cs, poputil::templateVertex("SpikesTwoThreshsSplitWorkerRandOffset", dtype),
                                   {{"state", state_worker[ibatch]},
                                   {"thresholds", thresholds_worker},
                                   {"start_id", worker_start},
+                                  {"random_offset", random_offset[ibatch][iwor]},
                                   {"repeated_out_spikes_ids", out_spike_ids_worker[ibatch]},
                                   {"repeated_num_out_spikes", repeated_num_out_spikes[ilay][ibatch][iwor]}});
 

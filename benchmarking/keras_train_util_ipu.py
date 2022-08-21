@@ -639,7 +639,7 @@ def train_ipu(
     ):
     # set ipu config and strategy 
     ipu_config = ipu.config.IPUConfig()
-    ipu_config.auto_select_ipus = 2
+    ipu_config.auto_select_ipus = num_ipus
     ipu_config.configure_ipu_system()
     strategy = ipu.ipu_strategy.IPUStrategy()
 
@@ -738,7 +738,7 @@ def test_sparse_vs_dense():
     num_sequences = 24
     batchsize = num_sequences
     batchsize_per_step = batchsize
-    seq_len = 4
+    seq_len = 10
     # # dense_sizes = [102, 801, 799]
     # dense_sizes = [128, 256, 64]
     # # dense_sizes = [4, 4, 4]
@@ -753,7 +753,7 @@ def test_sparse_vs_dense():
     # dense_sizes = [100, 256, 256, 8]
     # sparse_sizes = [32, 64, 64, 8]
     dense_sizes = [100, 128, 8]
-    sparse_sizes = [32, 48, 8]
+    sparse_sizes = [32, 32, 8]
     # sparse_sizes = dense_sizes
     # sparse_sizes = [32, 64, 64, 8]
 

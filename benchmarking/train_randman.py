@@ -194,7 +194,7 @@ def main(args):
     DECAY_CONSTANT = 0.92
     THRESHOLD = 1.0
 
-    LOG_FILE = f"improve_convergence_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_twoThresh_mulFac_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
+    LOG_FILE = f"improve_convergence_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_randomIndOffset_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
     # LOG_FILE = f"convergence_sparsity_sweep_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_topK_sparse_multiplier_{SPARSE_MULTIPLIER}.csv"
     # LOG_FILE = f"convergence_learning_rate_sweep_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_topK_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
     # LOG_FILE = None

@@ -229,7 +229,7 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
     def gen_dense_batched():
         for ibatch in range(num_batches):
             inds = idx_samples[ibatch*batchsize:(ibatch+1)*batchsize]
-            ret_data = create_dense_batch(inds, dataset, batchsize, use_multiprocessing)
+            ret_data = create_dense_batch(inds, dataset, batchsize)
             yield ret_data
 
     def gen_dense():
@@ -272,7 +272,9 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
         gen = gen_sparse if sparse else gen_dense 
     else:
         if use_multiprocessing:
-            gen = gen_sparse_batched_multiproc if sparse else gen_dense_batched_multiproc
+            # TODO implement multiprocessing !!!
+            # gen = gen_sparse_batched_multiproc if sparse else gen_dense_batched_multiproc
+            gen = gen_sparse_batched_multiproc if sparse else gen_dense_batched
         else:
             gen = gen_sparse_batched if sparse else gen_dense_batched
 
