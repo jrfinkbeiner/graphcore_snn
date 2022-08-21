@@ -63,16 +63,17 @@ class KerasMultiLIFLayerBase(keras.layers.Layer):
     def build(self, input_shape):
 
         def custom_init(in_feat, out_feat, dtype):
-            limit = (6/(in_feat + out_feat))**0.5
+            # limit = (6/(in_feat + out_feat))**0.5
+            limit = (6/(in_feat))**0.5
             shape = get_shape(in_feat, out_feat, self.transpose_weights)
             print(f"limit={limit}")
             return tf.random.uniform(shape, minval=-limit, maxval=limit, dtype=dtype)
 
         # w_init = tf.random_normal_initializer(0.0, 10.0, self.seed)
-        w_init = tf.random_normal_initializer(0.0, 2.0, self.seed)
+        w_init = tf.random_normal_initializer(0.0, 0.1, self.seed)
 
-        if self.seed is not None:
-            tf.random.set_seed(self.seed+2)
+        # if self.seed is not None:
+        #     tf.random.set_seed(self.seed+2)
 
         self.ws = [tf.Variable(
             # initial_value=w_init(shape=get_shape(self.dense_shapes[ilay], self.dense_shapes[ilay+1], self.transpose_weights), dtype=tf.float32),
@@ -141,7 +142,7 @@ def KerasMultiLIFLayerDense(dense_shapes, decay_constant, threshold, transpose_w
 def model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, seed=None, return_all=False):
     inp_spikes = keras.Input(shape=(seq_len, dense_shapes[0]), batch_size=batchsize_per_step, name="inp_spikes", dtype=tf.float32)
     out_spikes = KerasMultiLIFLayerDense(
-            dense_shapes, decay_constant, threshold, False, seed, return_sequences=True
+            dense_shapes, decay_constant, threshold, False, seed, return_sequences=True, time_major=False
     )(inp_spikes)
     if return_all:
         out = out_spikes
@@ -184,6 +185,7 @@ def train_gpu(
         steps_per_epoch=None,
         callbacks=None,
         return_all=False,
+        learning_rate=1e-2,
     ):
 
     # init model
@@ -193,19 +195,27 @@ def train_gpu(
 
     # Compile our model with Stochastic Gradient Descent as an optimizer
     # and Categorical Cross Entropy as a loss.
-    optim = tf.keras.optimizers.SGD(learning_rate=1e-1, momentum=0.9, nesterov=False, name="SGD")
+    # optim = tf.keras.optimizers.SGD(learning_rate=1e-1, momentum=0.9, nesterov=False, name="SGD")
+    optim = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+    
+    
     model.add_loss(loss_fn(targets, outputs))
+    if metrics is not None:
+        if not isinstance(metrics, (list, tuple)):
+            metrics = [metrics]
+        for metric in metrics:
+            model.add_metric(metric(targets, outputs), metric.__name__)
     model.compile(optim,
                 # metrics=["accuracy"],
-                metrics=metrics,
-                steps_per_execution=train_steps_per_execution,
-                jit_compile=True
+                # metrics=metrics,
+                # steps_per_execution=train_steps_per_execution,
+                # jit_compile=True
     )
 
     model.summary()
 
     print('\nTraining')
-    model.fit(dataset, epochs=num_epochs, steps_per_epoch=steps_per_epoch, callbacks=callbacks, workers=batchsize, use_multiprocessing=True)
+    model.fit(dataset, batch_size=48, epochs=num_epochs, steps_per_epoch=steps_per_epoch, callbacks=callbacks) #, workers=batchsize, use_multiprocessing=True)
                 # validation_steps=1, validation_batch_size=10*batchsize)
 
 

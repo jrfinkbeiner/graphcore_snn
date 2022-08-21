@@ -4,7 +4,8 @@ import functools as ft
 import numpy as np
 
 from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense
-from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
+# from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
+
 # from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense
 # from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, create_dataset_sparse, sparse2dense_ipu
 
@@ -120,8 +121,8 @@ def main(args):
 
     # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
 
-    ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
-    # ROOT_PATH_DATA = "/Data/pgi-15/datasets"
+    # ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
+    ROOT_PATH_DATA = "/Data/pgi-15/datasets"
 
     PROFILE_RUN = bool(args.profile_run)
     USE_IPU = bool(args.use_ipu)
@@ -276,7 +277,34 @@ def main(args):
     #     callbacks=callbacks,
     # )
 
+    method_to_loss_fn = {
+        "dense": sum_and_sparse_categorical_crossentropy,
+        "sparse_ops": get_sparse_func(sum_and_sparse_categorical_crossentropy, DENSE_SIZES[-1], transpose=False),
+        "sparse_layer": get_sparse_func(sum_and_sparse_categorical_crossentropy, DENSE_SIZES[-1], transpose=True),
+    }
 
+    method_to_metr_fn_to_last = {
+        "dense": calc_sparse_categorical_accuracy,
+        "sparse_ops": get_sparse_func(calc_sparse_categorical_accuracy, DENSE_SIZES[-1], transpose=False),
+        "sparse_layer": get_sparse_func(calc_sparse_categorical_accuracy, DENSE_SIZES[-1], transpose=True),
+    }
+    method_to_calc_activity = {
+        "dense": calc_activity,
+        "sparse_ops": ft.partial(get_sparse_func, calc_activity, transpose=False),
+        "sparse_layer": ft.partial(get_sparse_func, calc_activity, transpose=True),
+    }
+
+    loss_fn = method_to_loss_fn[IMPL_METHOD] if not CALC_ACTIVITY else filter_layer_output(method_to_loss_fn[IMPL_METHOD], NUM_LAYERS-1)
+
+    if CALC_ACTIVITY:
+        metrics = [filter_layer_output(method_to_metr_fn_to_last[IMPL_METHOD], NUM_LAYERS-1)]
+        for i in range(NUM_LAYERS):
+            met = method_to_calc_activity[IMPL_METHOD]
+            if SPARSE_METHOD:
+                met = met(DENSE_SIZES[i+1])
+            metrics.append(filter_layer_output(met, i))
+    else:
+        metrics = [method_to_metr_fn_to_last[IMPL_METHOD]]
 
     if USE_IPU:
 
@@ -285,35 +313,6 @@ def main(args):
         #     "sparse_ops": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=False),
         #     "sparse_layer": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=True),
         # }
-
-        method_to_loss_fn = {
-            "dense": sum_and_sparse_categorical_crossentropy,
-            "sparse_ops": get_sparse_func(sum_and_sparse_categorical_crossentropy, DENSE_SIZES[-1], transpose=False),
-            "sparse_layer": get_sparse_func(sum_and_sparse_categorical_crossentropy, DENSE_SIZES[-1], transpose=True),
-        }
-
-        method_to_metr_fn_to_last = {
-            "dense": calc_sparse_categorical_accuracy,
-            "sparse_ops": get_sparse_func(calc_sparse_categorical_accuracy, DENSE_SIZES[-1], transpose=False),
-            "sparse_layer": get_sparse_func(calc_sparse_categorical_accuracy, DENSE_SIZES[-1], transpose=True),
-        }
-        method_to_calc_activity = {
-            "dense": calc_activity,
-            "sparse_ops": ft.partial(get_sparse_func, calc_activity, transpose=False),
-            "sparse_layer": ft.partial(get_sparse_func, calc_activity, transpose=True),
-        }
-
-        loss_fn = method_to_loss_fn[IMPL_METHOD] if not CALC_ACTIVITY else filter_layer_output(method_to_loss_fn[IMPL_METHOD], NUM_LAYERS-1)
-
-        if CALC_ACTIVITY:
-            metrics = [filter_layer_output(method_to_metr_fn_to_last[IMPL_METHOD], NUM_LAYERS-1)]
-            for i in range(NUM_LAYERS):
-                met = method_to_calc_activity[IMPL_METHOD]
-                if SPARSE_METHOD:
-                    met = met(DENSE_SIZES[i+1])
-                metrics.append(filter_layer_output(met, i))
-        else:
-            metrics = [method_to_metr_fn_to_last[IMPL_METHOD]]
 
         train_ipu(
             IMPL_METHOD,
@@ -336,7 +335,7 @@ def main(args):
         )
     else:
         train_gpu(
-            NUM_EPOCHS, 
+            NUM_EPOCHS,
             TRAIN_STEPS_PER_EXECUTION, 
             BATCHSIZE_PER_STEP,
             dataloader_train,
@@ -344,11 +343,12 @@ def main(args):
             DENSE_SIZES, 
             DECAY_CONSTANT, 
             THRESHOLD,
-            sum_and_sparse_categorical_crossentropy,
-            metrics=None, #calc_accuracy,
+            loss_fn,
+            metrics=metrics, #calc_accuracy,
             steps_per_epoch=STEPS_PER_EPOCH,
             callbacks=callbacks,
-            return_all=False,
+            return_all=True if CALC_ACTIVITY else False,
+            learning_rate=LEARNING_RATE,
         )
 
 
