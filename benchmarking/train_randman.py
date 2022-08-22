@@ -167,6 +167,14 @@ def main(args):
     # SPARSE_SIZES = [32,   32,   32,   32,   32,   32,   8]
     # SPARSE_SIZES = [64,   64,   64,   64,   64,   64,   8]
     # SPARSE_SIZES = [8,   64,   64,   8]
+    
+    IMAGE_DIMS = (34, 34, 2)
+    DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 1024, 512, 512, 128, NUM_CLASSES]
+    SPARSE_SIZES_BASE = [4, 4, 4, 2, 2, 1, 1]
+    SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[:-1], DENSE_SIZES[:-1])]
+    SPARSE_SIZES = SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
+    
+    
     BATCHSIZE = 48
     if PROFILE_RUN:
         NUM_SAMPLES_PER_CLASS = BATCHSIZE
@@ -194,7 +202,7 @@ def main(args):
     DECAY_CONSTANT = 0.92
     THRESHOLD = 1.0
 
-    LOG_FILE = f"improve_convergence_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_randomIndOffset_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
+    LOG_FILE = f"improve_convergence_{int(DENSE_SIZES[1])}_large/{IMPL_METHOD}_randomIndOffset_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
     # LOG_FILE = f"convergence_sparsity_sweep_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_topK_sparse_multiplier_{SPARSE_MULTIPLIER}.csv"
     # LOG_FILE = f"convergence_learning_rate_sweep_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_topK_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
     # LOG_FILE = None
