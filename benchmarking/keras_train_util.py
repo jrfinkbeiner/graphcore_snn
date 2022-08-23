@@ -193,10 +193,11 @@ def train_gpu(
         callbacks=None,
         return_all=False,
         learning_rate=1e-2,
+        seed=None,
     ):
 
     # init model
-    inputs, outputs = model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize, return_all=return_all)
+    inputs, outputs = model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize, return_all=return_all, seed=seed)
     targets = keras.Input((1,), name="targets")
     model = keras.Model([inputs, targets], outputs)
 
