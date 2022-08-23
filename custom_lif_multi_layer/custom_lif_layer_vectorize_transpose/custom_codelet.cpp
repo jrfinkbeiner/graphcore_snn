@@ -587,7 +587,7 @@ public:
         // sum += dLdStates[ineuron] * weights_rows[ineuron];
         // sum += dLdStates[ineuron] * weights_rows[spikeId+ineuron]; // TODO faster like this with flatten and start_idx, or with VectorList ? 
         // sum += dLdStates[ineuron] * weights_rows[fwd_inp_spike_ids[i]][ineuron];
-        sum += dLdStates[ineuron] * weights_rows[fwd_inp_spike_ids[i]+ineuron]; // TODO faster like this with flatten and start_idx, or with VectorList ? 
+        sum += dLdStates[ineuron] * weights_rows[num_neurons*fwd_inp_spike_ids[i]+ineuron]; // TODO faster like this with flatten and start_idx, or with VectorList ? 
       }
       dLdinp_spike_ids[i] = sum; 
     }
@@ -596,7 +596,7 @@ public:
   }
 };
 template class LIFInpSpikesGradMultiRow<float>;
-// template class LIFInpSpikesGradRowWise<half>;
+// template class LIFInpSpikesGradMultiRow<half>;
 
 
 #ifdef __IPU__
