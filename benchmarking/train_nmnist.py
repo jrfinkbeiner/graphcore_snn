@@ -4,7 +4,7 @@ import functools as ft
 import numpy as np
 
 from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense
-# from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
+from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
 
 # from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense
 # from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, create_dataset_sparse, sparse2dense_ipu
@@ -121,14 +121,14 @@ def main(args):
 
     # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
 
-    # ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
-    ROOT_PATH_DATA = "/Data/pgi-15/datasets"
+    ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
+    # ROOT_PATH_DATA = "/Data/pgi-15/datasets"
 
     PROFILE_RUN = bool(args.profile_run)
     USE_IPU = bool(args.use_ipu)
     IMPL_METHOD = args.impl_method
     SPARSE_MULTIPLIER = args.sparse_multiplier
-    CALC_ACTIVITY = True
+    CALC_ACTIVITY = False
     MULTIPROCESSING = True
     TRANSPOSE_WEIGHTS = bool(args.transpose_weights)
     BATCHSIZE = args.batchsize
@@ -144,7 +144,7 @@ def main(args):
         NUM_EPOCHS = 1
         SEQ_LEN = 10
     else:
-        NUM_EPOCHS = 25
+        NUM_EPOCHS = 35
         SEQ_LEN = 100 # 300
 
 
@@ -174,6 +174,11 @@ def main(args):
     SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[:-1], DENSE_SIZES[:-1])]
     SPARSE_SIZES = SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
 
+    # # benchmarking presentation
+    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 512, 128, NUM_CLASSES]
+    # SPARSE_SIZES_BASE = [16, 4, 2, 1]
+    # SPARSE_SIZES = [min(DENSE_SIZES[0], max(128, int(SPARSE_SIZES_BASE[0]*SPARSE_MULTIPLIER)))] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
+    # SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE, DENSE_SIZES)]
 
     # sys.exit()
 
@@ -199,7 +204,6 @@ def main(args):
     print("IMPL_METHOD: ", IMPL_METHOD)
     print("TRANSPOSE_WEIGHTS: ", TRANSPOSE_WEIGHTS)
     print("LEARNING_RATE: ", LEARNING_RATE)
-    LEARNING_RATE
     # sys.exit()
 
     rng = np.random.default_rng(42)
@@ -211,7 +215,7 @@ def main(args):
     DECAY_CONSTANT = 0.9
     THRESHOLD = 1.0
 
-    LOG_FILE = f"nmnist_sweep/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
+    LOG_FILE = f"nmnist_sweep_performance/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
 
     # if SPARSE_METHOD:
     #     sys.exit()

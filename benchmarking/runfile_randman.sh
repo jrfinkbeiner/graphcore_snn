@@ -12,13 +12,13 @@ export PYTHONPATH="${PYTHONPATH}:/p/home/jusers/finkbeiner1/jureca/util/randman"
 
 # for LEARNING_RATE in 3.0 1.0 0.3 0.1 0.03 0.01 0.003
 # for LEARNING_RATE in 1.0 0.3
-for LEARNING_RATE in 1.0 0.3 0.1 0.03 0.01 0.003
+for LEARNING_RATE in 0.01 0.003 0.001 0.0003
 do
     # python3 train_randman.py --use_ipu=1 --profile_run=0 --lr=$LEARNING_RATE --impl_method=dense
     # for SPARSE_MUL in 4 8 16
-    for SPARSE_MUL in 16
+    for SPARSE_MUL in 16 64
     do
-        python3 train_randman.py --use_ipu=1 --profile_run=0 --lr=$LEARNING_RATE --impl_method=sparse_ops --sparse_multiplier=$SPARSE_MUL --transpose_weights=0
-    #     python3 train_randman.py --use_ipu=1 --profile_run=0 --lr=$LEARNING_RATE --impl_method=sparse_layer --sparse_multiplier=$SPARSE_MUL --transpose_weights=1
+        # python3 train_randman.py --use_ipu=1 --profile_run=0 --lr=$LEARNING_RATE --impl_method=sparse_ops --sparse_multiplier=$SPARSE_MUL --transpose_weights=0
+        python3 train_randman.py --use_ipu=1 --profile_run=0 --lr=$LEARNING_RATE --impl_method=sparse_layer --sparse_multiplier=$SPARSE_MUL --transpose_weights=1
     done
 done

@@ -270,7 +270,7 @@ public:
   bool compute() {
     unsigned numSpikesCounter{0};
     unsigned numGradsCounter{0};
-    const FPType secThreshMul{0.9};
+    const FPType secThreshMul{0.95};
     const unsigned numStates = state.size();
     const unsigned sizeSparseOut = repeated_out_spikes_ids.size();
     const unsigned sizeSparseOutmin1 = sizeSparseOut-1;

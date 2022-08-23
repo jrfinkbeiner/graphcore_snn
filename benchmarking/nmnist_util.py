@@ -219,6 +219,9 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
 
     # idx_samples = np.arange(num_samples) 
     # idx_samples = np.arange(num_samples) 
+    print()
+    print(len(dataset))
+    print(num_samples)
     idx_samples_base = np.random.choice(len(dataset), num_samples, replace=False)
     idx_samples = np.empty(num_samples*num_epochs, dtype=np.int64)
     for iepoch in range(num_epochs):
