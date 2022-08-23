@@ -72,8 +72,8 @@ class KerasMultiLIFLayerBase(keras.layers.Layer):
         # w_init = tf.random_normal_initializer(0.0, 10.0, self.seed)
         w_init = tf.random_normal_initializer(0.0, 0.1, self.seed)
 
-        # if self.seed is not None:
-        #     tf.random.set_seed(self.seed+2)
+        if self.seed is not None:
+            tf.random.set_seed(self.seed+2)
 
         self.ws = [tf.Variable(
             # initial_value=w_init(shape=get_shape(self.dense_shapes[ilay], self.dense_shapes[ilay+1], self.transpose_weights), dtype=tf.float32),
@@ -186,10 +186,11 @@ def train_gpu(
         callbacks=None,
         return_all=False,
         learning_rate=1e-2,
+        seed=None,
     ):
 
     # init model
-    inputs, outputs = model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize, return_all=return_all)
+    inputs, outputs = model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize, return_all=return_all, seed=seed)
     targets = keras.Input((1,), name="targets")
     model = keras.Model([inputs, targets], outputs)
 
