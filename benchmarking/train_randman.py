@@ -27,9 +27,12 @@ def get_dataloaders(rng, seq_len, num_inp_neurons, num_classes, num_samples_per_
         data_train = convert_raster_to_sparse_spikes(rng, data_train, sparse_size)
         data_test = convert_raster_to_sparse_spikes(rng, data_test, sparse_size)
 
+        print("\nget_dataloaders")
         print(data_train[0].shape)
         print(data_train[1].shape)
         print(labels_train.shape)
+        print(data_train[0].dtype)
+        print(data_train[1].dtype)
         # sys.exit()
         dataloader_train = create_dataset_sparse(data_train[0], data_train[1], labels_train, batchsize, shuffle=True) 
         dataloader_test = create_dataset_sparse(data_test[0], data_test[1], labels_test, batchsize, shuffle=False)
@@ -171,10 +174,15 @@ def main(args):
     IMAGE_DIMS = (34, 34, 2)
     DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 1024, 512, 512, 128, NUM_CLASSES]
     SPARSE_SIZES_BASE = [4, 4, 4, 2, 2, 1, 1]
-    SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[:-1], DENSE_SIZES[:-1])]
-    SPARSE_SIZES = SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
+    SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE, DENSE_SIZES)]
+    # SPARSE_SIZES = SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
     
-    
+    SPARSE_MULTIPLIER = 1
+    NUM_CLASSES = 2
+    DENSE_SIZES = [16, 8, 4, NUM_CLASSES]
+    SPARSE_SIZES_BASE = [4, 4, 2, 2]
+    SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE, DENSE_SIZES)]
+
     BATCHSIZE = 48
     if PROFILE_RUN:
         NUM_SAMPLES_PER_CLASS = BATCHSIZE
@@ -231,38 +239,36 @@ def main(args):
         callbacks = None
 
 
+    method_to_loss_fn = {
+        "dense": sum_and_sparse_categorical_crossentropy,
+        "sparse_ops": get_sparse_func(sum_and_sparse_categorical_crossentropy, DENSE_SIZES[-1], transpose=False),
+        "sparse_layer": get_sparse_func(sum_and_sparse_categorical_crossentropy, DENSE_SIZES[-1], transpose=True),
+    }
+
+    method_to_metr_fn_to_last = {
+        "dense": calc_sparse_categorical_accuracy,
+        "sparse_ops": get_sparse_func(calc_sparse_categorical_accuracy, DENSE_SIZES[-1], transpose=False),
+        "sparse_layer": get_sparse_func(calc_sparse_categorical_accuracy, DENSE_SIZES[-1], transpose=True),
+    }
+    method_to_calc_activity = {
+        "dense": calc_activity,
+        "sparse_ops": ft.partial(get_sparse_func, calc_activity, transpose=False),
+        "sparse_layer": ft.partial(get_sparse_func, calc_activity, transpose=True),
+    }
+
+    loss_fn = method_to_loss_fn[IMPL_METHOD] if not CALC_ACTIVITY else filter_layer_output(method_to_loss_fn[IMPL_METHOD], NUM_LAYERS-1)
+
+    if CALC_ACTIVITY:
+        metrics = [filter_layer_output(method_to_metr_fn_to_last[IMPL_METHOD], NUM_LAYERS-1)]
+        for i in range(NUM_LAYERS):
+            met = method_to_calc_activity[IMPL_METHOD]
+            if SPARSE_METHOD:
+                met = met(DENSE_SIZES[i+1])
+            metrics.append(filter_layer_output(met, i))
+    else:
+        metrics = [method_to_metr_fn_to_last[IMPL_METHOD]]
+
     if USE_IPU:
-
-        method_to_loss_fn = {
-            "dense": sum_and_sparse_categorical_crossentropy,
-            "sparse_ops": get_sparse_func(sum_and_sparse_categorical_crossentropy, DENSE_SIZES[-1], transpose=False),
-            "sparse_layer": get_sparse_func(sum_and_sparse_categorical_crossentropy, DENSE_SIZES[-1], transpose=True),
-        }
-
-        method_to_metr_fn_to_last = {
-            "dense": calc_sparse_categorical_accuracy,
-            "sparse_ops": get_sparse_func(calc_sparse_categorical_accuracy, DENSE_SIZES[-1], transpose=False),
-            "sparse_layer": get_sparse_func(calc_sparse_categorical_accuracy, DENSE_SIZES[-1], transpose=True),
-        }
-        method_to_calc_activity = {
-            "dense": calc_activity,
-            "sparse_ops": ft.partial(get_sparse_func, calc_activity, transpose=False),
-            "sparse_layer": ft.partial(get_sparse_func, calc_activity, transpose=True),
-        }
-
-
-        loss_fn = method_to_loss_fn[IMPL_METHOD] if not CALC_ACTIVITY else filter_layer_output(method_to_loss_fn[IMPL_METHOD], NUM_LAYERS-1)
-
-        if CALC_ACTIVITY:
-            metrics = [filter_layer_output(method_to_metr_fn_to_last[IMPL_METHOD], NUM_LAYERS-1)]
-            for i in range(NUM_LAYERS):
-                met = method_to_calc_activity[IMPL_METHOD]
-                if SPARSE_METHOD:
-                    met = met(DENSE_SIZES[i+1])
-                metrics.append(filter_layer_output(met, i))
-        else:
-            metrics = [method_to_metr_fn_to_last[IMPL_METHOD]]
-
         train_ipu(
             IMPL_METHOD,
             NUM_EPOCHS, 
@@ -293,12 +299,13 @@ def main(args):
             DENSE_SIZES, 
             DECAY_CONSTANT, 
             THRESHOLD,
-            sum_and_sparse_categorical_crossentropy,
-            metrics=[calc_sparse_categorical_accuracy], #calc_accuracy,
+            loss_fn,
+            metrics=metrics, #calc_accuracy,
             steps_per_epoch=STEPS_PER_EPOCH,
             callbacks=callbacks,
-            return_all=False,
-            # learning_rate=LEARNING_RATE,
+            return_all=True if CALC_ACTIVITY else False,
+            learning_rate=LEARNING_RATE,
+            seed=44,
         )
         # train_gpu(
         #     num_epochs, 
@@ -325,8 +332,8 @@ if __name__ == "__main__":
                                                                     "Only used for `use_ipu=1`")
     parser.add_argument('--profile_run', type=int, default=0, help="Whether this is a profiling run (default is `0` therefore `Flase`), "
                                                                     "which uses shorter squence length, less data and only one epoch.")
-    parser.add_argument('--transpose_weights', type=int, default=0, help="Whether to use transpose weights and vectorization (default is `0` therefore `Flase`).")
-                                                                    
+    parser.add_argument('--transpose_weights', type=int, default=0, help="Whether to use the transposed weight matrix to better make use of vectorization."
+                                                                        " For now only used with `impl_method=sparse_layer`. Default is 0 (False).")
     parser.add_argument('--sparse_multiplier', type=int, default=8, help="Factor to multiply sparse sizes with, default is 16.")
     parser.add_argument('--lr', type=float, default=1e-2, help="Learning rate for optimizer, default `1e-2`.")
 

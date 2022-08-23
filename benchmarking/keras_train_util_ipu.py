@@ -8,7 +8,7 @@ import math
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras as keras
-import tensorflow_addons as tfa
+# import tensorflow_addons as tfa
 
 
 from tensorflow.python import ipu
@@ -685,15 +685,6 @@ def train_ipu(
 
         optim = tf.keras.optimizers.Adam(learning_rate=learning_rate) # NOTE 1e-2 worked quite well
         # optim = tf.keras.optimizers.SGD(learning_rate=5e-2, momentum=0.9, nesterov=False, name="SGD")
-        optimizers = [
-            tf.keras.optimizers.Adam(learning_rate=1e-4),
-            tf.keras.optimizers.Adam(learning_rate=1e-2)
-        ]
-        optimizers_and_layers = [(optimizers[0], model.layers[0]), (optimizers[1], model.layers[1:])]
-        optimizer = tfa.optimizers.MultiOptimizer(optimizers_and_layers)
-        model.compile(optimizer=optimizer, loss="mse")
-
-
 
         model.add_loss(loss_fn(targets, outputs))
         if metrics is not None:
