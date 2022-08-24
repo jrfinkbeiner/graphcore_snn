@@ -64,7 +64,7 @@ class KerasMultiLIFLayerBase(keras.layers.Layer):
 
         def custom_init(in_feat, out_feat, dtype):
             # limit = (6/(in_feat + out_feat))**0.5
-            limit = (6/(in_feat))**0.5
+            limit = (6/(in_feat))**0.5 * 1.3
             shape = get_shape(in_feat, out_feat, self.transpose_weights)
             print(f"limit={limit}")
             # return tf.random.uniform(shape, minval=0, maxval=limit, dtype=dtype)
@@ -72,7 +72,7 @@ class KerasMultiLIFLayerBase(keras.layers.Layer):
 
         # w_init = tf.random_normal_initializer(0.0, 10.0, self.seed)
         w_init = tf.random_normal_initializer(0.0, 0.1, self.seed)
-        # dec_const_init = tf.random_uniform_initializer(minval=0.85, maxval=0.95, seed=self.seed)
+        # dec_const_init = tf.random_uniform_initializer(minval=0.87, maxval=0.93, seed=self.seed)
 
         if self.seed is not None:
             tf.random.set_seed(self.seed+2)
