@@ -189,6 +189,10 @@ std::tuple<unsigned, unsigned, bool> get_start_end_is_contigious(std::vector<siz
       ++num_switches;
     }
   }
+  if (tile_allocation_sizes.back()>0){
+      end_tile = tile_allocation_sizes.size();
+      ++num_switches;
+  }
   bool is_contigous = (num_switches==2);
   return {start_tile, end_tile, is_contigous};
 }
@@ -205,9 +209,19 @@ std::vector<unsigned> get_ipu_ids_from_tensor_vec(poplar::Graph &graph, std::vec
     auto [start_tile, end_tile, is_contiguous] = get_start_end_is_contigious(tile_map_sizes);
     
     unsigned ipu_id_start = start_tile / num_tiles_per_ipu;
-    unsigned ipu_id_end = end_tile / num_tiles_per_ipu;
+    unsigned ipu_id_end = (end_tile-1) / num_tiles_per_ipu;
+  	
+    std::cout << "\num_tiles_per_ipun: " << num_tiles_per_ipu; 
+    std::cout << "start_tile: " << start_tile; 
+    std::cout << "end_tile: " << end_tile; 
+    std::cout << "ipu_id_start: " << ipu_id_start; 
+    std::cout << "ipu_id_end: " << ipu_id_end << std::endl; 
+
 
     if ((ipu_id_start!=ipu_id_end) || !is_contiguous){
+      std::cout << "\ntile_map_sizes" << std::endl;
+      printVector(tile_map_sizes);
+      std::cout << "is_contiguous: " << is_contiguous << std::endl;
       throw poputil::poplibs_error("Tensors have to be allocated on a single IPU and be contigous.");
     }   
 
@@ -784,6 +798,7 @@ void performLIFStepFworwardPassInPlace(poplar::Graph &graph, std::vector<poplar:
   // genBatchedLIFOutSpikes2Threshs(graph, state, thresholds, out_spikes, prog, dnai);
   genBatchedLIFOutSpikes2ThreshsMutliWorker(graph, state, thresholds, out_spikes, prog, dnai);
   // genBatchedLIFOutSpikesOnlySpikes(graph, state, thresholds, out_spikes, prog, dnai);
+  // genBatchedLIFOutSpikes2ThreshsMutliWorkerNeuronSpikes(graph, state, thresholds, out_spikes, prog, dnai);
 }
 
 
