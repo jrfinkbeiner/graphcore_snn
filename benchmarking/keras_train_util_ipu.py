@@ -25,7 +25,8 @@ def determine_neuron_tileMappings(dense_sizes, sparse_sizes, num_ipus=1, min_neu
     if num_ipus > 1:
         tileMapping =  determine_neuron_tileMappings_multiIPU(dense_sizes, sparse_sizes, num_ipus, min_neurons_per_tile)
     else:
-        tileMapping =  determine_neuron_tileMappings_singleIPU(dense_sizes, sparse_sizes, min_neurons_per_tile)
+        tileMapping =  determine_neuron_tileMappings_multiIPU(dense_sizes, sparse_sizes, num_ipus, min_neurons_per_tile)
+        # tileMapping =  determine_neuron_tileMappings_singleIPU(dense_sizes, sparse_sizes, min_neurons_per_tile)
     return tileMapping
 
 def determine_neuron_tileMappings_multiIPU(dense_sizes, sparse_sizes, num_ipus, min_neurons_per_tile):

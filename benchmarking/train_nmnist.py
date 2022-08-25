@@ -128,7 +128,7 @@ def main(args):
     USE_IPU = bool(args.use_ipu)
     IMPL_METHOD = args.impl_method
     SPARSE_MULTIPLIER = args.sparse_multiplier
-    CALC_ACTIVITY = False
+    CALC_ACTIVITY = True
     MULTIPROCESSING = True
     TRANSPOSE_WEIGHTS = bool(args.transpose_weights)
     BATCHSIZE = args.batchsize
@@ -170,7 +170,7 @@ def main(args):
 
     # benchmarking presentation
     DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 1024, 512, 512, 128, NUM_CLASSES]
-    SPARSE_SIZES_BASE = [4, 4, 4, 2, 2, 1, 1]
+    SPARSE_SIZES_BASE = [32, 64, 4, 2, 2, 1, 1]
     SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[:-1], DENSE_SIZES[:-1])]
     SPARSE_SIZES = SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
 
@@ -182,13 +182,31 @@ def main(args):
 
     # sys.exit()
 
+    # benchmarking presentation
+    DENSE_SIZES = [np.prod(IMAGE_DIMS), 2036, 640, 256, NUM_CLASSES]
+    SPARSE_SIZES_BASE = [32, 4, 2, 1, 10]
+    SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
+
+    # benchmarking presentation
+    DENSE_SIZES = [np.prod(IMAGE_DIMS), 1472, 1076, 384, NUM_CLASSES]
+    SPARSE_SIZES_BASE = [32, 4, 3, 2, 10]
+    SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
+
+
+    # # benchmarking presentation
+    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 512, 128, NUM_CLASSES]
+    # SPARSE_SIZES_BASE = [32, 4, 2, 1, 10]
+    # SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
+
+
+
     # BATCHSIZE = 48
     if PROFILE_RUN:
         NUM_SAMPLES_TRAIN = BATCHSIZE*4
         # NUM_SAMPLES_TRAIN = BATCHSIZE*16
     else:
-        NUM_SAMPLES_TRAIN = BATCHSIZE*26 #54210
-        # NUM_SAMPLES_TRAIN = 9984 #54210
+        # NUM_SAMPLES_TRAIN = BATCHSIZE*26 #54210
+        NUM_SAMPLES_TRAIN = 9984 #54210
     assert NUM_SAMPLES_TRAIN <= 60000
 
     print("#################################################################################################")
@@ -209,13 +227,14 @@ def main(args):
     rng = np.random.default_rng(42)
 
     BATCHSIZE_PER_STEP = BATCHSIZE
-    STEPS_PER_EPOCH = int(NUM_SAMPLES_TRAIN/BATCHSIZE)
+    # STEPS_PER_EPOCH = int(NUM_SAMPLES_TRAIN/BATCHSIZE/4)
+    STEPS_PER_EPOCH = int(9984/48/4)
     TRAIN_STEPS_PER_EXECUTION = STEPS_PER_EPOCH
 
     DECAY_CONSTANT = 0.9
     THRESHOLD = 1.0
 
-    LOG_FILE = f"nmnist_sweep_performance/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
+    LOG_FILE = f"nmnist_sweep_performance_2/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
 
     # if SPARSE_METHOD:
     #     sys.exit()
@@ -323,7 +342,7 @@ def main(args):
             NUM_EPOCHS, 
             TRAIN_STEPS_PER_EXECUTION, 
             BATCHSIZE_PER_STEP,
-            dataloader_train,
+            dataloader_train.repeat(),
             SEQ_LEN, 
             DENSE_SIZES, 
             SPARSE_SIZES, 
@@ -342,7 +361,7 @@ def main(args):
             NUM_EPOCHS,
             TRAIN_STEPS_PER_EXECUTION, 
             BATCHSIZE_PER_STEP,
-            dataloader_train,
+            dataloader_train.repeat(),
             SEQ_LEN, 
             DENSE_SIZES, 
             DECAY_CONSTANT, 
