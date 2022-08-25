@@ -23,14 +23,9 @@ def get_dataloaders(rng, seq_len, num_inp_neurons, num_classes, num_samples_per_
     data_test,  labels_test  = data[num_train_samples:], labels[num_train_samples:]
 
     if sparse:
-
         data_train = convert_raster_to_sparse_spikes(rng, data_train, sparse_size)
         data_test = convert_raster_to_sparse_spikes(rng, data_test, sparse_size)
 
-        print(data_train[0].shape)
-        print(data_train[1].shape)
-        print(labels_train.shape)
-        # sys.exit()
         dataloader_train = create_dataset_sparse(data_train[0], data_train[1], labels_train, batchsize, shuffle=True) 
         dataloader_test = create_dataset_sparse(data_test[0], data_test[1], labels_test, batchsize, shuffle=False)
     else:
@@ -129,8 +124,6 @@ def get_sparse_func(func, out_dim, transpose=False):
 
 def filter_layer_output(func, layer_id):
     def filter_fn(y_true, y_pred):
-        print(func.__name__)
-        print(y_pred)
         return func(y_true, y_pred[layer_id])
     filter_fn.__name__ = func.__name__ + f"_lay{layer_id}"
     return filter_fn
@@ -155,7 +148,7 @@ def main(args):
         NUM_EPOCHS = 1
         SEQ_LEN = 10
     else:
-        NUM_EPOCHS = 35
+        NUM_EPOCHS = 50
         SEQ_LEN = 100
 
     DENSE_SIZES = [128, 512, 128, NUM_CLASSES]
@@ -171,10 +164,16 @@ def main(args):
     IMAGE_DIMS = (34, 34, 2)
     DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 1024, 512, 512, 128, NUM_CLASSES]
     SPARSE_SIZES_BASE = [4, 4, 4, 2, 2, 1, 1]
-    SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[:-1], DENSE_SIZES[:-1])]
-    SPARSE_SIZES = SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
+    SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE, DENSE_SIZES)]
+    # SPARSE_SIZES = SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
     
-    
+    SPARSE_MULTIPLIER = 1
+    NUM_CLASSES = 10
+    DENSE_SIZES = [128, 512, 512, 512, 128, NUM_CLASSES]
+    DENSE_SIZES = DENSE_SIZES[:1] + [int(0.5*d) for d in DENSE_SIZES[1:-1]] + DENSE_SIZES[-1:]
+    SPARSE_SIZES_BASE = [64, 16, 16, 16, 8, 10]
+    SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE, DENSE_SIZES)]
+
     BATCHSIZE = 48
     if PROFILE_RUN:
         NUM_SAMPLES_PER_CLASS = BATCHSIZE
@@ -196,13 +195,14 @@ def main(args):
     rng = np.random.default_rng(42)
 
     BATCHSIZE_PER_STEP = BATCHSIZE
-    STEPS_PER_EPOCH = int(NUM_SAMPLES_TRAIN/BATCHSIZE/4)
+    STEPS_PER_EPOCH = int(NUM_SAMPLES_TRAIN/BATCHSIZE/8)
     TRAIN_STEPS_PER_EXECUTION = STEPS_PER_EPOCH
 
     DECAY_CONSTANT = 0.92
     THRESHOLD = 1.0
 
     LOG_FILE = f"improve_convergence_{int(DENSE_SIZES[1])}_large/{IMPL_METHOD}_randomIndOffset_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
+    # LOG_FILE = f"improve_convergence_{int(DENSE_SIZES[1])}_large/{IMPL_METHOD}_randomIndOffset_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
     # LOG_FILE = f"convergence_sparsity_sweep_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_topK_sparse_multiplier_{SPARSE_MULTIPLIER}.csv"
     # LOG_FILE = f"convergence_learning_rate_sweep_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_topK_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
     # LOG_FILE = None
@@ -223,98 +223,134 @@ def main(args):
     # metrics = {f"rnn_{i}" if i>0 else "rnn": calc_activity for i in range(NUM_LAYERS-1)}
     # metrics[f"rnn_{NUM_LAYERS-1}"] = calc_accuracy
 
-    if LOG_FILE is not None:
-        csv_logger = keras.callbacks.CSVLogger(LOG_FILE, append=True, separator=';')
-        callbacks = [csv_logger]
-        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+
+
+    method_to_loss_fn = {
+        "dense": sum_and_sparse_categorical_crossentropy,
+        "sparse_ops": get_sparse_func(sum_and_sparse_categorical_crossentropy, DENSE_SIZES[-1], transpose=False),
+        "sparse_layer": get_sparse_func(sum_and_sparse_categorical_crossentropy, DENSE_SIZES[-1], transpose=True),
+    }
+
+    method_to_metr_fn_to_last = {
+        "dense": calc_sparse_categorical_accuracy,
+        "sparse_ops": get_sparse_func(calc_sparse_categorical_accuracy, DENSE_SIZES[-1], transpose=False),
+        "sparse_layer": get_sparse_func(calc_sparse_categorical_accuracy, DENSE_SIZES[-1], transpose=True),
+    }
+    method_to_calc_activity = {
+        "dense": calc_activity,
+        "sparse_ops": ft.partial(get_sparse_func, calc_activity, transpose=False),
+        "sparse_layer": ft.partial(get_sparse_func, calc_activity, transpose=True),
+    }
+
+    loss_fn = method_to_loss_fn[IMPL_METHOD] if not CALC_ACTIVITY else filter_layer_output(method_to_loss_fn[IMPL_METHOD], NUM_LAYERS-1)
+
+    if CALC_ACTIVITY:
+        metrics = [filter_layer_output(method_to_metr_fn_to_last[IMPL_METHOD], NUM_LAYERS-1)]
+        for i in range(NUM_LAYERS):
+            met = method_to_calc_activity[IMPL_METHOD]
+            if SPARSE_METHOD:
+                met = met(DENSE_SIZES[i+1])
+            metrics.append(filter_layer_output(met, i))
     else:
-        callbacks = None
+        metrics = [method_to_metr_fn_to_last[IMPL_METHOD]]
 
 
-    if USE_IPU:
 
-        method_to_loss_fn = {
-            "dense": sum_and_sparse_categorical_crossentropy,
-            "sparse_ops": get_sparse_func(sum_and_sparse_categorical_crossentropy, DENSE_SIZES[-1], transpose=False),
-            "sparse_layer": get_sparse_func(sum_and_sparse_categorical_crossentropy, DENSE_SIZES[-1], transpose=True),
-        }
-
-        method_to_metr_fn_to_last = {
-            "dense": calc_sparse_categorical_accuracy,
-            "sparse_ops": get_sparse_func(calc_sparse_categorical_accuracy, DENSE_SIZES[-1], transpose=False),
-            "sparse_layer": get_sparse_func(calc_sparse_categorical_accuracy, DENSE_SIZES[-1], transpose=True),
-        }
-        method_to_calc_activity = {
-            "dense": calc_activity,
-            "sparse_ops": ft.partial(get_sparse_func, calc_activity, transpose=False),
-            "sparse_layer": ft.partial(get_sparse_func, calc_activity, transpose=True),
-        }
+    multi_grad_scale_fac = [
+        # [dense/sparse for dense,sparse in zip(DENSE_SIZES[1:], SPARSE_SIZES[1:])],
+        # [32.0, 24.0, 16.0, 8.0, 1.0],
+        None
+    ]
+    LOG_FILES = [
+        # f"improve_convergence_randman_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_randomIndOffset_calcGradScale_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv",
+        # f"improve_convergence_randman_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_randomIndOffset_hardcodedGradScale_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv",
+        # f"improve_convergence_randman_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_noRandomIndOffset_noneGradScale_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
+        f"improve_convergence_randman_{int(DENSE_SIZES[1])}/{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}.csv"
+    ]
 
 
-        loss_fn = method_to_loss_fn[IMPL_METHOD] if not CALC_ACTIVITY else filter_layer_output(method_to_loss_fn[IMPL_METHOD], NUM_LAYERS-1)
 
-        if CALC_ACTIVITY:
-            metrics = [filter_layer_output(method_to_metr_fn_to_last[IMPL_METHOD], NUM_LAYERS-1)]
-            for i in range(NUM_LAYERS):
-                met = method_to_calc_activity[IMPL_METHOD]
-                if SPARSE_METHOD:
-                    met = met(DENSE_SIZES[i+1])
-                metrics.append(filter_layer_output(met, i))
+    # NOTE grad_scale_facs = [24.0, 16.0, 12.0, 6.0, 1.0] worked well for:
+    # SPARSE_MULTIPLIER = 1
+    # NUM_CLASSES = 4
+    # DENSE_SIZES = [64, 128, 128, 128, 64, NUM_CLASSES]
+    # SPARSE_SIZES_BASE = [64, 16, 16, 16, 8, 4]
+
+    # if SPARSE_METHOD:
+    #     # grad_scale_facs = [dense/sparse for dense,sparse in zip(DENSE_SIZES[1:], SPARSE_SIZES[1:])]
+    #     grad_scale_facs = [32.0, 24.0, 16.0, 8.0, 1.0]
+    # else:
+    #     grad_scale_facs = None
+    
+    for LOG_FILE,grad_scale_facs in zip(LOG_FILES, multi_grad_scale_fac):
+            
+        if LOG_FILE is not None:
+            csv_logger = keras.callbacks.CSVLogger(LOG_FILE, append=True, separator=';')
+            callbacks = [csv_logger]
+            os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
         else:
-            metrics = [method_to_metr_fn_to_last[IMPL_METHOD]]
+            callbacks = None
 
-        train_ipu(
-            IMPL_METHOD,
-            NUM_EPOCHS, 
-            TRAIN_STEPS_PER_EXECUTION, 
-            BATCHSIZE_PER_STEP,
-            dataloader_train.repeat(),
-            SEQ_LEN, 
-            DENSE_SIZES, 
-            SPARSE_SIZES, 
-            DECAY_CONSTANT, 
-            THRESHOLD,
-            loss_fn,
-            metrics=metrics, #[calc_accuracy],
-            steps_per_epoch=STEPS_PER_EPOCH,
-            callbacks=callbacks,
-            return_all=True if CALC_ACTIVITY else False,
-            transpose_weights=bool(args.transpose_weights),
-            learning_rate=LEARNING_RATE,
-            seed=44,
-        )
-    else:
-        train_gpu(
-            NUM_EPOCHS, 
-            TRAIN_STEPS_PER_EXECUTION, 
-            BATCHSIZE_PER_STEP,
-            dataloader_train.repeat(),
-            SEQ_LEN, 
-            DENSE_SIZES, 
-            DECAY_CONSTANT, 
-            THRESHOLD,
-            sum_and_sparse_categorical_crossentropy,
-            metrics=[calc_sparse_categorical_accuracy], #calc_accuracy,
-            steps_per_epoch=STEPS_PER_EPOCH,
-            callbacks=callbacks,
-            return_all=False,
-            # learning_rate=LEARNING_RATE,
-        )
-        # train_gpu(
-        #     num_epochs, 
-        #     train_steps_per_execution, 
-        #     batchsize,
-        #     dataset_dense,
-        #     seq_len, 
-        #     dense_sizes, 
-        #     decay_constant, 
-        #     threshold,
-        #     loss_fns,
-        #     metrics=metrics,
-        #     steps_per_epoch=steps_per_epoch,
-        #     callbacks=callbacks,
-        #     return_all=True,
-        # )
+
+        # grad_scale_facs = multi_grad_scale_fac[1]
+        print("\ngrad_scale_facs")
+        print(grad_scale_facs)
+
+        if USE_IPU:
+            train_ipu(
+                IMPL_METHOD,
+                NUM_EPOCHS, 
+                TRAIN_STEPS_PER_EXECUTION, 
+                BATCHSIZE_PER_STEP,
+                dataloader_train.repeat(),
+                SEQ_LEN, 
+                DENSE_SIZES, 
+                SPARSE_SIZES, 
+                DECAY_CONSTANT, 
+                THRESHOLD,
+                loss_fn,
+                metrics=metrics, #[calc_accuracy],
+                steps_per_epoch=STEPS_PER_EPOCH,
+                callbacks=callbacks,
+                return_all=True if CALC_ACTIVITY else False,
+                transpose_weights=bool(args.transpose_weights),
+                learning_rate=LEARNING_RATE,
+                seed=44,
+                grad_scale_facs=grad_scale_facs,
+            )
+        else:
+            train_gpu(
+                NUM_EPOCHS, 
+                TRAIN_STEPS_PER_EXECUTION, 
+                BATCHSIZE_PER_STEP,
+                dataloader_train.repeat(),
+                SEQ_LEN, 
+                DENSE_SIZES, 
+                DECAY_CONSTANT, 
+                THRESHOLD,
+                loss_fn,
+                metrics=metrics, #calc_accuracy,
+                steps_per_epoch=STEPS_PER_EPOCH,
+                callbacks=callbacks,
+                return_all=True if CALC_ACTIVITY else False,
+                learning_rate=LEARNING_RATE,
+                seed=44,
+            )
+            # train_gpu(
+            #     num_epochs, 
+            #     train_steps_per_execution, 
+            #     batchsize,
+            #     dataset_dense,
+            #     seq_len, 
+            #     dense_sizes, 
+            #     decay_constant, 
+            #     threshold,
+            #     loss_fns,
+            #     metrics=metrics,
+            #     steps_per_epoch=steps_per_epoch,
+            #     callbacks=callbacks,
+            #     return_all=True,
+            # )
 
 
 if __name__ == "__main__":
@@ -325,8 +361,8 @@ if __name__ == "__main__":
                                                                     "Only used for `use_ipu=1`")
     parser.add_argument('--profile_run', type=int, default=0, help="Whether this is a profiling run (default is `0` therefore `Flase`), "
                                                                     "which uses shorter squence length, less data and only one epoch.")
-    parser.add_argument('--transpose_weights', type=int, default=0, help="Whether to use transpose weights and vectorization (default is `0` therefore `Flase`).")
-                                                                    
+    parser.add_argument('--transpose_weights', type=int, default=0, help="Whether to use the transposed weight matrix to better make use of vectorization."
+                                                                        " For now only used with `impl_method=sparse_layer`. Default is 0 (False).")
     parser.add_argument('--sparse_multiplier', type=int, default=8, help="Factor to multiply sparse sizes with, default is 16.")
     parser.add_argument('--lr', type=float, default=1e-2, help="Learning rate for optimizer, default `1e-2`.")
 

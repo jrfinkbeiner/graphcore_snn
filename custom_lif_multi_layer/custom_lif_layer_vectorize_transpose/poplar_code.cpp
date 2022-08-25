@@ -1045,7 +1045,7 @@ void calcLIFWeightGrad(poplar::Graph &graph, std::vector<poplar::Tensor> &dLdwei
           vertexType = "LIFWeightsGradTwoNeuronSIMD";
           // vertexType = "LIFWeightsGradMultiNeuronSIMD";
           // vertexType = poputil::templateVertex("LIFWeightsGradMultiNeuronVectorized", dtype);
-        } else if  ((target_type == poplar::TargetType::IPU) && (num_neurons % 2 == 0) && (dtype == poplar::FLOAT)) {
+        } else if ((target_type == poplar::TargetType::IPU) && (num_neurons % 2 == 0) && (dtype == poplar::FLOAT)) {
           vertexType = "LIFWeightsGradMultiNeuronSIMD";
           // vertexType = poputil::templateVertex("LIFWeightsGradMultiNeuronVectorized", dtype);
         } else {

@@ -72,6 +72,7 @@ class KerasMultiLIFLayerBase(keras.layers.Layer):
 
         # w_init = tf.random_normal_initializer(0.0, 10.0, self.seed)
         w_init = tf.random_normal_initializer(0.0, 0.1, self.seed)
+        # dec_const_init = tf.random_uniform_initializer(minval=0.87, maxval=0.93, seed=self.seed)
 
         if self.seed is not None:
             tf.random.set_seed(self.seed+2)
@@ -85,12 +86,17 @@ class KerasMultiLIFLayerBase(keras.layers.Layer):
         ) for ilay in range(self.num_layers)]
 
         self.decay_constants = [tf.Variable(
-            initial_value=tf.cast(tf.fill((self.dense_shapes[ilay],), self.decay_constant_value, f"decay_cosntants_{ilay}"), tf.float32),
+            # NOTE variable inital decay constant might improve gradients for earlier layers in sparse case
+            # NOTE actually not true probably
+            initial_value=tf.cast(tf.fill((self.dense_shapes[ilay],), self.decay_constant_value), tf.float32),
+            # initial_value=dec_const_init(shape=(self.dense_shapes[ilay],), dtype=tf.float32),
             trainable=False,
+            name=f"decay_cosntants_{ilay}",
         ) for ilay in range(1, self.num_layers+1)]
         self.thresholds = [tf.Variable(
-            initial_value=tf.cast(tf.fill((self.dense_shapes[ilay],), self.threshold_value, f"thresholds_{ilay}"), tf.float32),
+            initial_value=tf.cast(tf.fill((self.dense_shapes[ilay],), self.threshold_value), tf.float32),
             trainable=False,
+            name=f"thresholds_{ilay}",
         ) for ilay in range(1, self.num_layers+1)]
 
     def call(self):
@@ -187,10 +193,11 @@ def train_gpu(
         callbacks=None,
         return_all=False,
         learning_rate=1e-2,
+        seed=None,
     ):
 
     # init model
-    inputs, outputs = model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize, return_all=return_all)
+    inputs, outputs = model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize, return_all=return_all, seed=seed)
     targets = keras.Input((1,), name="targets")
     model = keras.Model([inputs, targets], outputs)
 
