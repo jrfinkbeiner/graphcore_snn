@@ -423,8 +423,8 @@ void combineRepeatedNeuronSpikeIds(poplar::Graph &graph, std::vector<BatchedSpar
   auto cs = graph.addComputeSet({dnai, "combineRepeatedNeuronSpikeIds"});
   for (unsigned ilay=0; ilay<num_layers; ++ilay){
     combineRepeatedNeuronSpikeIds(graph, repeatedNeuronSpikeIds[ilay], outSpikes[ilay], state_tile_ids[ilay], cs);
-  prog.add(poplar::program::Execute(cs));
   }
+  prog.add(poplar::program::Execute(cs));
 }
 
 

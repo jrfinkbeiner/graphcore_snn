@@ -232,8 +232,8 @@ def main(args):
     TRAIN_STEPS_PER_EXECUTION = STEPS_PER_EPOCH
 
     DECAY_CONSTANT = 0.9
-    # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[0.9]*(len(SPARSE_SIZES)-2), -100]]
-    THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[-100]*(len(SPARSE_SIZES)-2), -100]]
+    THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[0.9]*(len(SPARSE_SIZES)-2), -100]]
+    # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[-100]*(len(SPARSE_SIZES)-2), -100]]
 
     LOG_FILE = None # f"nmnist_sweep_performance_2/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
 

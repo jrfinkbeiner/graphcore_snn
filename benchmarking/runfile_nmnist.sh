@@ -6,7 +6,7 @@ export PYTHONPATH="${PYTHONPATH}:/p/home/jusers/finkbeiner1/jureca/util/tonic_fo
 # python3 train_nmnist.py --use_ipu=0 --impl_method=dense --profile_run=0 --sparse_multiplier=16 --batchsize=48 --lr=0.001 --transpose_weights=0
 # python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --sparse_multiplier=16 --batchsize=48 --lr=0.001 --transpose_weights=1
 # python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --sparse_multiplier=16 --batchsize=48 --lr=0.001 --transpose_weights=1
-POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports_performance_opt/nmnist_sparse_layer_transpose_1472_multiThresh_customReduce_stage1Only_denseSPikes"}' python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --sparse_multiplier=16 --batchsize=48 --lr=0.001 --transpose_weights=1
+POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports_performance_opt/nmnist_sparse_layer_transpose_1472_multiThresh_batchSpikes_progAddBugFix"}' python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --sparse_multiplier=16 --batchsize=48 --lr=0.001 --transpose_weights=1
 
 exit
 
