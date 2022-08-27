@@ -142,7 +142,7 @@ def main(args):
     NUM_CLASSES = 10
     if PROFILE_RUN:
         NUM_EPOCHS = 1
-        SEQ_LEN = 10
+        SEQ_LEN = 100
     else:
         NUM_EPOCHS = 35
         SEQ_LEN = 100 # 300
@@ -202,11 +202,11 @@ def main(args):
 
     # BATCHSIZE = 48
     if PROFILE_RUN:
-        NUM_SAMPLES_TRAIN = BATCHSIZE*4
-        # NUM_SAMPLES_TRAIN = BATCHSIZE*16
+        # NUM_SAMPLES_TRAIN = BATCHSIZE*4
+        NUM_SAMPLES_TRAIN = BATCHSIZE*16
     else:
         # NUM_SAMPLES_TRAIN = BATCHSIZE*26 #54210
-        NUM_SAMPLES_TRAIN = 9984 #54210
+        NUM_SAMPLES_TRAIN = 9984 #54210 # TODO change back !
     assert NUM_SAMPLES_TRAIN <= 60000
 
     print("#################################################################################################")
@@ -227,14 +227,15 @@ def main(args):
     rng = np.random.default_rng(42)
 
     BATCHSIZE_PER_STEP = BATCHSIZE
-    # STEPS_PER_EPOCH = int(NUM_SAMPLES_TRAIN/BATCHSIZE/4)
-    STEPS_PER_EPOCH = int(9984/48/4)
+    STEPS_PER_EPOCH = int(NUM_SAMPLES_TRAIN/BATCHSIZE/4)
+    # STEPS_PER_EPOCH = int(9984/48/4) # TOODO change back !
     TRAIN_STEPS_PER_EXECUTION = STEPS_PER_EPOCH
 
     DECAY_CONSTANT = 0.9
-    THRESHOLD = 1.0
+    # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[0.9]*(len(SPARSE_SIZES)-2), -100]]
+    THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[-100]*(len(SPARSE_SIZES)-2), -100]]
 
-    LOG_FILE = f"nmnist_sweep_performance_2/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
+    LOG_FILE = None # f"nmnist_sweep_performance_2/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
 
     # if SPARSE_METHOD:
     #     sys.exit()

@@ -218,7 +218,6 @@ public:
   poplar::Output<poplar::Vector<unsigned>> repeated_out_spikes_ids;
   poplar::Output<unsigned> repeated_num_out_spikes;
 
-
   bool compute() {
     unsigned numSpikesCounter{0};
     unsigned numGradsCounter{0};
@@ -256,7 +255,8 @@ template class LIFOutSpikes2ThreshsSplitWorker<float>;
 
 
 template <typename FPType>
-class SpikesTwoThreshsSplitWorkerRandOffset : public poplar::Vertex {
+// class SpikesTwoThreshsSplitWorkerRandOffset : public poplar::Vertex {
+class [[poplar::constraint("elem(*state) != elem(*thresholds)")]] SpikesTwoThreshsSplitWorkerRandOffset : public poplar::Vertex { // TODO maybe unnecessary here
 public:
 
   poplar::Input<poplar::Vector<FPType>> state;
@@ -318,7 +318,7 @@ public:
             ++numGradsCounter;
           }
           ++leftSideCounter;
-          if (leftSideCounter >= sizeSparseOutPlusNumStates) break; // TODO just implement as while
+          if (leftSideCounter >= sizeSparseOutPlusNumStates) break  ; // TODO just implement as while
         }
         // if (numSpikesCounter+numGradsCounter >= sizeSparseOut) break; // TODO just implement as while
         ++state_id;
@@ -333,9 +333,9 @@ public:
 template class SpikesTwoThreshsSplitWorkerRandOffset<float>;
 // template class SpikesTwoThreshsSplitWorkerRandOffset<half>;
 
-
 // template <typename FPType>
 class LIFOutSpikes2ThreshsCombine : public poplar::Vertex {
+  // class [[poplar::constraint("elem(*repeated_out_spikes_ids) != elem(*out_spikes_ids)")]] LIFOutSpikes2ThreshsCombine : public poplar::Vertex { // TODO maybe unnecessary here
 public:
 
   poplar::Input<poplar::Vector<unsigned>> repeated_out_spikes_ids;
@@ -386,6 +386,208 @@ public:
 // template class LIFOutSpikes2ThreshsCombine<half>;
 
 
+template <typename FPType>
+class SpikesMultiThreshsSplitWorkerBatchSpikes : public poplar::Vertex {
+public:
+
+  poplar::Input<poplar::Vector<FPType>> state;
+  poplar::Input<FPType> first_thresh;
+  poplar::Input<FPType> second_thresh;
+  poplar::Input<unsigned> numStates;
+  poplar::Output<poplar::Vector<unsigned>> repeated_out_spikes_ids;
+  poplar::Output<poplar::Vector<unsigned>> repeated_out_spikes_ids_grads;
+  poplar::Output<unsigned> repeated_num_out_spikes_first;
+  poplar::Output<unsigned> repeated_num_out_spikes_second;
+
+  bool compute() {
+    unsigned numSpikesCounter{0};
+    unsigned numGradsCounter{0};
+
+    for (unsigned i = 0; i < numStates; ++i) {
+      if (state[i] > second_thresh) {
+        if (state[i] > first_thresh) {
+          repeated_out_spikes_ids[numSpikesCounter] = i;
+          ++numSpikesCounter;
+        } else {
+          repeated_out_spikes_ids_grads[numGradsCounter] = i;
+          ++numGradsCounter;
+        }
+      }
+    }
+    *repeated_num_out_spikes_first = numSpikesCounter;
+    *repeated_num_out_spikes_second = numGradsCounter;
+    return true;
+  }
+};
+template class SpikesMultiThreshsSplitWorkerBatchSpikes<float>;
+// template class SpikesMultiThreshsSplitWorkerBatchSpikes<half>;
+
+
+template <typename FPType>
+class SpikesMultiThreshsSplitWorkerRandOffset : public poplar::Vertex {
+// class [[poplar::constraint("elem(*state) != elem(*thresholds)")]] SpikesTwoThreshsSplitWorkerRandOffset : public poplar::Vertex { // TODO maybe unnecessary here
+public:
+
+  poplar::Input<poplar::Vector<FPType>> state;
+  poplar::Input<poplar::Vector<FPType>> first_thresh;
+  poplar::Input<poplar::Vector<FPType>> second_thresh;
+  poplar::Input<unsigned> start_id;
+  poplar::Input<int> random_offset;
+  poplar::Output<poplar::Vector<unsigned>> repeated_out_spikes_ids;
+  poplar::Output<poplar::Vector<unsigned>> repeated_out_spikes_ids_grads;
+  poplar::Output<unsigned> repeated_num_out_spikes_first;
+  poplar::Output<unsigned> repeated_num_out_spikes_second;
+
+
+  bool compute() {
+    unsigned numSpikesCounter{0};
+    unsigned numGradsCounter{0};
+    const unsigned numStates = state.size();
+    const unsigned sizeSparseOut = repeated_out_spikes_ids.size();
+    unsigned leftSideCounter{numStates};
+    const unsigned sizeSparseOutPlusNumStates = sizeSparseOut+numStates;
+    const unsigned random_offset_ = (random_offset > numStates) ? numStates : random_offset;
+    unsigned state_id{start_id+random_offset_};
+    unsigned counter{0};
+    bool vector_notFull{true};
+
+    // const FPType* first_thresh = &thresholds[0];
+    // const FPType* second_thresh = &thresholds[numStates];
+
+    for (unsigned i = random_offset_; i < numStates; ++i) {
+      // if ((state[i] > *(second_thresh+i)) || (leftSideCounter <= (sizeSparseOut + counter))) {
+      //   if (state[i] > *(first_thresh+i)) {
+      if (state[i] > second_thresh[i]) {
+        if (state[i] > first_thresh[i]) {
+
+          repeated_out_spikes_ids[numSpikesCounter] = state_id;
+          ++numSpikesCounter;
+        } else if (numGradsCounter < sizeSparseOut) {
+          // Fill up the array with non-spike values in reverse from behind 
+          repeated_out_spikes_ids_grads[numGradsCounter] = state_id;
+          ++numGradsCounter;
+        }
+        if (numSpikesCounter >= sizeSparseOut) {
+          vector_notFull = false;          
+          break; // TODO just implement as while
+        }
+      }
+      // if (numSpikesCounter+numGradsCounter >= sizeSparseOut) break; // TODO just implement as while
+      ++state_id;
+      ++counter;
+    }
+
+    if (vector_notFull) {
+      unsigned state_id = start_id;
+      for (unsigned i = 0; i < random_offset_; ++i) {
+        // if ((state[i] > *(second_thresh+i)) || (leftSideCounter <= (sizeSparseOut + counter))) {
+        //   if (state[i] > *(first_thresh+i)) {
+        if (state[i] > second_thresh[i]) {
+          if (state[i] > first_thresh[i]) {
+            repeated_out_spikes_ids[numSpikesCounter] = state_id;
+            ++numSpikesCounter;
+            if (numSpikesCounter >= sizeSparseOut) break; // TODO just implement as while
+          } else if (numGradsCounter < sizeSparseOut) {
+            // Fill up the array with non-spike values in reverse from behind 
+            repeated_out_spikes_ids_grads[numGradsCounter] = state_id;
+            ++numGradsCounter;
+          }
+        }
+        ++state_id;
+        ++counter;
+      }
+    }
+    *repeated_num_out_spikes_first = numSpikesCounter;
+    *repeated_num_out_spikes_second = numGradsCounter;
+    return true;
+  }
+};
+template class SpikesMultiThreshsSplitWorkerRandOffset<float>;
+// template class SpikesMultiThreshsSplitWorkerRandOffset<half>;
+
+
+// template <typename FPType>
+class LIFOutSpikesMultiThreshsCombine : public poplar::Vertex {
+  // class [[poplar::constraint("elem(*repeated_out_spikes_ids) != elem(*out_spikes_ids)")]] LIFOutSpikes2ThreshsCombine : public poplar::Vertex { // TODO maybe unnecessary here
+public:
+
+  poplar::Input<poplar::Vector<unsigned>> repeated_out_spikes_ids;
+  poplar::Input<poplar::Vector<unsigned>> repeated_out_spikes_ids_grads;
+  poplar::Input<poplar::Vector<unsigned>> repeated_num_out_spikes_first;
+  poplar::Input<poplar::Vector<unsigned>> repeated_num_out_spikes_second;
+  poplar::Output<poplar::Vector<unsigned>> out_spikes_ids;
+  poplar::Output<poplar::Vector<unsigned>> num_out_spikes;
+  poplar::Input<unsigned> num_workers;
+
+  bool compute() {
+    const unsigned sparse_size = out_spikes_ids.size();
+    unsigned numSpikesCounter{0};
+
+    unsigned workerStartId{0};
+    for (unsigned iwor=0; iwor<num_workers; ++iwor){
+      if (numSpikesCounter >= sparse_size) break;
+      const unsigned num_out_spikes_ilay = repeated_num_out_spikes_first[iwor]; // TODO shuffle these guys / use rnadom offset !
+      const unsigned numIter = ((num_out_spikes_ilay+numSpikesCounter) <= sparse_size) ? num_out_spikes_ilay : (sparse_size-numSpikesCounter);
+      for (unsigned i=0; i<numIter; ++i){
+        out_spikes_ids[numSpikesCounter] = repeated_out_spikes_ids[workerStartId+i];
+        ++numSpikesCounter;
+      }
+      workerStartId+=sparse_size;
+    }
+    num_out_spikes[0] = numSpikesCounter;
+
+    workerStartId = 0;
+    for (unsigned iwor=0; iwor<num_workers; ++iwor){
+      if (numSpikesCounter >= sparse_size) break;
+      const unsigned num_out_spikes_ilay = repeated_num_out_spikes_second[iwor]; // TODO shuffle these guys / use rnadom offset !
+      const unsigned numIter = ((num_out_spikes_ilay+numSpikesCounter) <= sparse_size) ? num_out_spikes_ilay : (sparse_size-numSpikesCounter);
+      for (unsigned i=0; i<numIter; ++i){
+        out_spikes_ids[numSpikesCounter] = repeated_out_spikes_ids_grads[workerStartId+i];
+        ++numSpikesCounter;
+      }
+      workerStartId+=sparse_size;
+    }
+    num_out_spikes[1] = numSpikesCounter;
+    return true;
+  }
+};
+
+
+class BatchSpikeIds2NeuronSpikeIds : public poplar::Vertex {
+// class [[poplar::constraint("elem(*state) != elem(*thresholds)")]] SpikesTwoThreshsSplitWorkerRandOffset : public poplar::Vertex { // TODO maybe unnecessary here
+public:
+
+  poplar::Input<poplar::Vector<unsigned>> batch_spike_ids;
+  poplar::Input<poplar::Vector<unsigned>> batch_num_spikes;
+  poplar::Input<unsigned> per_repeat_batchsize;
+  poplar::Input<unsigned> num_neurons;
+  poplar::Input<unsigned> neuron_offset;
+  poplar::Input<unsigned> sparse_size;
+  // poplar::InOut<poplar::Vector<unsigned, poplar::VectorLayout::ONE_PTR, 8>> neuron_num_spikes;
+  poplar::InOut<poplar::Vector<unsigned>> neuron_num_spikes;
+  poplar::Output<poplar::Vector<unsigned>> neuron_spike_ids;
+  
+
+  bool compute() {
+    // #pragma clang loop vectorize(enable) interleave(enable) // or -X -ffast-math to popc
+    // #pragma clang loop unroll(disable)
+    for (unsigned ibatch = 0; ibatch < neuron_num_spikes.size(); ++ibatch) {
+      neuron_num_spikes[ibatch] = 0;
+    }
+    
+    for (unsigned ineuron = 0; ineuron < num_neurons; ++ineuron) {
+      unsigned neuron_id = ineuron+neuron_offset;
+      for (unsigned ibatch = 0; ibatch < batch_num_spikes[ineuron]; ++ibatch) {
+        unsigned batch_id = batch_spike_ids[ibatch+ineuron*per_repeat_batchsize];
+        if (neuron_num_spikes[batch_id] < sparse_size){
+          neuron_spike_ids[batch_id*sparse_size+neuron_num_spikes[batch_id]] = neuron_id;
+          neuron_num_spikes[batch_id] += 1;
+        }
+      }
+    }    
+    return true;
+  }
+};
 
 template <typename FPType>
 class MulInPlaceCustom : public poplar::Vertex {
@@ -421,14 +623,12 @@ public:
   poplar::Input<poplar::Vector<FPType>> thresholds;
   poplar::Input<poplar::Vector<FPType>> dLdoutSpikes;
   poplar::Input<poplar::Vector<unsigned>> fwd_out_spikes_ids;
-    
   poplar::InOut<poplar::Vector<FPType>> dLdState;
+  poplar::Input<unsigned> end;
 
   bool compute() {
     const FPType beta = 10.0; // TODO  don't hardcode here but give as input
-    int sum{0};
-    const size_t size_sparse_out = fwd_out_spikes_ids.size();
-    for (unsigned i = 0; i < size_sparse_out; ++i) { 
+    for (unsigned i = 0; i < end; ++i) { 
       unsigned idx = fwd_out_spikes_ids[i];
       // TODO is += here correct ?
       dLdState[idx] += dLdoutSpikes[i] * superspike_surrogate(fwdState[idx] - thresholds[idx], beta);
@@ -563,7 +763,7 @@ public:
   //  poplar::Input<poplar::Vector<FPType>> dLdStates;
  
   poplar::Input<unsigned> num_neurons;
-  poplar::Input<unsigned> sparse_size;
+  poplar::Input<unsigned> end;
 
   // poplar::Input<poplar::Vector<unsigned, poplar::VectorLayout::ONE_PTR, 8>> fwd_inp_spike_ids; // TODO test out performace gains with vectorization ?
   // poplar::InOut<poplar::Vector<FPType,  poplar::VectorLayout::ONE_PTR, 8>> dLdinp_spike_ids;
@@ -577,7 +777,7 @@ public:
     
     // // #pragma clang loop vectorize_width(4) interleave(enable)
     // #pragma clang loop vectorize(enable) interleave(enable)
-    for (unsigned i = 0; i < sparse_size; ++i) {
+    for (unsigned i = 0; i < end; ++i) {
       // const auto spikeId = fwd_inp_spike_ids[i];
       FPType sum{0};
       
@@ -599,9 +799,59 @@ template class LIFInpSpikesGradMultiRow<float>;
 // template class LIFInpSpikesGradMultiRow<half>;
 
 
+template <typename FPType>
+class CustomSparseReduceStage1 : public poplar::Vertex {
+public:
+  poplar::Input<poplar::Vector<FPType, poplar::VectorLayout::ONE_PTR, 8>> dLdx;
+  poplar::Input<unsigned> num_grads;
+  poplar::Input<unsigned> isparse;
+  poplar::Input<unsigned> end;
+  poplar::Output<FPType> dLdx_reduced;
+
+  bool compute() {
+    if (isparse<num_grads){
+      FPType sum{0};
+      #pragma clang loop vectorize(enable) interleave(enable) // or -X -ffast-math to popc
+      #pragma clang loop unroll(disable)
+      for (unsigned i = 0; i < end; ++i){
+        sum += dLdx[i];
+      }
+      *dLdx_reduced = sum; 
+    }
+    return true;
+  }
+};
+template class CustomSparseReduceStage1<float>;
+// template class CustomSparseReduceStage1<half>;
+
+
+
 #ifdef __IPU__
 #include <ipu_vector_math>
 #include <ipu_memory_intrinsics>
+
+
+class CustomSparseReduceStage1FloatSIMD8 : public poplar::Vertex {
+public:
+  poplar::Input<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> dLdx;
+  poplar::Input<unsigned> num_grads;
+  poplar::Input<unsigned> isparse;
+  poplar::Output<float> dLdx_reduced;
+
+  bool compute() {
+    if (isparse<num_grads){
+      auto dLdxAsFloat2 = reinterpret_cast<const float2 *>(&dLdx[0]);
+      float2 sumFloat2 = dLdxAsFloat2[0];
+      sumFloat2 += dLdxAsFloat2[1];
+      sumFloat2 += dLdxAsFloat2[2];
+      sumFloat2 += dLdxAsFloat2[3];
+
+      auto sum = reinterpret_cast<float*>(&sumFloat2);
+      *dLdx_reduced = sum[0]+sum[1];
+    }
+    return true;
+  }
+};
 
 // class LIFWeightsGradTwoNeuronSIMD : public poplar::Vertex {
 class [[poplar::constraint("elem(*dLdweights) != elem(*dLdState)")]] LIFWeightsGradTwoNeuronSIMD : public poplar::Vertex {
@@ -687,20 +937,18 @@ class LIFInpSpikesGradTwoRowSIMD : public poplar::Vertex {
 public:
   poplar::Input<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> weights_rows;
   poplar::Input<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> dLdStates;
- 
-  poplar::Input<unsigned> sparse_size;
-
-  // poplar::Input<poplar::Vector<unsigned, poplar::VectorLayout::ONE_PTR, 8>> fwd_inp_spike_ids;
-  poplar::InOut<poplar::Vector<float,  poplar::VectorLayout::ONE_PTR, 8>> dLdinp_spike_ids;
   poplar::Input<poplar::Vector<unsigned>> fwd_inp_spike_ids;
-  // poplar::InOut<poplar::Vector<FPType>> dLdinp_spike_ids;
+
+  poplar::Output<poplar::Vector<float,  poplar::VectorLayout::ONE_PTR, 8>> dLdinp_spike_ids;
+
+  poplar::Input<unsigned> end;
 
   bool compute() {
-
     auto weightsAsFloat2 = reinterpret_cast<const float2 *>(&weights_rows[0]);
     auto dLdStatesFloat2 = reinterpret_cast<const float2 *>(&dLdStates[0]);
+    const unsigned end_{end};
 
-    for (unsigned i = 0; i < sparse_size; ++i) {
+    for (unsigned i = 0; i < end_; ++i) {
       float2 sumFloat2 = dLdStatesFloat2[0] * weightsAsFloat2[fwd_inp_spike_ids[i]]; // TODO faster like this with flatten and start_idx, or with VectorList ? 
       auto sum = reinterpret_cast<float*>(&sumFloat2);
       dLdinp_spike_ids[i] = sum[0]+sum[1]; 
@@ -716,7 +964,7 @@ public:
   poplar::Input<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> dLdStates;
  
   poplar::Input<unsigned> num_iters;
-  poplar::Input<unsigned> sparse_size;
+  poplar::Input<unsigned> end;
 
   // poplar::Input<poplar::Vector<unsigned, poplar::VectorLayout::ONE_PTR, 8>> fwd_inp_spike_ids;
   poplar::InOut<poplar::Vector<float,  poplar::VectorLayout::ONE_PTR, 8>> dLdinp_spike_ids;
@@ -728,7 +976,7 @@ public:
     auto weightsAsFloat2 = reinterpret_cast<const float2 *>(&weights_rows[0]);
     auto dLdStatesFloat2 = reinterpret_cast<const float2 *>(&dLdStates[0]);
 
-    for (unsigned i = 0; i < sparse_size; ++i) {
+    for (unsigned i = 0; i < end; ++i) {
       float2 sumFloat2 = dLdStatesFloat2[0] * weightsAsFloat2[fwd_inp_spike_ids[i]];
       for (unsigned ineuron = 1; ineuron < num_iters; ++ineuron){
         sumFloat2 += dLdStatesFloat2[0] * weightsAsFloat2[fwd_inp_spike_ids[i]+ineuron];

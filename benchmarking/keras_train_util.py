@@ -49,6 +49,9 @@ def get_shape(in_features: int, out_features: int, transpose: bool):
     # return (in_features, out_features) if transpose else (out_features, in_features)
     return (out_features, in_features)
 
+
+
+
 class KerasMultiLIFLayerBase(keras.layers.Layer):
     def __init__(self, dense_shapes, decay_constant, threshold, transpose_weights=False, seed=None):
         super().__init__()
@@ -57,14 +60,20 @@ class KerasMultiLIFLayerBase(keras.layers.Layer):
         self.dense_shapes = dense_shapes
         self.decay_constant_value = decay_constant
         self.threshold_value = threshold
+        self.version_multi_thresh = isinstance(self.threshold_value, (list, tuple)) and (len(self.threshold_value) > 1)
         self.transpose_weights = transpose_weights
         self.seed = seed
-
+        # self.current_second_threshs = [-100.0 for i in range(self.num_layers)] if self.version_multi_thresh else None
+        if self.version_multi_thresh:
+            self.current_second_threshs = self.threshold_value[1] if isinstance(self.threshold_value[1], (tuple, list)) \
+                                                else [self.threshold_value[1] for i in range(self.num_layers)]
+        else: 
+            self.current_second_threshs = None
     def build(self, input_shape):
 
         def custom_init(in_feat, out_feat, dtype):
             # limit = (6/(in_feat + out_feat))**0.5
-            limit = (6/(in_feat))**0.5 * 1.5
+            limit = (6/(in_feat))**0.5
             shape = get_shape(in_feat, out_feat, self.transpose_weights)
             print(f"limit={limit}")
             # return tf.random.uniform(shape, minval=0, maxval=limit, dtype=dtype)
@@ -93,11 +102,29 @@ class KerasMultiLIFLayerBase(keras.layers.Layer):
             trainable=False,
             name=f"decay_cosntants_{ilay}",
         ) for ilay in range(1, self.num_layers+1)]
-        self.thresholds = [tf.Variable(
-            initial_value=tf.cast(tf.fill((self.dense_shapes[ilay],), self.threshold_value), tf.float32),
-            trainable=False,
-            name=f"thresholds_{ilay}",
-        ) for ilay in range(1, self.num_layers+1)]
+        
+        if self.version_multi_thresh is True:
+            self.thresholds = self.create_thresh_tensor([self.threshold_value[0]]*self.num_layers, self.current_second_threshs)
+        else:
+            self.thresholds = [tf.Variable(
+                initial_value=tf.cast(tf.fill((self.dense_shapes[ilay],), self.threshold_value), tf.float32),
+                trainable=False,
+                name=f"thresholds_{ilay}",
+            ) for ilay in range(1, self.num_layers+1)]
+
+
+        print(self.thresholds)
+
+    def create_thresh_tensor(self, threshs_1, threshs_2):
+        thresholds = [tf.Variable(
+                initial_value=tf.stack([
+                    tf.cast(tf.fill((self.dense_shapes[ilay+1],), thresh), tf.float32) for thresh in thrs
+                ], axis = 0),
+                trainable=False,
+                name=f"thresholds_{ilay+1}",
+            ) for ilay,thrs in enumerate(zip(threshs_1, threshs_2))
+        ]
+        return thresholds
 
     def call(self):
         raise NotImplementedError

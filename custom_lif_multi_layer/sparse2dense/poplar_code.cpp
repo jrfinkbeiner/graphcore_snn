@@ -150,14 +150,21 @@ poplar::program::Program Build_grad(
   poplar::DebugNameAndId dnai{debug_prefix};
 
   poplar::Tensor spike_ids_fptype = fwd_inputs[0];
+  poplar::Tensor num_spikes_fptype = fwd_inputs[1];
   poplar::Tensor spike_ids{popops::cast(graph, spike_ids_fptype, poplar::UNSIGNED_INT, bwdProg, {dnai, "cast spike_ids"})};
-  // poplar::Tensor num_spikes = fwd_inputs[1];
-  
+  poplar::Tensor num_spikes;
+
+  size_t num_spikes_dim_to_use;
+  const bool version_multi_thresh_spikes = num_spikes_fptype.dim(2) > 1;
+  if (version_multi_thresh_spikes) {
+    num_spikes = popops::cast(graph, num_spikes_fptype, poplar::UNSIGNED_INT, bwdProg, {dnai, "cast spike_ids"});
+    num_spikes_dim_to_use = num_spikes_fptype.dim(2) - 1;
+  }
 
 
   size_t seq_len = spike_ids.dim(0);
   size_t batchsize = spike_ids.dim(1);
-  size_t size_sparse = spike_ids.dim(1);
+  size_t size_sparse = spike_ids.dim(2);
   auto dtype = spike_ids_fptype.elementType();
 
   // Get the target, which descibes properties of the hardware.
@@ -177,15 +184,30 @@ poplar::program::Program Build_grad(
   auto cs = graph.addComputeSet({dnai, "performSparse2DenseGrad"});
   for (unsigned iseq = 0; iseq < seq_len; ++iseq) {
     for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
-      auto v = graph.addVertex(cs, poputil::templateVertex("Sparse2DenseGrad", dtype),
-                              {{"dLdDenseSpikes", dLdDenseSpikes[iseq][ibatch]},
-                               {"spikeIds", spike_ids[iseq][ibatch]},
-                               {"dLdSpikeIds", dLdSpikeIds[iseq][ibatch]}});
+      if (version_multi_thresh_spikes){
+        auto v = graph.addVertex(cs, poputil::templateVertex("Sparse2DenseGradMultiThresh", dtype),
+                                {{"dLdDenseSpikes", dLdDenseSpikes[iseq][ibatch]},
+                                {"spikeIds", spike_ids[iseq][ibatch]},
+                                {"num_nz", num_spikes[iseq][ibatch][num_spikes_dim_to_use]},
+                                {"end", size_sparse},
+                                {"dLdSpikeIds", dLdSpikeIds[iseq][ibatch]}});
+        // !!! TODO !!! totally bogus tile mapping, must be improved
+        // should be based on state mapping
+        graph.setTileMapping(v, iseq*batchsize/batchesPerTile+ibatch/batchesPerTile); 
+        // Provide a cycle count estimate for the profiler. // TODO make educated guess/provide equation
+        graph.setPerfEstimate(v, 1);
+      } else {
+        auto v = graph.addVertex(cs, poputil::templateVertex("Sparse2DenseGrad", dtype),
+                                {{"dLdDenseSpikes", dLdDenseSpikes[iseq][ibatch]},
+                                {"spikeIds", spike_ids[iseq][ibatch]},
+                                {"end", size_sparse},
+                                {"dLdSpikeIds", dLdSpikeIds[iseq][ibatch]}});
       // !!! TODO !!! totally bogus tile mapping, must be improved
       // should be based on state mapping
       graph.setTileMapping(v, iseq*batchsize/batchesPerTile+ibatch/batchesPerTile); 
       // Provide a cycle count estimate for the profiler. // TODO make educated guess/provide equation
       graph.setPerfEstimate(v, 1);
+      }
     }
   }
   bwdProg.add(poplar::program::Execute(cs));
