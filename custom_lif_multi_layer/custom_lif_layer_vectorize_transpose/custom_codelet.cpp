@@ -424,6 +424,56 @@ template class SpikesMultiThreshsSplitWorkerBatchSpikes<float>;
 
 
 template <typename FPType>
+class SpikesMultiThreshsSplitWorkerBatchSpikesMultiVertexb3n2 : public poplar::MultiVertex {
+public:
+
+  poplar::Input<poplar::Vector<FPType>> state;
+  poplar::Input<poplar::Vector<FPType>> first_thresh;
+  poplar::Input<poplar::Vector<FPType>> second_thresh;
+  poplar::Input<unsigned> numNeurons;
+  poplar::Input<unsigned> numBatchReps;
+  poplar::Input<unsigned> numStates;
+  poplar::Output<poplar::Vector<unsigned>> repeated_out_spikes_ids;
+  poplar::Output<poplar::Vector<unsigned>> repeated_num_out_spikes;
+
+  bool compute(unsigned workerId) {
+    unsigned ineuron{workerId % numNeurons}; // TODO not sure whether correct...
+    unsigned irep{workerId / numNeurons}; // TODO not sure whether correct...
+    unsigned num_workers{numNeurons * numBatchReps};
+
+    unsigned numSpikesCounter{0};
+    unsigned numGradsCounter{0};
+
+    unsigned first_thresh_iwor = first_thresh[ineuron];
+    unsigned second_thresh_iwor = second_thresh[numNeurons+ineuron];
+
+    unsigned worker_offset{(ineuron*numBatchReps + irep)*2*numStates};
+
+    for (unsigned i = 0; i < numStates; ++i) {
+      if (state[i*num_workers*numStates] > second_thresh_iwor) {
+        if (state[i*num_workers*numStates] > first_thresh_iwor) {
+          repeated_out_spikes_ids[worker_offset+numSpikesCounter] = i;
+          ++numSpikesCounter;
+        } else {
+          repeated_out_spikes_ids[worker_offset+numStates+numGradsCounter] = i;
+          ++numGradsCounter;
+        }
+      }
+    }
+    repeated_num_out_spikes[2*(ineuron*numBatchReps+irep)] = numSpikesCounter; // TODO not sure whether correct...
+    repeated_num_out_spikes[2*(ineuron*numBatchReps+irep)+1] = numGradsCounter; // TODO not sure whether correct...
+    return true;
+  }
+};
+template class SpikesMultiThreshsSplitWorkerBatchSpikesMultiVertexb3n2<float>;
+// template class SpikesMultiThreshsSplitWorkerBatchSpikesMultiVertexb3n2<half>;
+
+
+
+
+
+
+template <typename FPType>
 class SpikesMultiThreshsSplitWorkerRandOffset : public poplar::Vertex {
 // class [[poplar::constraint("elem(*state) != elem(*thresholds)")]] SpikesTwoThreshsSplitWorkerRandOffset : public poplar::Vertex { // TODO maybe unnecessary here
 public:

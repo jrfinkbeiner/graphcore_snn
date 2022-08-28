@@ -207,8 +207,6 @@ BatchedSparseSpikes gen_sparseBatchSpikes(poplar::Graph &graph, poplar::Tensor &
     throw poputil::poplibs_error("Currently only batchsizes that are a multiple of 3 are supprted for the `gen_sparseBatchSpikes` operation.");
   }
 
-  poplar::Tensor state_transpose = state.dimShuffle({1,0});
-
   poplar::Tensor repeatedBatchSpikeIds = graph.addVariable(poplar::UNSIGNED_INT, {num_neurons, num_repeats_batch, num_thresholds, per_repeat_batchsize}, {dnai, "repeatedNeuronSpikeIds"});
   poplar::Tensor repeatedBatchSpikeNums = graph.addVariable(poplar::UNSIGNED_INT, {num_neurons, num_repeats_batch, num_thresholds}, {dnai, "repeatedNeuronSpikeNums"});
 
@@ -241,24 +239,38 @@ BatchedSparseSpikes gen_sparseBatchSpikes(poplar::Graph &graph, poplar::Tensor &
       std::cout << "repeated_num_out_spikes_first: " << neuronRepeatedBatchSpikeNums.shapeToString() << std::endl;
 
 
+      if ((num_repeats_batch==3) && (numNeuronsThisThile==2)) {
+        auto v = graph.addVertex(cs, poputil::templateVertex("SpikesMultiThreshsSplitWorkerBatchSpikesMultiVertexb3n2", dtype),
+                                    {{"state", neuronStates.flatten()},
+                                    {"first_thresh", neuronThresholds[0]},
+                                    {"second_thresh", neuronThresholds[1]},
+                                    {"numNeurons", numNeuronsThisThile},
+                                    {"numBatchReps", num_repeats_batch},
+                                    {"numStates", per_repeat_batchsize},
+                                    {"repeated_out_spikes_ids", neuronRepeatedBatchSpikeIds.flatten()},
+                                    {"repeated_num_out_spikes", neuronRepeatedBatchSpikeNums.flatten()}});
+          graph.setTileMapping(v, tile);
+          graph.setPerfEstimate(v, 1);
 
-      for (unsigned iwor = 0; iwor < num_repeats_batch; ++iwor) {
-        const unsigned worker_start = iwor*per_repeat_batchsize;
-        const unsigned worker_end = (iwor+1)*per_repeat_batchsize;
-        poplar::Tensor neuronStatesWorker = neuronStates.slice(worker_start, worker_end, 0).dimShuffle({1,0});
-        std::cout << "neuronStatesWorker: " << neuronStatesWorker.shapeToString() << std::endl;
-        for (unsigned ineuron = 0; ineuron < numNeuronsThisThile; ++ineuron) {
-          auto v = graph.addVertex(cs, poputil::templateVertex("SpikesMultiThreshsSplitWorkerBatchSpikes", dtype),
-                                      {{"state", neuronStatesWorker[ineuron]},
-                                      {"first_thresh", neuronThresholds[0][ineuron]},
-                                      {"second_thresh", neuronThresholds[1][ineuron]},
-                                      {"numStates", per_repeat_batchsize},
-                                      {"repeated_out_spikes_ids", neuronRepeatedBatchSpikeIds[ineuron][iwor][0]},
-                                      {"repeated_out_spikes_ids_grads", neuronRepeatedBatchSpikeIds[ineuron][iwor][1]},
-                                      {"repeated_num_out_spikes_first", neuronRepeatedBatchSpikeNums[ineuron][iwor][0]},
-                                      {"repeated_num_out_spikes_second", neuronRepeatedBatchSpikeNums[ineuron][iwor][1]}});
-            graph.setTileMapping(v, tile);
-            graph.setPerfEstimate(v, 1);
+      } else {
+        for (unsigned iwor = 0; iwor < num_repeats_batch; ++iwor) {
+          const unsigned worker_start = iwor*per_repeat_batchsize;
+          const unsigned worker_end = (iwor+1)*per_repeat_batchsize;
+          poplar::Tensor neuronStatesWorker = neuronStates.slice(worker_start, worker_end, 0).dimShuffle({1,0});
+          std::cout << "neuronStatesWorker: " << neuronStatesWorker.shapeToString() << std::endl;
+          for (unsigned ineuron = 0; ineuron < numNeuronsThisThile; ++ineuron) {
+            auto v = graph.addVertex(cs, poputil::templateVertex("SpikesMultiThreshsSplitWorkerBatchSpikes", dtype),
+                                        {{"state", neuronStatesWorker[ineuron]},
+                                        {"first_thresh", neuronThresholds[0][ineuron]},
+                                        {"second_thresh", neuronThresholds[1][ineuron]},
+                                        {"numStates", per_repeat_batchsize},
+                                        {"repeated_out_spikes_ids", neuronRepeatedBatchSpikeIds[ineuron][iwor][0]},
+                                        {"repeated_out_spikes_ids_grads", neuronRepeatedBatchSpikeIds[ineuron][iwor][1]},
+                                        {"repeated_num_out_spikes_first", neuronRepeatedBatchSpikeNums[ineuron][iwor][0]},
+                                        {"repeated_num_out_spikes_second", neuronRepeatedBatchSpikeNums[ineuron][iwor][1]}});
+              graph.setTileMapping(v, tile);
+              graph.setPerfEstimate(v, 1);
+          }
         }
       }
     }  
@@ -269,7 +281,7 @@ BatchedSparseSpikes gen_sparseBatchSpikes(poplar::Graph &graph, poplar::Tensor &
 std::vector<BatchedSparseSpikes> gen_sparseBatchSpikes(poplar::Graph &graph, std::vector<poplar::Tensor> &state, std::vector<poplar::Tensor> &thresholds,
                             poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai = {}) {
   unsigned num_layers = state.size();
-  auto cs = graph.addComputeSet({dnai, "LIFOutSpikes2ThreshsCombine"});
+  auto cs = graph.addComputeSet({dnai, "gen_sparseBatchSpikes"});
   std::vector<BatchedSparseSpikes> repeatedNeuronSpikeIds;
   for (unsigned ilay=0; ilay<num_layers; ++ilay){
     repeatedNeuronSpikeIds.push_back(gen_sparseBatchSpikes(graph, state[ilay], thresholds[ilay], cs, dnai));
@@ -277,8 +289,6 @@ std::vector<BatchedSparseSpikes> gen_sparseBatchSpikes(poplar::Graph &graph, std
   prog.add(poplar::program::Execute(cs));
   return repeatedNeuronSpikeIds;
 }
-
-
 
 BatchedSparseSpikes repeatedBatchSpikeIds_to_repeatedNeuronSpikeIds(poplar::Graph &graph, const unsigned &sparse_size, BatchedSparseSpikes &repeatedBacthSpikeIdsMultiThresh, poplar::ComputeSet &cs, const poplar::DebugNameAndId &dnai = {}){
   
@@ -324,8 +334,9 @@ BatchedSparseSpikes repeatedBatchSpikeIds_to_repeatedNeuronSpikeIds(poplar::Grap
     for (unsigned irepbatch=0; irepbatch<num_repeats_batch; ++irepbatch){
       for (unsigned ithr=0; ithr<num_thresholds; ++ithr){
 
-      double vertex_occ_tile_scaling = num_occupied_tiles / num_vertices;
-      unsigned occ_tile_id = vertex_occ_tile_scaling * iiter; // TODO improve ?
+      double vertex_occ_tile_scaling = (double)num_occupied_tiles / (double)num_vertices;
+      unsigned occ_tile_id = vertex_occ_tile_scaling * (double)iiter; // TODO improve ?
+      // unsigned occ_tile_id{occ_tile_id_fp};
       unsigned tile_id = tensor_tile_ids[occ_tile_id];
       std::cout << "occ_tile_id: " << occ_tile_id << ", tile_id: " << tile_id << std::endl;
       
