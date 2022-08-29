@@ -256,8 +256,8 @@ std::vector<unsigned> get_tensor_ipu_id(poplar::Graph &graph, std::vector<poplar
   return ipu_ids;
 }
 
-std::vector<unsigned> get_layer_id_per_ipu(const std::vector<unsigned> &layer_to_ipu_id){
-  std::cout << "\nget_layer_id_per_ipu" << std::endl;
+std::vector<unsigned> get_relative_layer_id_on_ipu(const std::vector<unsigned> &layer_to_ipu_id){
+  std::cout << "\nget_relative_layer_id_on_ipu" << std::endl;
   std::vector<unsigned> layer_id_per_ipu(layer_to_ipu_id.size());
   size_t num_layers{layer_to_ipu_id.size()};
   auto num_ipus_it = std::max_element(layer_to_ipu_id.begin(), layer_to_ipu_id.end());
@@ -269,6 +269,19 @@ std::vector<unsigned> get_layer_id_per_ipu(const std::vector<unsigned> &layer_to
     num_layers_per_ipu[layer_to_ipu_id[i]] += 1;
   }
   return layer_id_per_ipu;
+} 
+
+std::vector<std::vector<unsigned>> get_layer_ids_per_ipu(poplar::Graph &graph, std::vector<poplar::Tensor> &ts){
+  const std::vector<unsigned> layers_to_ipu_mapping(get_tensor_ipu_id(graph, ts));
+
+  const unsigned num_ipus{graph.getTarget().getNumIPUs()};
+  std::vector<std::vector<unsigned>> layer_ids_per_ipu(num_ipus);
+  size_t num_layers{ts.size()};
+  for (unsigned ilay=0; ilay<num_layers; ++ilay){
+    unsigned ipu_id = layers_to_ipu_mapping[ilay];
+    layer_ids_per_ipu[ipu_id].push_back(ilay);
+  }
+  return layer_ids_per_ipu;
 } 
 
 

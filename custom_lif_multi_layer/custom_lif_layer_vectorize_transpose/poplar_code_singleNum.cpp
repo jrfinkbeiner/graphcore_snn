@@ -55,7 +55,7 @@ void genBatchedLIFOutSpikes2ThreshsMutliWorker(poplar::Graph &graph, std::vector
 
 
   const std::vector<unsigned> layers_to_ipu_mapping(get_tensor_ipu_id(graph, state));
-  const std::vector<unsigned> layer_ids_per_ipu(get_layer_id_per_ipu(layers_to_ipu_mapping));
+  const std::vector<unsigned> layer_ids_per_ipu(get_relative_layer_id_on_ipu(layers_to_ipu_mapping));
 
   std::cout << "\nlayers_to_ipu_mapping" << std::endl;
   printVector(layers_to_ipu_mapping);
@@ -211,7 +211,7 @@ void calcLIFStateGrad(poplar::Graph &graph, const std::vector<poplar::Tensor> &w
   size_t num_layers = weights.size();
 
   const std::vector<unsigned> layers_to_ipu_mapping(get_tensor_ipu_id(graph, fwdState));
-  const std::vector<unsigned> layer_ids_per_ipu(get_layer_id_per_ipu(layers_to_ipu_mapping));
+  const std::vector<unsigned> layer_ids_per_ipu(get_relative_layer_id_on_ipu(layers_to_ipu_mapping));
   unsigned num_tiles_per_ipu = graph.getTarget().getTilesPerIPU();
 
   for (unsigned ilay=0; ilay<num_layers; ++ilay){

@@ -469,9 +469,98 @@ template class SpikesMultiThreshsSplitWorkerBatchSpikesMultiVertexb3n2<float>;
 // template class SpikesMultiThreshsSplitWorkerBatchSpikesMultiVertexb3n2<half>;
 
 
+template <typename FPType>
+class DenseSpikesMultiThresh : public poplar::Vertex {
+public:
+
+  poplar::Input<FPType> state;
+  poplar::Input<FPType> first_thresh;
+  poplar::Input<FPType> second_thresh;
+  poplar::Output<poplar::Vector<unsigned, poplar::VectorLayout::ONE_PTR, 8>> dense_spikes; // TODO could be a smaller type (bool, char, ...)
+  // poplar::Output<unsigned> dense_spikes_thresh0;
+  // poplar::Output<unsigned> dense_spikes_thresh1;
+
+  bool compute() {
+    // TODO the setting of the thresholds can be nicely vectorized
+    // TODO write SIMD version
+    // check with tool whether it writes 64
+    if (state > second_thresh) {
+      if (state > first_thresh) { // just set: dense_spikes[0] = state > first_thresh; faster ?
+        // *dense_spikes_thresh0 = 1.0; 
+        // *dense_spikes_thresh1 = 0.0;
+        dense_spikes[0] = 1.0; 
+        dense_spikes[1] = 0.0;
+
+      } else {
+        dense_spikes[0] = 0.0;
+        dense_spikes[1] = 1.0;
+      }
+    } else {
+      dense_spikes[0] = 0.0;
+      dense_spikes[1] = 0.0;
+    }
+    return true;
+  }
+};
+template class DenseSpikesMultiThresh<float>;
+// template class DenseSpikesMultiThresh<half>;
+
+template <typename dtype>
+class DenseToSparseSpikes : public poplar::Vertex {
+public:
+  poplar::Input<poplar::Vector<dtype>> dense_spikes;
+  poplar::Input<unsigned> num_dense_spikes;
+  poplar::Input<unsigned> sparse_size;
+  poplar::Input<unsigned> start_id;
+  poplar::Input<int> random_offset;
+  poplar::Output<poplar::Vector<unsigned>> repeated_sparse_spike_ids;
+  poplar::Output<unsigned> repeated_sparse_spike_nums;
 
 
+  bool compute() {
+    unsigned numSpikesCounter{0};
+    unsigned state_id{start_id};
+    bool vector_notFull{true};
+    const unsigned random_offset_ = (random_offset > num_dense_spikes) ? num_dense_spikes : random_offset;
 
+    // for (unsigned i = random_offset_; i < num_dense_spikes; ++i) { // TODO implement random_offset_ with second loop when correct result
+    for (unsigned i = 0; i < num_dense_spikes; ++i) {
+      if (dense_spikes[i]){
+          repeated_sparse_spike_ids[numSpikesCounter] = state_id;
+          ++numSpikesCounter;
+        if (numSpikesCounter >= sparse_size) {
+          vector_notFull = false;          
+          break;
+        }
+      }
+      ++state_id;
+    }
+
+    // if (vector_notFull) {
+    //   unsigned state_id = start_id;
+    //   for (unsigned i = 0; i < random_offset_; ++i) {
+    //     // if ((state[i] > *(second_thresh+i)) || (leftSideCounter <= (sizeSparseOut + counter))) {
+    //     //   if (state[i] > *(first_thresh+i)) {
+    //     if (state[i] > second_thresh[i]) {
+    //       if (state[i] > first_thresh[i]) {
+    //         repeated_out_spikes_ids[numSpikesCounter] = state_id;
+    //         ++numSpikesCounter;
+    //         if (numSpikesCounter >= sizeSparseOut) break; // TODO just implement as while
+    //       } else if (numGradsCounter < sizeSparseOut) {
+    //         // Fill up the array with non-spike values in reverse from behind 
+    //         repeated_out_spikes_ids_grads[numGradsCounter] = state_id;
+    //         ++numGradsCounter;
+    //       }
+    //     }
+    //     ++state_id;
+    //     ++counter;
+    //   }
+    // }
+    *repeated_sparse_spike_nums = numSpikesCounter;
+    return true;
+  }
+};
+template class DenseToSparseSpikes<unsigned>;
 
 template <typename FPType>
 class SpikesMultiThreshsSplitWorkerRandOffset : public poplar::Vertex {
@@ -575,27 +664,31 @@ public:
 
     unsigned workerStartId{0};
     for (unsigned iwor=0; iwor<num_workers; ++iwor){
-      if (numSpikesCounter >= sparse_size) break;
       const unsigned num_out_spikes_ilay = repeated_num_out_spikes_first[iwor]; // TODO shuffle these guys / use rnadom offset !
-      const unsigned numIter = ((num_out_spikes_ilay+numSpikesCounter) <= sparse_size) ? num_out_spikes_ilay : (sparse_size-numSpikesCounter);
+      const bool terminate_after{(num_out_spikes_ilay+numSpikesCounter) >= sparse_size};
+      const unsigned numIter = (terminate_after) ? (sparse_size-numSpikesCounter) : num_out_spikes_ilay;
       for (unsigned i=0; i<numIter; ++i){
         out_spikes_ids[numSpikesCounter] = repeated_out_spikes_ids[workerStartId+i];
         ++numSpikesCounter;
       }
+      if (terminate_after) break;
       workerStartId+=sparse_size;
     }
     num_out_spikes[0] = numSpikesCounter;
 
     workerStartId = 0;
-    for (unsigned iwor=0; iwor<num_workers; ++iwor){
-      if (numSpikesCounter >= sparse_size) break;
-      const unsigned num_out_spikes_ilay = repeated_num_out_spikes_second[iwor]; // TODO shuffle these guys / use rnadom offset !
-      const unsigned numIter = ((num_out_spikes_ilay+numSpikesCounter) <= sparse_size) ? num_out_spikes_ilay : (sparse_size-numSpikesCounter);
-      for (unsigned i=0; i<numIter; ++i){
-        out_spikes_ids[numSpikesCounter] = repeated_out_spikes_ids_grads[workerStartId+i];
-        ++numSpikesCounter;
+    if (numSpikesCounter < sparse_size){
+      for (unsigned iwor=0; iwor<num_workers; ++iwor){
+        const unsigned num_out_spikes_ilay = repeated_num_out_spikes_second[iwor]; // TODO shuffle these guys / use rnadom offset !
+        const bool terminate_after{(num_out_spikes_ilay+numSpikesCounter) >= sparse_size};
+        const unsigned numIter = (terminate_after) ? (sparse_size-numSpikesCounter) : num_out_spikes_ilay;
+        for (unsigned i=0; i<numIter; ++i){
+          out_spikes_ids[numSpikesCounter] = repeated_out_spikes_ids_grads[workerStartId+i];
+          ++numSpikesCounter;
+        }
+        if (terminate_after) break;
+        workerStartId+=sparse_size;
       }
-      workerStartId+=sparse_size;
     }
     num_out_spikes[1] = numSpikesCounter;
     return true;
