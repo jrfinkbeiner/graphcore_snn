@@ -807,6 +807,7 @@ def test_sparse_vs_dense():
 
     dense_sizes = [16, 8, 4, 2]
     # sparse_sizes = [8, 4, 2 ,2]
+    # dense_sizes = [16*6, 34*6, 18*6, 16]
     sparse_sizes = dense_sizes
 
     # SPARSE_MULTIPLIER = 1

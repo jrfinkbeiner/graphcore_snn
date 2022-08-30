@@ -144,7 +144,7 @@ def main(args):
         NUM_EPOCHS = 1
         SEQ_LEN = 100
     else:
-        NUM_EPOCHS = 35
+        NUM_EPOCHS = 15
         SEQ_LEN = 100 # 300
 
 
@@ -189,7 +189,7 @@ def main(args):
 
     # benchmarking presentation
     DENSE_SIZES = [np.prod(IMAGE_DIMS), 1472, 1076, 384, NUM_CLASSES]
-    SPARSE_SIZES_BASE = [32, 4, 3, 2, 10]
+    SPARSE_SIZES_BASE = [128, 4, 3, 2, 10]
     SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
 
 
@@ -232,10 +232,11 @@ def main(args):
     TRAIN_STEPS_PER_EXECUTION = STEPS_PER_EPOCH
 
     DECAY_CONSTANT = 0.9
-    THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[0.9]*(len(SPARSE_SIZES)-2), -100]]
+    SECOND_THRESHOLD = 0.6
+    THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
     # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[-100]*(len(SPARSE_SIZES)-2), -100]]
 
-    LOG_FILE = None # f"nmnist_sweep_performance_2/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
+    LOG_FILE = f"nmnist_multiThresh_sweep_performance_2/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
 
     # if SPARSE_METHOD:
     #     sys.exit()

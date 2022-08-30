@@ -657,9 +657,10 @@ public:
   poplar::Output<poplar::Vector<unsigned>> out_spikes_ids;
   poplar::Output<poplar::Vector<unsigned>> num_out_spikes;
   poplar::Input<unsigned> num_workers;
+  poplar::Input<unsigned> sparse_size;
+  poplar::Input<unsigned> worker_size;
 
   bool compute() {
-    const unsigned sparse_size = out_spikes_ids.size();
     unsigned numSpikesCounter{0};
 
     unsigned workerStartId{0};
@@ -672,12 +673,12 @@ public:
         ++numSpikesCounter;
       }
       if (terminate_after) break;
-      workerStartId+=sparse_size;
+      workerStartId+=worker_size;
     }
     num_out_spikes[0] = numSpikesCounter;
 
     workerStartId = 0;
-    if (numSpikesCounter < sparse_size){
+    if (numSpikesCounter < sparse_size){ // TODO put this in parallel second thread!
       for (unsigned iwor=0; iwor<num_workers; ++iwor){
         const unsigned num_out_spikes_ilay = repeated_num_out_spikes_second[iwor]; // TODO shuffle these guys / use rnadom offset !
         const bool terminate_after{(num_out_spikes_ilay+numSpikesCounter) >= sparse_size};
@@ -687,7 +688,7 @@ public:
           ++numSpikesCounter;
         }
         if (terminate_after) break;
-        workerStartId+=sparse_size;
+        workerStartId+=worker_size;
       }
     }
     num_out_spikes[1] = numSpikesCounter;
@@ -695,6 +696,36 @@ public:
   }
 };
 
+class LIFOutSpikesMultiThreshsCombine_singleThresh : public poplar::Vertex {
+  // class [[poplar::constraint("elem(*repeated_out_spikes_ids) != elem(*out_spikes_ids)")]] LIFOutSpikes2ThreshsCombine : public poplar::Vertex { // TODO maybe unnecessary here
+public:
+
+  poplar::Input<poplar::Vector<unsigned>> repeated_out_spikes_ids;
+  poplar::Input<poplar::Vector<unsigned>> repeated_num_out_spikes;
+  poplar::Output<poplar::Vector<unsigned>> out_spikes_ids;
+  poplar::Output<unsigned> num_out_spikes;
+  poplar::Input<unsigned> num_workers;
+  poplar::Input<unsigned> sparse_size;
+  poplar::Input<unsigned> worker_size;
+
+  bool compute() {
+    unsigned numSpikesCounter{0};
+    unsigned workerStartId{0};
+    for (unsigned iwor=0; iwor<num_workers; ++iwor){
+      const unsigned num_out_spikes_ilay = repeated_num_out_spikes[iwor]; // TODO shuffle these guys / use rnadom offset !
+      const bool terminate_after{(num_out_spikes_ilay+numSpikesCounter) >= sparse_size};
+      const unsigned numIter = (terminate_after) ? (sparse_size-numSpikesCounter) : num_out_spikes_ilay;
+      for (unsigned i=0; i<numIter; ++i){
+        out_spikes_ids[numSpikesCounter] = repeated_out_spikes_ids[workerStartId+i];
+        ++numSpikesCounter;
+      }
+      if (terminate_after) break;
+      workerStartId+=worker_size;
+    }
+    *num_out_spikes = numSpikesCounter;
+    return true;
+  }
+};
 
 class BatchSpikeIds2NeuronSpikeIds : public poplar::Vertex {
 // class [[poplar::constraint("elem(*state) != elem(*thresholds)")]] SpikesTwoThreshsSplitWorkerRandOffset : public poplar::Vertex { // TODO maybe unnecessary here
