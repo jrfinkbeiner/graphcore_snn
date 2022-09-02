@@ -149,7 +149,7 @@ def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='
     dataset = tonic.datasets.NMNIST(save_to=root,
                                 train=dataset == 'train',
                                 transform=transform_train,
-                                first_saccade_only=False) # TODO decide for first saccade... has to match sparse implementation...
+                                first_saccade_only=True) # TODO decide for first saccade... has to match sparse implementation...
     return dataset
 
 

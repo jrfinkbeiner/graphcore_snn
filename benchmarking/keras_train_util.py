@@ -103,7 +103,7 @@ def heaviside_with_super_spike_surrogate(x):
   beta = 10.0
   
   def grad(upstream):
-    return upstream * 1/(beta*tf.math.abs(x)+1)**2
+    return upstream * (1/(beta*tf.math.abs(x)+1)**2)
   return spikes, grad
 
 def pure_tf_lif_step_dense(weights, state, inp_, decay_constants, thresholds):
@@ -113,6 +113,24 @@ def pure_tf_lif_step_dense(weights, state, inp_, decay_constants, thresholds):
     # new_state = decay_constants*state * tf.experimental.numpy.heaviside(thresholds-state, 1) + (1-decay_constants)*syn_inp
     spikes_out = heaviside_with_super_spike_surrogate(new_state-thresholds)
     return spikes_out, new_state
+
+@tf.custom_gradient
+def heaviside_with_super_spike_surrogate_secondthresh(x):
+  spikes = tf.experimental.numpy.heaviside(x, 1)
+  beta = 10.0
+  
+  def grad(upstream):
+    return upstream * (1/(beta*tf.math.abs(x)+1)**2) * tf.experimental.numpy.heaviside(x+0.05, 1)
+  return spikes, grad
+
+def pure_tf_lif_step_dense_secondthresh(weights, state, inp_, decay_constants, thresholds):
+    syn_inp = tf.matmul(inp_, weights, transpose_b=True)
+    state = state - tf.stop_gradient(state * tf.experimental.numpy.heaviside(state-thresholds, 1))
+    new_state = state * decay_constants + (1 - decay_constants) * 10 * syn_inp # hard coded factor 20 in IPU code
+    # new_state = decay_constants*state * tf.experimental.numpy.heaviside(thresholds-state, 1) + (1-decay_constants)*syn_inp
+    spikes_out = heaviside_with_super_spike_surrogate_secondthresh(new_state-thresholds)
+    return spikes_out, new_state
+
 
 class KerasMultiLIFLayerDenseCell(KerasMultiLIFLayerBase):
     def __init__(self, dense_shapes, decay_constant, threshold, transpose_weights=False, seed=None):
@@ -128,12 +146,23 @@ class KerasMultiLIFLayerDenseCell(KerasMultiLIFLayerBase):
         all_out_spikes = []
         all_neuron_states = []
 
-        for ilay in range(self.num_layers):
+        # for ilay in range(self.num_layers):
+        #     inp_ = inp_spikes if ilay==0 else outs[ilay-1]
+        #     spikes_out, neuron_stat = pure_tf_lif_step_dense(self.ws[ilay], neuron_states[ilay], inp_, self.decay_constants[ilay], self.thresholds[ilay])
+        #     all_neuron_states.append(neuron_stat)
+        #     all_out_spikes.append(spikes_out)
+
+        for ilay in range(self.num_layers-2):
             inp_ = inp_spikes if ilay==0 else outs[ilay-1]
+            spikes_out, neuron_stat = pure_tf_lif_step_dense_secondthresh(self.ws[ilay], neuron_states[ilay], inp_, self.decay_constants[ilay], self.thresholds[ilay])
+            all_neuron_states.append(neuron_stat)
+            all_out_spikes.append(spikes_out)
+        for ilay in range(self.num_layers-2, self.num_layers):
+            inp_ = outs[ilay-1]
             spikes_out, neuron_stat = pure_tf_lif_step_dense(self.ws[ilay], neuron_states[ilay], inp_, self.decay_constants[ilay], self.thresholds[ilay])
             all_neuron_states.append(neuron_stat)
             all_out_spikes.append(spikes_out)
-            
+               
         state_new = [*all_neuron_states, *all_out_spikes]
         return all_out_spikes, state_new
 
@@ -210,14 +239,14 @@ def train_gpu(
     model.compile(optim,
                 # metrics=["accuracy"],
                 # metrics=metrics,
-                # steps_per_execution=train_steps_per_execution,
-                # jit_compile=True
+                steps_per_execution=train_steps_per_execution,
+                jit_compile=True
     )
 
     model.summary()
 
     print('\nTraining')
-    model.fit(dataset, batch_size=48, epochs=num_epochs, steps_per_epoch=steps_per_epoch, callbacks=callbacks) #, workers=batchsize, use_multiprocessing=True)
+    model.fit(dataset, batch_size=batchsize, epochs=num_epochs, steps_per_epoch=steps_per_epoch, callbacks=callbacks) #, workers=batchsize, use_multiprocessing=True)
                 # validation_steps=1, validation_batch_size=10*batchsize)
 
 

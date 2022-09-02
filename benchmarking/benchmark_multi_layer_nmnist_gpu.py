@@ -145,7 +145,8 @@ def main(args):
     TRANSPOSE_WEIGHTS = bool(args.transpose_weights)
     BATCHSIZE = args.batchsize
     LEARNING_RATE = args.lr
-    NUM_IPUS = args.num_ipus
+    NUM_IPUS = 1
+    NUM_HIDDEN_LAYERS = args.num_ipus
 
     if USE_IPU:
         assert IMPL_METHOD is not None, "If `USE_IPU=True` the variable `IMPL_METHOD` must be set."
@@ -163,50 +164,17 @@ def main(args):
 
     IMAGE_DIMS = (34,34,2)
 
-    # # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 512, 128, NUM_CLASSES]
-    # # SPARSE_SIZES = [32, 48, 32, 16, 8]
-    # # # SPARSE_SIZES = [32*2, 48*2, 32*2, 16*2, 8]
-    # # # SPARSE_SIZES = [32*2, 64*4, 32*4, 16*4, 8]
-
-    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 1024, 1024, 1024, 512, 128, NUM_CLASSES]
-    # # DENSE_SIZES = [np.prod(IMAGE_DIMS), 128, NUM_CLASSES]
-    # # SPARSE_SIZES_BASE = [32, 64, 64, 64, 64, 32, 16, 8]
+    MAX_ACTIVITY = 0.05
 
 
-    # # SPARSE_SIZES_BASE = [32, 4, 4, 4, 4, 2, 1, 1]
-    # # SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:-1], DENSE_SIZES[1:-1])]
-    # # SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
-    # SPARSE_SIZES_BASE = [2, 4, 4, 4, 4, 2, 1, 1]
-    # # SPARSE_SIZES_BASE = [2, 1, 1]
-    # SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[:-1], DENSE_SIZES[:-1])]
-    # SPARSE_SIZES = SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
+    NEURON_TO_SPLIT = 1471*2 - 10
+    HIDDEN_LAYER_DENSE_SIZES = [int(2*(NEURON_TO_SPLIT / NUM_HIDDEN_LAYERS // 2 + (((NEURON_TO_SPLIT % int(NUM_HIDDEN_LAYERS*2))) > 2*ilay))) for ilay in range(NUM_HIDDEN_LAYERS)]
+    HIDDEN_LAYER_SPARSE_SIZES = [int((MAX_ACTIVITY*hid_dense_size//2)*2) for hid_dense_size in HIDDEN_LAYER_DENSE_SIZES]
 
     # benchmarking presentation
-    DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 1024, 512, 512, 128, NUM_CLASSES]
-    SPARSE_SIZES_BASE = [4, 4, 4, 2, 2, 1, 1]
-    SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[:-1], DENSE_SIZES[:-1])]
-    SPARSE_SIZES = SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
+    DENSE_SIZES = [np.prod(IMAGE_DIMS), *HIDDEN_LAYER_DENSE_SIZES, NUM_CLASSES]
+    SPARSE_SIZES = [32, *HIDDEN_LAYER_SPARSE_SIZES, int(max((MAX_ACTIVITY*NUM_CLASSES//2)*2, 2))]
 
-    # # benchmarking presentation
-    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 512, 128, NUM_CLASSES]
-    # SPARSE_SIZES_BASE = [16, 4, 2, 1]
-    # SPARSE_SIZES = [min(DENSE_SIZES[0], max(128, int(SPARSE_SIZES_BASE[0]*SPARSE_MULTIPLIER)))] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
-    # SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE, DENSE_SIZES)]
-
-    # benchmarking presentation
-    DENSE_SIZES = [np.prod(IMAGE_DIMS), 1472, 1076, 384, NUM_CLASSES]
-    SPARSE_SIZES_BASE = [32, 4, 3, 2, 10]
-    SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
-
-    # # benchmarking presentation
-    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1472, 1076+384, NUM_CLASSES]
-    # SPARSE_SIZES_BASE = [32, 4, 4, 10]
-    # SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
-    
-    # benchmarking presentation
-    DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, *[1472]*(2*(NUM_IPUS-1)), 1076+384, NUM_CLASSES]
-    SPARSE_SIZES_BASE = [32, 4, *[4]*(2*(NUM_IPUS-1)), 4, 10]
-    SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
 
 
     # sys.exit()
@@ -234,6 +202,7 @@ def main(args):
     print("IMPL_METHOD: ", IMPL_METHOD)
     print("TRANSPOSE_WEIGHTS: ", TRANSPOSE_WEIGHTS)
     print("LEARNING_RATE: ", LEARNING_RATE)
+    print("NUM_HIDDEN_LAYERS: ", NUM_HIDDEN_LAYERS)
     print("NUM_IPUS: ", NUM_IPUS)
     # sys.exit()
 
@@ -379,7 +348,6 @@ def main(args):
             DECAY_CONSTANT, 
             THRESHOLD,
             loss_fn,
-            metrics=metrics, #calc_accuracy,
             steps_per_epoch=STEPS_PER_EPOCH,
             callbacks=callbacks,
             return_all=True if CALC_ACTIVITY else False,
