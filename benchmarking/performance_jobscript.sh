@@ -2,7 +2,7 @@
 #SBATCH -Ahpsadm
 #SBATCH -pdc-ipu
 #SBATCH -N1
-#SBATCH --time=06:00:00
+#SBATCH --time=20:00:00
 
 # srun hostname |sort
 
