@@ -423,7 +423,6 @@ class KerasSparseIdentity(keras.layers.Layer):
         )
 
     def call(self, x):
-        print("\nIDENTITY")
         print(x)
         return type(x)(x.ids @ self.eye, x.num_nzelements)
 
@@ -648,6 +647,97 @@ def train_ipu(method, NUM_IPUS):
 
 
         print("\nFinal time: ", time.time()-start_time)
+
+
+def create_dataset_sparse_multi_ipu(inp_spike_ids, num_inp_spikes, labels, batchsize, shuffle=True):
+    dataset = tf.data.Dataset.from_tensor_slices(({"inp_spike_ids": inp_spike_ids, "num_inp_spikes": num_inp_spikes}, labels))
+    num_samples = labels.shape[0]
+    if shuffle:
+        dataset = dataset.shuffle(num_samples, reshuffle_each_iteration=False)
+    # dataset = dataset.repeat()
+    # dataset = dataset.interleave(num_parallel_calls=tf.data.AUTOTUNE)
+    dataset = dataset.batch(batchsize, drop_remainder=True)
+    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    # dataset = dataset.prefetch(4)
+    return dataset
+
+def train_mutli_ipu_benchmarking(
+        method,
+        num_epochs,
+        train_steps_per_execution,
+        batch_size,
+        dataset,
+        seq_len, 
+        dense_sizes, 
+        sparse_sizes, 
+        decay_constant, 
+        threshold,
+        loss_fn,
+        steps_per_epoch=None,
+        return_all=False,
+        transpose_weights=False,
+        learning_rate=1e-2,
+        num_ipus=1,
+        seed=None,
+        **optim_kwargs
+    ):
+    # set ipu config and strategy 
+    ipu_config = ipu.config.IPUConfig()
+    ipu_config.auto_select_ipus = num_ipus
+    ipu_config.configure_ipu_system()
+    strategy = ipu.ipu_strategy.IPUStrategy()
+
+    assert method in ["dense", "sparse_ops", "sparse_layer"], f"`method` must be one of 'dense', 'sparse_ops', 'sparse_layer' or None, got '{method}'."
+
+
+    if num_ipus > 1:
+        method_to_model_fn = {
+            # "dense": model_fn_dense, 
+            "sparse_ops": ft.partial(model_fn_sparse_ops, sparse_sizes, transpose_weights=False),
+            "sparse_layer": ft.partial(model_fn_sparse_layer_multi_ipu, sparse_sizes, transpose_weights=True, num_ipus=num_ipus),
+        }
+    else:
+        method_to_model_fn = {
+            # "dense": model_fn_dense, 
+            "sparse_ops": ft.partial(model_fn_sparse_ops, sparse_sizes, transpose_weights=False),
+            "sparse_layer": ft.partial(model_fn_sparse_layer, sparse_sizes, transpose_weights=True),
+        }
+
+    with strategy.scope():
+        # init model
+        inputs, outputs = method_to_model_fn[method](seq_len, dense_sizes, decay_constant, threshold, batch_size, return_all=return_all)
+        model = keras.Model(inputs, outputs)
+
+        if num_ipus > 1:
+            device_mapping = [ ipu.pipelining_ops._ALL_DEVICES, *[num_ipus-1]*(num_ipus-1)]
+            model.set_pipelining_options(
+                # pipeline_schedule=ipu.keras.pipeline.SequentialPipelineModel,
+                pipeline_schedule=ipu.ops.pipelining_ops.PipelineSchedule.Sequential,
+                gradient_accumulation_steps_per_replica=1,
+                device_mapping=device_mapping,
+                offload_weight_update_variables=False,
+                # device_mapping=[0, 1]
+            )
+
+        # Set the infeed and outfeed options.
+        model.set_infeed_queue_options(prefetch_depth=2)
+        model.set_outfeed_queue_options(buffer_depth=2)
+
+        optim = tf.keras.optimizers.Adam(learning_rate=learning_rate, **optim_kwargs) # NOTE 1e-2 worked quite well
+        # optim = tf.keras.optimizers.SGD(learning_rate=5e-2, momentum=0.9, nesterov=False, name="SGD")
+
+        model.compile(optim, loss_fn,
+                    # metrics=metrics,
+                    steps_per_execution=train_steps_per_execution,
+        )
+        model.summary()
+        start_time = time.time()
+        print('\nTraining')
+        model.fit(dataset, epochs=num_epochs, steps_per_epoch=steps_per_epoch, workers=batch_size)
+        print("\nFinal time: ", time.time()-start_time)
+
+
+
 
 
 if __name__ == "__main__":
