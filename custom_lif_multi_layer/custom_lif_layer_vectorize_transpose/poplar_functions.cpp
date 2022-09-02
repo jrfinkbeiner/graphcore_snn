@@ -73,7 +73,7 @@ std::vector<size_t> convert_vecOfStr_to_vecOfSizet(const std::string& s, char se
 }
 
 void clone_tensor_vector(poplar::Graph& graph, const std::vector<poplar::Tensor> &src, std::vector<poplar::Tensor> &dst, size_t offset, const poplar::DebugNameAndId &dnai = {}) {
-  std::transform(src.begin()+offset, src.end(), std::back_inserter(dst), [&graph, &dnai](const poplar::Tensor &t){return graph.clone(t, dnai);});
+  std::transform(src.begin()+offset, src.end(), std::back_inserter(dst), [&graph, &dnai](const poplar::Tensor &t){return graph.clone(t, dnai, poplar::TensorCloneMethod::GATHER_AND_PRESERVE_TILE_ORDER_AND_ALIASES);});
 }
 
 std::vector<poplar::Tensor> clone_tensor_vector(poplar::Graph& graph, const std::vector<poplar::Tensor> &src, const poplar::DebugNameAndId &dnai = {}) {
@@ -430,9 +430,9 @@ poplar::Tensor alloc_neuronwise_contiguous(poplar::Graph& graph, const std::vect
     graph.setTileMapping(allocTensorSlice, tile);
     allocTensorVector.push_back(allocTensorSlice);
   }
-
   poplar::Tensor allocTensor = poplar::concat(allocTensorVector, neuronDim);
-  return allocTensor;
+  poplar::Tensor allocTensor_tileContigous = graph.clone(allocTensor, dnai, poplar::TensorCloneMethod::GATHER_AND_PRESERVE_TILE_ORDER_AND_ALIASES);
+  return allocTensor_tileContigous;
 }
 
 
@@ -453,7 +453,8 @@ poplar::Tensor alloc_neuronwise_contiguous(poplar::Graph& graph, const std::vect
   if (num_full_tiles != num_tiles_this_tensor) {
     graph.setTileMapping(allocTensor.slice(end_neuron, numNeurons, neuronDim), end_tile-1);
   }
-  return allocTensor;
+  poplar::Tensor allocTensor_tileContigous = graph.clone(allocTensor, dnai, poplar::TensorCloneMethod::GATHER_AND_PRESERVE_TILE_ORDER_AND_ALIASES);
+  return allocTensor_tileContigous;
 }
 
 
@@ -808,6 +809,9 @@ void calcLIFWeightGrad(poplar::Graph &graph, std::vector<poplar::Tensor> &dLdwei
     size_t num_threads = dLdweights[ilay].dim(0);
     size_t batchsize_per_thread = batchsize / num_threads;
 
+    std::cout << "ilay: " << ilay << std::endl;
+    std::cout << "fwdInpSpikes[ilay].num_spikes.shapeToString(): " << fwdInpSpikes[ilay].num_spikes.shapeToString() << std::endl;
+
     if (batchsize < num_threads) {
       throw poputil::poplibs_error("For `calcLIFWeightGrad`: `batchsize` must be greater or equal to `num_threads`.");
     }
@@ -887,12 +891,13 @@ void calcLIFWeightGrad(poplar::Graph &graph, std::vector<poplar::Tensor> &dLdwei
           poplar::Tensor neuronDLdWeightsThread = neuronDLdWeights[thread_id];
           poplar::Tensor neuronDLdStateThread = neuronDLdState.slice(batch_id_start, batch_id_end, 0);
           poplar::Tensor fwd_inp_spikes_ids_thread = fwd_inp_spikes_ids_tile.slice(batch_id_start, batch_id_end, 0);
-          poplar::Tensor fwd_num_inp_spikes_thread = fwd_num_inp_spikes_tile.slice(batch_id_start, batch_id_end, 0).dimRoll(1, 0)[0];
+          poplar::Tensor fwd_num_inp_spikes_thread = fwd_num_inp_spikes_tile.slice(batch_id_start, batch_id_end, 0); //.dimRoll(1, 0)[0];
 
           auto v = graph.addVertex(cs, vertexType,
                                     {{"dLdState", neuronDLdStateThread.flatten()},
                                     {"fwd_inp_spikes_ids", fwd_inp_spikes_ids_thread.flatten()}, // TODO flatten here or does a Tneosr structure exist for vertex Input ?
-                                    {"fwd_num_inp_spikes", fwd_num_inp_spikes_thread},
+                                    {"fwd_num_inp_spikes", fwd_num_inp_spikes_thread.flatten()},
+                                    {"num_thresholds", fwd_num_inp_spikes_thread.dim(1)},
                                     {"sparse_out_dim", sparse_out_dim},
                                     {"batchsize", neuronDLdStateThread.dim(0)},
                                     {"num_neurons", num_neurons},

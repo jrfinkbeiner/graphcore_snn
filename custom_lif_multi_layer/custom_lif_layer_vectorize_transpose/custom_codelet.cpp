@@ -4,6 +4,41 @@
 
 //---------------------------------------------- forward -----------------------------------------
 
+class SparseToDense : public poplar::MultiVertex {
+public:
+  poplar::Input<poplar::Vector<unsigned>> out_spikes_ids;
+  poplar::Input<unsigned> num_out_spikes;
+  poplar::Output<poplar::Vector<unsigned>> dense_spikes;
+
+  bool compute(unsigned workerId) {
+    const unsigned numWorkers = MultiVertex::numWorkers();
+    for (unsigned i = workerId; i < num_out_spikes; i+=numWorkers) {
+      dense_spikes[out_spikes_ids[i]] = 1;
+    }
+    return true;
+  }
+};
+
+// class SparseToDense : public poplar::Vertex {
+// public:
+//   poplar::Input<poplar::Vector<unsigned>> out_spikes_ids;
+//   poplar::Input<unsigned> num_out_spikes;
+//   poplar::Output<poplar::Vector<unsigned>> dense_spikes;
+
+//   bool compute() {
+//     unsigned one{1};
+   
+//     for (unsigned i = 0; i < dense_spikes.size(); ++i) {
+//       dense_spikes[i] = 0;
+//     }
+//     for (unsigned i = 0; i < num_out_spikes; ++i) {
+//       dense_spikes[out_spikes_ids[i]] = one;
+//     }
+//     return true;
+//   }
+// };
+
+
 template <typename FPType>
 class LIFStateUpdateInPlace : public poplar::Vertex {
 public:
@@ -74,6 +109,46 @@ public:
 };
 template class LIFStateUpdateInPlaceMultiNeuron<float>;
 // template class LIFStateUpdateInPlaceMultiNeuron<half>;
+
+template <typename FPType>
+class LIFStateUpdateInPlaceMultiNeuronWithOutSpikes : public poplar::Vertex {
+public:
+  poplar::Input<poplar::Vector<FPType, poplar::VectorLayout::ONE_PTR, 8>> weights;
+  poplar::InOut<poplar::Vector<FPType, poplar::VectorLayout::ONE_PTR, 8>> state;
+  poplar::InOut<poplar::Vector<FPType, poplar::VectorLayout::ONE_PTR, 8>> syn_input;
+  poplar::Input<poplar::Vector<unsigned, poplar::VectorLayout::ONE_PTR, 8>> inp_spikes_ids;
+  poplar::Input<unsigned> num_inp_spikes;
+  poplar::Input<poplar::Vector<FPType>> decay_constant; // TODO make sure it's contiguous
+  poplar::Input<poplar::Vector<FPType>> oneMinus_decay_constant; // TODO make sure it's contiguous
+  poplar::Input<poplar::Vector<unsigned>> dense_spikes; // TODO make sure it's contiguous
+  poplar::Input<unsigned> num_neurons;
+
+  bool compute() {
+    for (unsigned i = 0; i < num_inp_spikes; ++i) {
+      const auto idx = num_neurons*inp_spikes_ids[i];
+      #pragma clang loop vectorize(enable) interleave(enable)
+      #pragma clang loop unroll(disable)
+      for (unsigned ineuron = 0; ineuron < num_neurons; ++ineuron) {
+        syn_input[ineuron] += weights[idx+ineuron];
+      }
+    }
+
+    // TODO vectorize this loop ?
+    for (unsigned ineuron = 0; ineuron < num_neurons; ++ineuron) {
+      if (dense_spikes[ineuron]) {
+        // *new_state = sum;
+        state[ineuron] = oneMinus_decay_constant[ineuron] * syn_input[ineuron];
+      } else {
+        // *new_state = decay_constant * state + sum;
+        state[ineuron] = decay_constant[ineuron] * state[ineuron] + oneMinus_decay_constant[ineuron] * syn_input[ineuron];
+      }
+    }
+    return true;
+  }
+};
+template class LIFStateUpdateInPlaceMultiNeuronWithOutSpikes<float>;
+// template class LIFStateUpdateInPlaceMultiNeuronWithOutSpikes<half>;
+
 
 
 template <typename FPType>
@@ -476,9 +551,9 @@ public:
   poplar::Input<FPType> state;
   poplar::Input<FPType> first_thresh;
   poplar::Input<FPType> second_thresh;
-  poplar::Output<poplar::Vector<unsigned, poplar::VectorLayout::ONE_PTR, 8>> dense_spikes; // TODO could be a smaller type (bool, char, ...)
-  // poplar::Output<unsigned> dense_spikes_thresh0;
-  // poplar::Output<unsigned> dense_spikes_thresh1;
+  // poplar::Output<poplar::Vector<unsigned, poplar::VectorLayout::ONE_PTR, 8>> dense_spikes; // TODO could be a smaller type (bool, char, ...)
+  poplar::Output<unsigned> dense_spikes_thresh0;
+  poplar::Output<unsigned> dense_spikes_thresh1;
 
   bool compute() {
     // TODO the setting of the thresholds can be nicely vectorized
@@ -486,18 +561,21 @@ public:
     // check with tool whether it writes 64
     if (state > second_thresh) {
       if (state > first_thresh) { // just set: dense_spikes[0] = state > first_thresh; faster ?
-        // *dense_spikes_thresh0 = 1.0; 
-        // *dense_spikes_thresh1 = 0.0;
-        dense_spikes[0] = 1.0; 
-        dense_spikes[1] = 0.0;
-
+        *dense_spikes_thresh0 = 1;
+        *dense_spikes_thresh1 = 0;
+        // dense_spikes[0] = 1.0; 
+        // dense_spikes[1] = 0.0;
       } else {
-        dense_spikes[0] = 0.0;
-        dense_spikes[1] = 1.0;
+        *dense_spikes_thresh0 = 0;
+        *dense_spikes_thresh1 = 1;
+        // dense_spikes[0] = 0.0;
+        // dense_spikes[1] = 1.0;
       }
     } else {
-      dense_spikes[0] = 0.0;
-      dense_spikes[1] = 0.0;
+      *dense_spikes_thresh0 = 0;
+      *dense_spikes_thresh1 = 0;
+      // dense_spikes[0] = 0.0;
+      // dense_spikes[1] = 0.0;
     }
     return true;
   }
@@ -856,6 +934,7 @@ public:
   poplar::Input<poplar::Vector<unsigned>> fwd_inp_spikes_ids;
   poplar::Input<poplar::Vector<unsigned>> fwd_num_inp_spikes;
   poplar::Input<unsigned> sparse_out_dim;
+  poplar::Input<unsigned> num_thresholds;
   poplar::Input<unsigned> batchsize;
   poplar::Input<unsigned> num_neurons;
   // poplar::Input<unsigned> num_weights_per_neuron;
@@ -871,7 +950,7 @@ public:
       unsigned start_idx_state{ineuron};
       for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
         auto dLdS = dLdState[start_idx_state];
-        const auto end{fwd_num_inp_spikes[ibatch]};
+        const auto end{fwd_num_inp_spikes[num_thresholds*ibatch]}; // TODO for 2 thresholds
         for (unsigned i = 0; i < end; ++i) {
           dLdweights[fwd_inp_spikes_ids[start_idx_spikes+i]*num_neurons+ineuron] += dLdS;
         }
@@ -1027,12 +1106,34 @@ public:
   }
 };
 
+class CustomSparseReduceStage1FloatSIMD5 : public poplar::Vertex {
+public:
+  poplar::Input<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> dLdx;
+  poplar::Input<unsigned> num_grads;
+  poplar::Input<unsigned> isparse;
+  poplar::Output<float> dLdx_reduced;
+
+  bool compute() {
+    if (isparse<num_grads){
+      auto dLdxAsFloat2 = reinterpret_cast<const float2 *>(&dLdx[0]);
+      float2 sumFloat2 = dLdxAsFloat2[0];
+      sumFloat2 += dLdxAsFloat2[1];
+
+      auto sum = reinterpret_cast<float*>(&sumFloat2);
+      *dLdx_reduced = sum[0]+sum[1]+dLdx[4];
+    }
+    return true;
+  }
+};
+
+
 // class LIFWeightsGradTwoNeuronSIMD : public poplar::Vertex {
 class [[poplar::constraint("elem(*dLdweights) != elem(*dLdState)")]] LIFWeightsGradTwoNeuronSIMD : public poplar::Vertex {
 public:
   poplar::Input<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> dLdState;
   poplar::Input<poplar::Vector<unsigned>> fwd_inp_spikes_ids;
   poplar::Input<poplar::Vector<unsigned>> fwd_num_inp_spikes;
+  poplar::Input<unsigned> num_thresholds;
   poplar::Input<unsigned> sparse_out_dim;
   poplar::Input<unsigned> batchsize;
   poplar::Input<unsigned> num_neurons;
@@ -1050,7 +1151,7 @@ public:
     unsigned start_idx_spikes{0};
     unsigned neuron_state_id{0};
     for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
-      const auto end{fwd_num_inp_spikes[ibatch]};
+      const auto end{fwd_num_inp_spikes[num_thresholds*ibatch]}; // TODO for 2 thresholds
       for (unsigned i = 0; i < end; ++i) {
         const auto spike_idx = fwd_inp_spikes_ids[start_idx_spikes+i];
         dLdweightsAsFloat2[spike_idx] += dLdStateFloat2[neuron_state_id];
@@ -1069,6 +1170,7 @@ public:
   poplar::Input<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> dLdState;
   poplar::Input<poplar::Vector<unsigned>> fwd_inp_spikes_ids;
   poplar::Input<poplar::Vector<unsigned>> fwd_num_inp_spikes;
+  poplar::Input<unsigned> num_thresholds;
   poplar::Input<unsigned> sparse_out_dim;
   poplar::Input<unsigned> batchsize;
   poplar::Input<unsigned> num_neurons;
@@ -1086,7 +1188,7 @@ public:
     unsigned start_idx_spikes{0};
     unsigned neuron_state_id{0};
     for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
-      const auto end{fwd_num_inp_spikes[ibatch]};
+      const auto end{fwd_num_inp_spikes[num_thresholds*ibatch]}; // TODO for 2 thresholds
       for (unsigned i = 0; i < end; ++i) {
         const auto spike_idx = fwd_inp_spikes_ids[start_idx_spikes+i]*num_neurons_div2;
 
@@ -1207,6 +1309,52 @@ public:
   }
 };
 
+
+class LIFStateUpdateInPlaceTwoNeuronSIMDWithDenseSpikes : public poplar::Vertex {
+// class [[poplar::constraint("elem(*weights) != elem(*syn_input)")]] LIFStateUpdateInPlaceTwoNeuronSIMD : public poplar::Vertex {
+public:
+  poplar::Input<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> weights;
+  poplar::InOut<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> state;
+  // poplar::InOut<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> syn_input;
+  poplar::Input<poplar::Vector<unsigned, poplar::VectorLayout::ONE_PTR, 8>> inp_spikes_ids;
+  poplar::Input<unsigned> num_inp_spikes;
+  poplar::Input<poplar::Vector<float>> decay_constant; // TODO make sure it's contiguous
+  poplar::Input<poplar::Vector<float>> oneMinus_decay_constant; // TODO make sure it's contiguous
+  poplar::Input<poplar::Vector<unsigned>> dense_spikes; // TODO make sure it's contiguous
+  poplar::Input<unsigned> num_neurons;
+
+  bool compute() {
+    float zero{0.0};
+    auto weightsAsFloat2 = reinterpret_cast<const float2 *>(&weights[0]);
+    // auto synInpFloat2 = reinterpret_cast<float2 *>(&syn_input[0]);
+    float2 synInpFloat2 = {zero, zero};
+
+    const auto end{num_inp_spikes}; // TODO WTF WHY DOES THIS MAKE A DIFFERENCE ?!
+    for (unsigned i = 0; i < end; ++i) {
+      // TODO what is
+      // synInpFloat2[0] += weightsAsFloat2[2*inp_spikes_ids[i]];
+      synInpFloat2 += weightsAsFloat2[inp_spikes_ids[i]];
+    }
+
+    float* syn_input = reinterpret_cast<float *>(&synInpFloat2);
+
+    // TODO vectorize this loop ?
+    // #pragma clang loop unroll_count(2)
+    #pragma clang loop unroll(enable)
+    for (unsigned ineuron = 0; ineuron < num_neurons; ++ineuron) {
+      if (dense_spikes[ineuron]) {
+        // *new_state = sum;
+        state[ineuron] = oneMinus_decay_constant[ineuron] * syn_input[ineuron];
+      } else {
+        // *new_state = decay_constant * state + sum;
+        state[ineuron] = decay_constant[ineuron] * state[ineuron] + oneMinus_decay_constant[ineuron] * syn_input[ineuron];
+      }
+    }
+    return true;
+  }
+};
+
+
 class LIFStateUpdateInPlaceMultiNeuronSIMD : public poplar::Vertex {
 public:
   poplar::Input<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> weights;
@@ -1268,4 +1416,65 @@ public:
   }
 };
 
+
+class LIFStateUpdateInPlaceMultiNeuronSIMDWithDenseSpikes : public poplar::Vertex {
+public:
+  poplar::Input<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> weights;
+  poplar::InOut<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> state;
+  // poplar::InOut<poplar::Vector<float, poplar::VectorLayout::ONE_PTR, 8>> syn_input;
+  poplar::Input<poplar::Vector<unsigned, poplar::VectorLayout::ONE_PTR, 8>> inp_spikes_ids;
+  poplar::Input<unsigned> num_inp_spikes;
+  poplar::Input<poplar::Vector<float>> decay_constant; // TODO make sure it's contiguous
+  poplar::Input<poplar::Vector<float>> oneMinus_decay_constant; // TODO make sure it's contiguous
+  poplar::Input<poplar::Vector<unsigned>> dense_spikes; // TODO make sure it's contiguous
+  poplar::Input<unsigned> num_neurons;
+
+  bool compute() {
+    float zero{0.0};
+    auto weightsAsFloat2 = reinterpret_cast<const float2 *>(&weights[0]);
+    // auto synInpFloat2 = reinterpret_cast<float2 *>(&syn_input[0]);
+    unsigned num_neurons_div2 = num_neurons / 2;
+
+    const auto end{num_inp_spikes}; // TODO WTF WHY DOES THIS MAKE A DIFFERENCE ?!
+    for (unsigned ineuron2 = 0; ineuron2 < num_neurons_div2; ++ineuron2) {
+      float2 synInpFloat2 = {zero, zero};
+      // #pragma clang loop unroll(full)
+      for (unsigned i = 0; i < end; ++i) {
+        // store num_neurons_div2*inp_spikes_ids[i] somewhere to not always recompute it 
+        synInpFloat2 += weightsAsFloat2[num_neurons_div2*inp_spikes_ids[i]+ineuron2];
+      }
+
+      float* syn_input = reinterpret_cast<float *>(&synInpFloat2);
+
+      // #pragma clang loop unroll(full)
+      for (unsigned ineuron = 2*ineuron2; ineuron < 2*ineuron2+2; ++ineuron) {
+        if (dense_spikes[ineuron]) {
+          // *new_state = sum;
+          state[ineuron] = oneMinus_decay_constant[ineuron] * syn_input[ineuron];
+        } else {
+          // *new_state = decay_constant * state + sum;
+          state[ineuron] = decay_constant[ineuron] * state[ineuron] + oneMinus_decay_constant[ineuron] * syn_input[ineuron];
+        }
+      }
+    }
+
+    // process remaining neuron if number of neurons not divisible by two
+    if (num_neurons % 2 != 0) {
+      const auto ineuron = num_neurons - 1;
+      float synInp = zero;
+      for (unsigned i = 0; i < end; ++i) {
+        synInp += weights[num_neurons*inp_spikes_ids[i]+ineuron];
+      }
+      if (dense_spikes[ineuron]) {
+        // *new_state = sum;
+        state[ineuron] = oneMinus_decay_constant[ineuron] * synInp;
+      } else {
+        // *new_state = decay_constant * state + sum;
+        state[ineuron] = decay_constant[ineuron] * state[ineuron] + oneMinus_decay_constant[ineuron] * synInp;
+      }
+    }
+
+    return true;
+  }
+};
 #endif // __IPU__

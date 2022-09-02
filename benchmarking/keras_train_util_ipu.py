@@ -34,18 +34,18 @@ def determine_neuron_tileMappings(dense_sizes, sparse_sizes, num_ipus=1, min_neu
 
 def determine_neuron_tileMappings_multiIPU(dense_sizes, sparse_sizes, num_ipus, min_neurons_per_tile):
     
-    TILE_OFFSET = 1
+    TILE_OFFSET = [1] + [0]*(num_ipus-1)
     TILES_PER_IPU = 1472 # hardcoded fpr IPUv2 MK2000
-    USABLE_TILES_PER_IPU = int(TILES_PER_IPU - TILE_OFFSET)
-    USABLE_TILES_TOTAL = int(USABLE_TILES_PER_IPU * num_ipus)
+    USABLE_TILES_PER_IPU = [int(TILES_PER_IPU - tile_offs) for tile_offs in TILE_OFFSET]
+    USABLE_TILES_TOTAL = sum(USABLE_TILES_PER_IPU)
 
     num_neurons = np.asarray(dense_sizes[1:], dtype=np.int64)
     num_neurons_total = np.sum(num_neurons).astype(np.float64)
     max_num_tiles_to_use = np.ceil(num_neurons_total / min_neurons_per_tile)
     
-    if max_num_tiles_to_use < USABLE_TILES_PER_IPU:
-        tileMapping = determine_neuron_tileMappings_singleIPU(dense_sizes, sparse_sizes, min_neurons_per_tile, tile_offset=TILE_OFFSET)
-        return tileMapping
+    # if max_num_tiles_to_use < USABLE_TILES_PER_IPU[0]:
+    #     tileMapping = determine_neuron_tileMappings_singleIPU(dense_sizes, sparse_sizes, min_neurons_per_tile, tile_offset=TILE_OFFSET[0])
+    #     return tileMapping
     
     layerwise_max_tiles = np.ceil(num_neurons / min_neurons_per_tile)
     cumsum_num_neurons = np.cumsum(dense_sizes[1:])
@@ -59,12 +59,12 @@ def determine_neuron_tileMappings_multiIPU(dense_sizes, sparse_sizes, num_ipus, 
     tileMappings = []
     for ilay,max_tiles_ilay in enumerate(layerwise_max_tiles):
         print(ilay, max_tiles_ilay)
-        if max_tiles_ilay > USABLE_TILES_PER_IPU:
+        if max_tiles_ilay > USABLE_TILES_PER_IPU[ipu_id]:
             max_tile_mapping_possible = False
             break
         new_cumsum_tiles = cumsum_tiles + max_tiles_ilay
         # check whether additonal layer fits on current IPU, otherwise start mapping on next IPU
-        if new_cumsum_tiles > USABLE_TILES_PER_IPU:
+        if new_cumsum_tiles > USABLE_TILES_PER_IPU[ipu_id]:
             cumsum_tiles = 0
             new_cumsum_tiles = max_tiles_ilay
             ipu_id += 1
@@ -73,7 +73,7 @@ def determine_neuron_tileMappings_multiIPU(dense_sizes, sparse_sizes, num_ipus, 
             max_tile_mapping_possible = False
             break
         
-        start_tile = int(cumsum_tiles + TILE_OFFSET + ipu_id * TILES_PER_IPU)
+        start_tile = int(cumsum_tiles + TILE_OFFSET[ipu_id] + ipu_id * TILES_PER_IPU)
         end_tile = int(start_tile + max_tiles_ilay)
         tileMappings.append(TileMapping(start_tile, end_tile))
         cumsum_tiles = new_cumsum_tiles
@@ -777,7 +777,7 @@ def test_sparse_vs_dense():
     num_sequences = 24
     batchsize = num_sequences
     batchsize_per_step = batchsize
-    seq_len = 10
+    seq_len = 100
     # # dense_sizes = [102, 801, 799]
     # dense_sizes = [128, 256, 64]
     # # dense_sizes = [4, 4, 4]
@@ -812,10 +812,21 @@ def test_sparse_vs_dense():
 
     # SPARSE_MULTIPLIER = 1
     # NUM_CLASSES = 10
-    # DENSE_SIZES = [128, 512, 512, 512, 128, NUM_CLASSES]
+    # DENSE_SIZES = [512*2, 512, 512, 512, 128, NUM_CLASSES]
     # DENSE_SIZES = DENSE_SIZES[:1] + [int(0.5*d) for d in DENSE_SIZES[1:-1]] + DENSE_SIZES[-1:]
     # SPARSE_SIZES_BASE = [32, 32, 32, 32, 16, 10]
-    # SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE, DENSE_SIZES)]
+    # # SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE, DENSE_SIZES)]
+    # SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
+    # dense_sizes = DENSE_SIZES
+    # sparse_sizes = SPARSE_SIZES
+
+    # SPARSE_MULTIPLIER = 1
+    # NUM_CLASSES = 10
+    # DENSE_SIZES = [512, 512, 512, 128, NUM_CLASSES]
+    # DENSE_SIZES = DENSE_SIZES[:1] + [int(0.5*d) for d in DENSE_SIZES[1:-1]] + DENSE_SIZES[-1:]
+    # SPARSE_SIZES_BASE = [64, 32, 32, 16, 10]
+    # # SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE, DENSE_SIZES)]
+    # SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
     # dense_sizes = DENSE_SIZES
     # sparse_sizes = SPARSE_SIZES
 
@@ -830,9 +841,18 @@ def test_sparse_vs_dense():
     # sparse_sizes = sparse_sizes + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
 
 
+    # # benchmarking presentation
+    # SPARSE_MULTIPLIER = 16
+    # IMAGE_DIMS = (34,34,2)
+    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1472, 1076+384, NUM_CLASSES]
+    # SPARSE_SIZES_BASE = [64, 4, 3, 2, 10]
+    # SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
+    # dense_sizes = DENSE_SIZES
+    # sparse_sizes = SPARSE_SIZES
+
     decay_constant = 0.9
     threshold = 1.0
-    num_layers = len(dense_sizes)-1
+    num_layers = len(dense_sizes)-1 
     model_seed = rng.integers(999999)
 
     assert batchsize % batchsize_per_step == 0
@@ -865,7 +885,7 @@ def test_sparse_vs_dense():
 
     print("\n############################# SPARSE LAYER ###################################")
     with strategy.scope():
-        model_sparse_layer = keras.Model(*model_fn_sparse_layer(sparse_sizes, seq_len, dense_sizes, decay_constant, [threshold, [*[-100*threshold]*(len(sparse_sizes)-2), -100]], batchsize_per_step, seed=model_seed, return_all=True, transpose_weights=True, num_ipus=num_ipus))
+        model_sparse_layer = keras.Model(*model_fn_sparse_layer(sparse_sizes, seq_len, dense_sizes, decay_constant, [threshold, [*[0.9*threshold]*(len(sparse_sizes)-2), -100]], batchsize_per_step, seed=model_seed, return_all=True, transpose_weights=True, num_ipus=num_ipus))
         out_sparse_layer, grad_sparse_layer, sparse_out_layer =  strategy.run(value_and_grad_on_batch, args=[dense_sizes[1:], model_sparse_layer, *data_sparse, True, False])
     #     out =  strategy.run(value_and_grad_on_batch, args=[dense_sizes[1:], model_sparse_layer, *data_sparse, True, False])
     # print(out)
@@ -879,6 +899,30 @@ def test_sparse_vs_dense():
 
     # sys.exit()
 
+    print("\n################################# DENSE #######################################")
+    model_dense = keras.Model(*model_fn_dense(seq_len, dense_sizes, decay_constant, threshold, batchsize, seed=model_seed, return_all=True))
+    out_dense, grad_dense = value_and_grad_on_batch(dense_sizes[1:], model_dense, *data_dense, False)
+    
+
+    for i in range(num_layers):
+        print(out_sparse_layer[i].shape, out_dense[i].shape)
+        print(f"{i}: activity sparse = {np.mean(out_sparse_layer[i])}, dense =  {np.mean(out_dense[i])}, sparse_size/dense_size = {sparse_sizes[i+1]/dense_sizes[i+1]}")
+        print(f"{i}: max activity sparse = {np.max(np.mean(out_sparse_layer[i], axis=2))}, max activity dense =  {np.max(np.mean(out_dense[i], axis=2))}")
+        check_values(out_sparse_layer[i], out_dense[i], f"{i}: sparse layer - out_spikes[{i}]", rtol=1e-4, atol=1e-6)
+        check_values(grad_sparse_layer[i], grad_dense[i], f"{i}: sparse layer - grad_weights[{i}]", rtol=1e-4, atol=1e-6)
+        print(f"{i}: cossine_similarity = {cosine_similarity(grad_sparse_layer[i], grad_dense[i])}")
+        print(f"{i}: mean_scale = {mean_scale(grad_sparse_layer[i], grad_dense[i])}")
+        print(np.argwhere(out_sparse_layer[i] != out_dense[i]))
+
+    print("\ngrad_sparse_layer")
+    print(grad_sparse_layer)
+    print("\ngrad_dense")
+    print(grad_dense)
+
+
+    sys.exit()
+
+
     print("\n############################## SPARSE OPS ####################################")
     with strategy.scope():
         model_sparse_ops = keras.Model(*model_fn_sparse_ops(sparse_sizes, seq_len, dense_sizes, decay_constant, threshold, batchsize_per_step, seed=model_seed, return_all=True))
@@ -887,10 +931,7 @@ def test_sparse_vs_dense():
         out_sparse_ops, grad_sparse_ops, sparse_out_ops = strategy.run(value_and_grad_on_batch, args=[dense_sizes[1:], model_sparse_ops, *data_sparse, True])
         # out_sparse_layer, grad_sparse_layer =  strategy.run(value_and_grad_on_batch, args=[model_sparse_ops, *data_sparse, True])
 
-    print("\n################################# DENSE #######################################")
-    model_dense = keras.Model(*model_fn_dense(seq_len, dense_sizes, decay_constant, threshold, batchsize, seed=model_seed, return_all=True))
-    out_dense, grad_dense = value_and_grad_on_batch(dense_sizes[1:], model_dense, *data_dense, False)
-    
+
     print("\ndata_sparse")
     print(data_sparse)
     # print("\ndata dense")

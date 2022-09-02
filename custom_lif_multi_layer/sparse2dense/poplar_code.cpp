@@ -25,6 +25,7 @@ extern "C" void Build_metadata(
   bool& is_stateless,
   bool& is_hashable,
   std::uint32_t num_inputs) {
+  is_hashable = true;
   is_elementwise = false;
   is_stateless = true;
 }

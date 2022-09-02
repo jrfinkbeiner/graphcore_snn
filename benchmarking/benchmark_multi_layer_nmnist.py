@@ -128,14 +128,15 @@ def main(args):
     PROFILE_RUN = bool(args.profile_run)
     USE_IPU = bool(args.use_ipu)
     IMPL_METHOD = args.impl_method
-    SPARSE_MULTIPLIER = args.sparse_multiplier
+    MAX_ACTIVITY = args.max_activity
     CALC_ACTIVITY = False
     MULTIPROCESSING = True
     TRANSPOSE_WEIGHTS = bool(args.transpose_weights)
     BATCHSIZE = args.batchsize
     LEARNING_RATE = args.lr
-    NUM_IPUS = args.num_ipus
+    NUM_HIDDEN_LAYERS = args.num_hidden_layers
     SECOND_THRESHOLD = args.second_thresh
+    NUM_IPUS = 1
 
     if USE_IPU:
         assert IMPL_METHOD is not None, "If `USE_IPU=True` the variable `IMPL_METHOD` must be set."
@@ -153,57 +154,13 @@ def main(args):
 
     IMAGE_DIMS = (34,34,2)
 
-    # # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 512, 128, NUM_CLASSES]
-    # # SPARSE_SIZES = [32, 48, 32, 16, 8]
-    # # # SPARSE_SIZES = [32*2, 48*2, 32*2, 16*2, 8]
-    # # # SPARSE_SIZES = [32*2, 64*4, 32*4, 16*4, 8]
-
-    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 1024, 1024, 1024, 512, 128, NUM_CLASSES]
-    # # DENSE_SIZES = [np.prod(IMAGE_DIMS), 128, NUM_CLASSES]
-    # # SPARSE_SIZES_BASE = [32, 64, 64, 64, 64, 32, 16, 8]
-
-
-    # # SPARSE_SIZES_BASE = [32, 4, 4, 4, 4, 2, 1, 1]
-    # # SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:-1], DENSE_SIZES[1:-1])]
-    # # SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
-    # SPARSE_SIZES_BASE = [2, 4, 4, 4, 4, 2, 1, 1]
-    # # SPARSE_SIZES_BASE = [2, 1, 1]
-    # SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[:-1], DENSE_SIZES[:-1])]
-    # SPARSE_SIZES = SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
+    NEURON_TO_SPLIT = 1471*2 - 10
+    HIDDEN_LAYER_DENSE_SIZES = [int(2*(NEURON_TO_SPLIT / NUM_HIDDEN_LAYERS // 2 + (((NEURON_TO_SPLIT % int(NUM_HIDDEN_LAYERS*2))) > 2*ilay))) for ilay in range(NUM_HIDDEN_LAYERS)]
+    HIDDEN_LAYER_SPARSE_SIZES = [int((MAX_ACTIVITY*hid_dense_size//2)*2) for hid_dense_size in HIDDEN_LAYER_DENSE_SIZES]
 
     # benchmarking presentation
-    DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 1024, 512, 512, 128, NUM_CLASSES]
-    SPARSE_SIZES_BASE = [32, 64, 4, 2, 2, 1, 1]
-    SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[:-1], DENSE_SIZES[:-1])]
-    SPARSE_SIZES = SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
-
-    # # benchmarking presentation
-    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 512, 128, NUM_CLASSES]
-    # SPARSE_SIZES_BASE = [16, 4, 2, 1]
-    # SPARSE_SIZES = [min(DENSE_SIZES[0], max(128, int(SPARSE_SIZES_BASE[0]*SPARSE_MULTIPLIER)))] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
-    # SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE, DENSE_SIZES)]
-
-    # sys.exit()
-
-    # benchmarking presentation
-    DENSE_SIZES = [np.prod(IMAGE_DIMS), 2036, 640, 256, NUM_CLASSES]
-    SPARSE_SIZES_BASE = [32, 4, 2, 1, 10]
-    SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
-
-    # benchmarking presentation
-    DENSE_SIZES = [np.prod(IMAGE_DIMS), 1472, 1076, 384, NUM_CLASSES]
-    SPARSE_SIZES_BASE = [32, 4, 3, 2, 10]
-    SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
-
-    # benchmarking presentation
-    DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, *[1472]*(2*(NUM_IPUS-1)), 1076+384, NUM_CLASSES]
-    SPARSE_SIZES_BASE = [32, 4, *[4]*(2*(NUM_IPUS-1)), 4, 10]
-    SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
-
-    # # benchmarking presentation
-    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 512, 128, NUM_CLASSES]
-    # SPARSE_SIZES_BASE = [32, 4, 2, 1, 10]
-    # SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
+    DENSE_SIZES = [np.prod(IMAGE_DIMS), *HIDDEN_LAYER_DENSE_SIZES, NUM_CLASSES]
+    SPARSE_SIZES = [32, *HIDDEN_LAYER_SPARSE_SIZES, int(max((MAX_ACTIVITY*NUM_CLASSES//2)*2, 2))]
 
     # BATCHSIZE = 48
     if PROFILE_RUN:
@@ -215,7 +172,7 @@ def main(args):
     assert NUM_SAMPLES_TRAIN <= 60000
 
     print("#################################################################################################")
-    print("SPARSE_MULTIPLIER: ", SPARSE_MULTIPLIER)
+    print("MAX_ACTIVITY: ", MAX_ACTIVITY)
     print("DENSE_SIZES: ", DENSE_SIZES)
     print("SPARSE_SIZES: ", SPARSE_SIZES)
     print("BATCHSIZE: ", BATCHSIZE)
@@ -227,7 +184,7 @@ def main(args):
     print("IMPL_METHOD: ", IMPL_METHOD)
     print("TRANSPOSE_WEIGHTS: ", TRANSPOSE_WEIGHTS)
     print("LEARNING_RATE: ", LEARNING_RATE)
-    print("NUM_IPUS: ", NUM_IPUS)
+    print("NUM_HIDDEN_LAYERS: ", NUM_HIDDEN_LAYERS)
     print("SECOND_THRESHOLD: ", SECOND_THRESHOLD) 
 
     # sys.exit()
@@ -245,7 +202,7 @@ def main(args):
     # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
     # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[-100]*(len(SPARSE_SIZES)-2), -100]]
 
-    LOG_FILE = f"nmnist_multiThresh_sweep_performance_3layers/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
+    LOG_FILE = None # f"nmnist_multiThresh_sweep_performance_3layers/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
 
     # if SPARSE_METHOD:
     #     sys.exit()
@@ -433,13 +390,13 @@ if __name__ == "__main__":
                                                                     "Only used for `use_ipu=1`")
     parser.add_argument('--profile_run', type=int, default=0, help="Whether this is a profiling run (default is `0` therefore `Flase`), "
                                                                     "which uses shorter squence length, less data and only one epoch.")
-    parser.add_argument('--sparse_multiplier', type=int, default=16, help="Factor to multiply sparse sizes with, default is 16.")
+    parser.add_argument('--max_activity', type=float, default=0.05, help="Factor to multiply sparse sizes with, default is 16.")
     parser.add_argument('--transpose_weights', type=int, default=0, help="Whether to use the transposed weight matrix to better make use of vectorization."
                                                                         " For now only used with `impl_method=sparse_layer`. Default is 0 (False).")
     parser.add_argument('--batchsize', type=int, default=48, help="batchsize to use for training, default is 48.")
     parser.add_argument('--lr', type=float, default=1e-2, help="Learning rate for optimizer, default `1e-2`.")
     parser.add_argument('--second_thresh', type=float, default=0.9, help="Second threshold, default `0.9`.")
-    parser.add_argument('--num_ipus', type=int, default=1, help="Number of IPUs to use, default `1`.")
+    parser.add_argument('--num_hidden_layers', type=int, default=1, help="Number of IPUs to use, default `1`.")
 
     args = parser.parse_args()
     main(args)
