@@ -104,7 +104,18 @@ def events_to_sparse_tensors(events,
 #     return dataset_train, dataset_test
 
 
-def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='train', apply_flatten=False):
+from dataclasses import dataclass
+@dataclass(frozen=True)
+class TimeSlice:
+    seq_len: int
+    def __call__(self, sequence):
+        # print(sequence.shape)
+        slice = np.zeros((self.seq_len, *sequence.shape[1:]))
+        seq_to_use = min(self.seq_len, sequence.shape[0])
+        slice[:seq_to_use] = sequence[:seq_to_use]
+        return slice
+
+def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='train', apply_flatten=False, delta_t=1000):
     '''
     root: root directory of tonic datasets
     seq_len: maximum sequence length
@@ -121,10 +132,11 @@ def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='
         raise NotImplementedError()
     
     sensor_size = tonic.datasets.NMNIST.sensor_size
-    if sparse:
 
+    if sparse:
         transforms_list = [
-            ft.partial(events_to_sparse_tensors, deltat=1000,
+            transforms.Denoise(filter_time=10000),
+            ft.partial(events_to_sparse_tensors, deltat=delta_t,
                             seq_len=seq_len,
                             sparse_size=sparse_size),
         ]
@@ -136,8 +148,10 @@ def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='
         transform_train = transforms.Compose(transforms_list)
     else:
         transform_train = transforms.Compose([
-            # transforms.ToFrame(sensor_size, time_window=1000.0),
-            transforms.ToFrame(sensor_size, n_time_bins=seq_len),
+            transforms.Denoise(filter_time=10000),
+            transforms.ToFrame(sensor_size, time_window=delta_t),
+            TimeSlice(seq_len),
+            # transforms.ToFrame(sensor_size, n_time_bins=seq_len),
         ])
         # transform_test = transforms.Compose([
         #     # transforms.Denoise(filter_time=10000),
@@ -149,7 +163,7 @@ def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='
     dataset = tonic.datasets.NMNIST(save_to=root,
                                 train=dataset == 'train',
                                 transform=transform_train,
-                                first_saccade_only=True) # TODO decide for first saccade... has to match sparse implementation...
+                                first_saccade_only=False) # TODO decide for first saccade... has to match sparse implementation...
     return dataset
 
 
@@ -159,6 +173,7 @@ def create_dense_batch(ids, dataset, batch_size):
     for i,idx in enumerate(ids):
         data, label = dataset[idx]
         data_flat = data.reshape(data.shape[0], -1).astype(np.float32)
+        # data_flat = data
         # label = 0
         # data_flat = np.empty((seq_len, np.prod(dataset.sensor_size))) #*data["x"][0]
         batched_data.append(data_flat)
@@ -222,13 +237,18 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
     print()
     print(len(dataset))
     print(num_samples)
-    idx_samples_base = np.random.choice(len(dataset), num_samples, replace=False)
+    if shuffle:
+        idx_samples_base = np.random.choice(len(dataset), num_samples, replace=False)
+    else:
+        idx_samples_base = np.arange(num_samples)
+
     idx_samples = np.empty(num_samples*num_epochs, dtype=np.int64)
     for iepoch in range(num_epochs):
         if shuffle:
             np.random.shuffle(idx_samples_base)
         idx_samples[iepoch*num_samples:(iepoch+1)*num_samples] = idx_samples_base
-    
+    print(idx_samples)
+
     def gen_dense_batched():
         for ibatch in range(num_batches):
             inds = idx_samples[ibatch*batchsize:(ibatch+1)*batchsize]
@@ -395,14 +415,18 @@ def get_nmnist_dataset(root, sparse, num_epochs, seq_len, inp_dim, batchsize, nu
 
 
 
-def flatten_spike_ids(dims, spike_ids):
-    '''
-    Flattens N-dimensional data to a 1 dimensional integer, where N = len(dims).
-    dims: tuple whose elements specify the size of each dimension
-    '''
-    ds = np.array([np.prod(dims[i:]) for i in range(1,len(dims))] + [1], dtype=np.int16)
-    spike_ids_flat = tf.math.reduce_sum([spike_ids[:,:,i]*d for i,d in enumerate(ds)],axis=0)
-    return spike_ids_flat
+# def flatten_spike_ids(dims, spike_ids):
+#     '''
+#     Flattens N-dimensional data to a 1 dimensional integer, where N = len(dims).
+#     dims: tuple whose elements specify the size of each dimension
+#     '''
+#     ds = np.array([np.prod(dims[i:]) for i in range(1,len(dims))] + [1], dtype=np.int16)
+#     spike_ids_flat = tf.math.reduce_sum([spike_ids[:,:,i]*d for i,d in enumerate(ds)],axis=0)
+#     return spike_ids_flat
+
+def flatten_spike_ids(sensor_dim, ids):
+    dimx, dimy, dimp = sensor_dim
+    return  ids[...,1] + dimy * (ids[...,2] + dimx * ids[...,0])
 
 
 def flatten_data_tf(data, dims):
@@ -452,11 +476,11 @@ def flatten_data_tf(data, dims):
 #     return dataset
 
 
-def load_dataset_to_tensor_dict(root, sparse, seq_len, inp_dim, num_samples=None, iter_batchsize=None):
+def load_dataset_to_tensor_dict(root, sparse, seq_len, inp_dim, num_samples=None, iter_batchsize=None, shuffle=True):
 
     if iter_batchsize is None:
         iter_batchsize = 1000
-    gen, num_samples = create_nmnist_gener(root, sparse, 1, seq_len=seq_len, sparse_size=inp_dim, num_samples=num_samples, batchsize=iter_batchsize, shuffle=True, use_multiprocessing=True)
+    gen, num_samples = create_nmnist_gener(root, sparse, 1, seq_len=seq_len, sparse_size=inp_dim, num_samples=num_samples, batchsize=iter_batchsize, shuffle=shuffle, use_multiprocessing=True)
 
     assert num_samples % iter_batchsize == 0, "`num_samples` must be divisible by `iter_batchsize`"
 
@@ -491,20 +515,114 @@ def load_dataset_to_tensor_dict(root, sparse, seq_len, inp_dim, num_samples=None
     return ret_val
 
 
+
 if __name__ == "__main__":
-    print('run create_nmnist_gener')
-    create_nmnist_gener(
-        # root="/Data/pgi-15/datasets", 
-        root="/p/scratch/chpsadm/finkbeiner1/datasets", 
-        sparse=False, 
-        num_epochs=1, 
-        seq_len=100, 
-        sparse_size=32, 
-        num_samples=None, 
-        dataset='train', 
-        shuffle=None, 
-        batchsize=None, 
-        use_multiprocessing=False
-    )
-    assert 1 == 0
-    sys.exit()
+    import sys
+    gens = {}
+    data = {}
+    for use_sparse in [True, False]:
+        sparse_str = "sparse" if use_sparse else "dense"
+        gen, num_samples = create_nmnist_gener(
+            root="/Data/pgi-15/datasets", 
+            sparse=use_sparse, 
+            num_epochs=1, 
+            seq_len=100, 
+            sparse_size=128, 
+            num_samples=None, 
+            dataset='train', 
+            shuffle=False, 
+            batchsize=1, 
+            use_multiprocessing=True
+        )
+        gens[sparse_str] = gen
+        data_next = next(gen())
+        data[sparse_str] = data_next
+
+
+        # use_multiprocessing = False
+        # dataset = create_nmnist_dataset("/Data/pgi-15/datasets", use_sparse, seq_len=100, sparse_size=128, dataset="train", apply_flatten=True if use_multiprocessing else False)
+        # data[sparse_str] = dataset[0]
+
+    print()
+    print(data["dense"]["inp_spikes"].shape)
+    print(data["dense"]["inp_spikes"].sum(axis=2).astype(np.int32))
+    print()
+    print(data["sparse"]["num_inp_spikes"].shape)
+    print(data["sparse"]["num_inp_spikes"])
+    print()
+    print(data["dense"]["inp_spikes"].shape)
+    print(data["dense"]["inp_spikes"])
+    # sys.exit()
+
+    num_inp_spikes_dense = data["dense"]["inp_spikes"].sum(axis=2).astype(np.int32)[0]
+    num_inp_spikes_sparse = data["sparse"]["num_inp_spikes"][0]
+    inp_spikes_ids_dense = np.argwhere(data["dense"]["inp_spikes"][0] > 0)
+    inp_spikes_ids_sparse = data["sparse"]["inp_spike_ids"][0]
+
+
+    sensor_size = tonic.datasets.NMNIST.sensor_size
+    def flatten_fn_general(dims, data):
+        return flatten_spike_ids(dims, data[0]), data[1]
+    flatten_fn = ft.partial(flatten_fn_general, sensor_size)
+    print(sensor_size)
+
+
+    # import sys
+    # sys.exit()
+    # for i in range(len(num_inp_spikes_sparse)-1):
+    #     print(num_inp_spikes_dense[i], num_inp_spikes_sparse[i+1])
+    
+    def flatten_spike_id(sensor_dims, id_):
+        # return id_[0]*sensor_dims[0]*sensor_dims[1] + id_[1]*sensor_dims[0] + id_[2]
+        return  id_[1] + sensor_dims[1] * (id_[2] + id_[0] * sensor_dims[0])
+        # return id_[0] +  id_[2] * sensor_dims[2] + sensor_dims[1]*sensor_dims[2] * id_[1]
+
+    # def flatten_spike_ids_vec(sensor_dims, ids):
+    #     return  ids[...,1] + sensor_dims[1] * (ids[...,2] + ids[...,0] * sensor_dims[0])
+
+    def flatten_spike_ids_vec(dimx, dimy, dimp, ids):
+        return  ids[...,1] + dimy * (ids[...,2] + dimx * ids[...,0])
+
+
+    arr = np.arange(4*4*2).reshape((4,4,2))
+    print(arr)
+    print()
+    print(arr[:,:,0])    
+    print()
+    print(arr[:,0,0])    
+
+    # import sys
+    # sys.exit()
+
+
+
+
+    print()
+    print(np.all(num_inp_spikes_dense[:-1] == num_inp_spikes_sparse[1:]))
+    print()
+    print(inp_spikes_ids_dense.shape)
+    print(inp_spikes_ids_dense[:10])
+    print()
+    print(inp_spikes_ids_sparse.shape)
+    print(inp_spikes_ids_sparse[:6, :3])
+    # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[0, 0]))
+    # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[1, 0]))
+    # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[2, 0]))
+    # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[3, 0]))
+    # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[4, 0]))
+    # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[5, 0]))
+    # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[5, 1]))
+    # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[5, 2]))
+    # print()
+    # print(flatten_spike_ids(sensor_size, inp_spikes_ids_sparse[0:0+1, 0:0+1].reshape((1,1,3))))
+    # print(flatten_spike_ids(sensor_size, inp_spikes_ids_sparse[1:1+1, 0:0+1].reshape((1,1,3))))
+    # print(flatten_spike_ids(sensor_size, inp_spikes_ids_sparse[2:2+1, 0:0+1].reshape((1,1,3))))
+    # print(flatten_spike_ids(sensor_size, inp_spikes_ids_sparse[3:3+1, 0:0+1].reshape((1,1,3))))
+    # print(flatten_spike_ids(sensor_size, inp_spikes_ids_sparse[4:4+1, 0:0+1].reshape((1,1,3))))
+    # print(flatten_spike_ids(sensor_size, inp_spikes_ids_sparse[5:5+1, 0:0+1].reshape((1,1,3))))
+    # print(flatten_spike_ids(sensor_size, inp_spikes_ids_sparse[5:5+1, 1:1+1].reshape((1,1,3))))
+    # print(flatten_spike_ids(sensor_size, inp_spikes_ids_sparse[5:5+1, 2:2+1].reshape((1,1,3))))
+    # print()
+    # print(flatten_spike_ids_vec(*sensor_size, inp_spikes_ids_sparse[0:6, 0:3]))
+    # print()
+    # print(inp_spikes_ids_sparse[inp_spikes_ids_sparse > 0].flatten())
