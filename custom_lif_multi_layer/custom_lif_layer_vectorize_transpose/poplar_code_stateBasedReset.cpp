@@ -1592,8 +1592,6 @@ void performLIFStepBackwardPass(poplar::Graph &graph, const std::vector<poplar::
     // unsigned sparse_size = fwdInpSpikes[ilay].dim(1);
     // unsigned num_tiles_this_layer = std::accumulate(neuronTileMapping.begin(), neuronTileMapping.end(), 0, [](unsigned a; std::vector<poplar::Inverval>& tileMap){return a + (tileMap>0);})
     // poplar::Tensor fwdIps_replicated = graph.addVariable(fwdInpSpikes[ilay].elementType(), {num_tiles_this_layer, batchsize, sparse_size}, {dnai, "alloc_fwdInpSpikes_tileReplicated"});
-    std::cout << "fwdInpSpikes[ilay].spike_ids.shapeToString(): " << fwdInpSpikes[ilay].spike_ids.shapeToString() << std::endl;
-    std::cout << "fwdInpSpikes[ilay].num_spikes.shapeToString(): " << fwdInpSpikes[ilay].num_spikes.shapeToString() << std::endl;
 
     poplar::Tensor fwdIps_ids_replicated = replicate_and_alloc_tensor(graph, fwdInpSpikes[ilay].spike_ids, tileMapping, prog, {dnai, "create_fwdIps_ids_replicated"});
     poplar::Tensor fwdIps_nums_replicated = replicate_and_alloc_tensor(graph, fwdInpSpikes[ilay].num_spikes, tileMapping, prog, {dnai, "create_fwdIps_nums_replicated"});
@@ -1605,10 +1603,6 @@ void performLIFStepBackwardPass(poplar::Graph &graph, const std::vector<poplar::
 
   // calcLIFWeightGrad_singleThread(graph, dLdweights, fwdInpSpikes, intermediate_dLdState, prog, dnai);
   calcLIFWeightGrad(graph, dLdweights, fwdInpSpikes_tileReplicated, intermediate_dLdState, prog, dnai);
-  
-  for (unsigned ilay=0; ilay<fwdInpSpikes_tileReplicated.size(); ++ilay){
-    std::cout << ilay << ", fwdInpSpikes_tileReplicated[ilay].num_spikes.shapeToString()" << fwdInpSpikes_tileReplicated[ilay].num_spikes.shapeToString();
-  }
 
   if (calcInpSpikeGrads){
     // calcLIFInpSpikesGrad(graph, weights, fwdInpSpikes, decay_constants, dLdState, dLdInpSpikes,  prog, dnai);

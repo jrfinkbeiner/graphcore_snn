@@ -852,7 +852,7 @@ def test_sparse_vs_dense():
 
     decay_constant = 0.9
     threshold = 1.0
-    second_thresh = -100
+    second_thresh = 0.9
     num_layers = len(dense_sizes)-1 
     model_seed = rng.integers(999999)
 
@@ -879,6 +879,9 @@ def test_sparse_vs_dense():
     data_sparse = iter(dataset_sparse).next()
     data_sparse = ((data_sparse["inp_spike_ids"], data_sparse["num_inp_spikes"]), data_sparse["targets"])
     data_dense = iter(dataset_dense).next().values()
+
+    print(data_dense)
+    sys.exit()
 
     # # with strategy.scope():
     # #     model_dense_ipu = keras.Model(*model_fn_dense(seq_len, dense_sizes, decay_constant, threshold, batchsize, seed=model_seed, return_all=False))

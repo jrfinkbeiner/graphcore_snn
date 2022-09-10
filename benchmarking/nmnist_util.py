@@ -491,3 +491,20 @@ def load_dataset_to_tensor_dict(root, sparse, seq_len, inp_dim, num_samples=None
     return ret_val
 
 
+if __name__ == "__main__":
+    print('run create_nmnist_gener')
+    create_nmnist_gener(
+        # root="/Data/pgi-15/datasets", 
+        root="/p/scratch/chpsadm/finkbeiner1/datasets", 
+        sparse=False, 
+        num_epochs=1, 
+        seq_len=100, 
+        sparse_size=32, 
+        num_samples=None, 
+        dataset='train', 
+        shuffle=None, 
+        batchsize=None, 
+        use_multiprocessing=False
+    )
+    assert 1 == 0
+    sys.exit()

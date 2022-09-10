@@ -118,31 +118,32 @@ def filter_layer_output(func, layer_id):
     filter_fn.__name__ = func.__name__ + f"_lay{layer_id}"
     return filter_fn
 
-def create_dataset_sparse(inp_spike_ids, num_inp_spikes, labels, batchsize, shuffle=True):
-    dataset = tf.data.Dataset.from_tensor_slices({"inp_spike_ids": inp_spike_ids, "num_inp_spikes": num_inp_spikes, "targets": labels})
-    num_samples = labels.shape[0]
-    if shuffle:
-        dataset = dataset.shuffle(num_samples, reshuffle_each_iteration=False)
-    # dataset = dataset.repeat()
-    # dataset = dataset.interleave(num_parallel_calls=tf.data.AUTOTUNE)
-    dataset = dataset.batch(batchsize, drop_remainder=True)
-    dataset = dataset.prefetch(tf.data.AUTOTUNE)
-    # dataset = dataset.prefetch(4)
-    return dataset
+# def create_dataset_sparse(inp_spike_ids, num_inp_spikes, labels, batchsize, shuffle=True):
+#     dataset = tf.data.Dataset.from_tensor_slices({"inp_spike_ids": inp_spike_ids, "num_inp_spikes": num_inp_spikes, "targets": labels})
+#     num_samples = labels.shape[0]
+#     if shuffle:
+#         dataset = dataset.shuffle(num_samples, reshuffle_each_iteration=False)
+#     # dataset = dataset.repeat()
+#     # dataset = dataset.interleave(num_parallel_calls=tf.data.AUTOTUNE)
+#     dataset = dataset.batch(batchsize, drop_remainder=True)
+#     dataset = dataset.prefetch(tf.data.AUTOTUNE)
+#     # dataset = dataset.prefetch(4)
+#     return dataset
 
 
 def main(args):
 
     # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
 
-    # ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
-    ROOT_PATH_DATA = "/Data/pgi-15/datasets"
+    ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
+    # ROOT_PATH_DATA = "/Data/pgi-15/datasets"
+    ROOT_PATH_DATA = "/p/scratch/icei-hbp-2022-0011/common/datasets/"
 
     PROFILE_RUN = bool(args.profile_run)
     USE_IPU = bool(args.use_ipu)
     IMPL_METHOD = args.impl_method
     SPARSE_MULTIPLIER = args.sparse_multiplier
-    CALC_ACTIVITY = False
+    CALC_ACTIVITY = True
     MULTIPROCESSING = True
     TRANSPOSE_WEIGHTS = bool(args.transpose_weights)
     BATCHSIZE = args.batchsize
@@ -160,7 +161,7 @@ def main(args):
         NUM_EPOCHS = 1
         SEQ_LEN = 100
     else:
-        NUM_EPOCHS = 25
+        NUM_EPOCHS = 35
         SEQ_LEN = 100 # 300
 
 
@@ -226,7 +227,7 @@ def main(args):
 
     # benchmarking presentation
     DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, *[1472]*(2*(NUM_IPUS-1)), 1076+384, NUM_CLASSES]
-    SPARSE_SIZES_BASE = [32, 4, *[4]*(2*(NUM_IPUS-1)), 4, 10]
+    SPARSE_SIZES_BASE = [64, 4, *[4]*(2*(NUM_IPUS-1)), 4, 10]
     SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
 
     # # benchmarking presentation
@@ -260,6 +261,10 @@ def main(args):
     print("SECOND_THRESHOLD: ", SECOND_THRESHOLD) 
     # sys.exit()
 
+    USE_MULTI_IPU = NUM_IPUS > 1
+    if USE_MULTI_IPU:
+        print("WARNING: behaviour might be different than expected due to variable overwrite in multi-ipu version.")
+
     rng = np.random.default_rng(42)
 
     BATCHSIZE_PER_STEP = BATCHSIZE
@@ -273,7 +278,7 @@ def main(args):
     # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
     # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[-100]*(len(SPARSE_SIZES)-2), -100]]
 
-    LOG_FILE = f"nmnist_multiThresh_sweep_performance_3layers/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
+    LOG_FILE = f"nmnist_convergence_analysis/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
 
     # if SPARSE_METHOD:
     #     sys.exit()
@@ -290,8 +295,11 @@ def main(args):
 
     data = load_dataset_to_tensor_dict(ROOT_PATH_DATA, SPARSE_METHOD, SEQ_LEN, INP_DIM, num_samples=NUM_SAMPLES_TRAIN, iter_batchsize=min(10000, NUM_SAMPLES_TRAIN))
     if SPARSE_METHOD:
-        # dataloader_train = create_dataset_sparse(data["inp_spike_ids"], data["num_inp_spikes"], data["targets"], BATCHSIZE, shuffle=True) 
-        dataloader_train = create_dataset_sparse_multi_ipu(data["inp_spike_ids"], data["num_inp_spikes"], data["targets"], BATCHSIZE, shuffle=True) 
+        if USE_MULTI_IPU:
+            dataloader_train = create_dataset_sparse_multi_ipu(data["inp_spike_ids"], data["num_inp_spikes"], data["targets"], BATCHSIZE, shuffle=True)   
+        else:
+            dataloader_train = create_dataset_sparse(data["inp_spike_ids"], data["num_inp_spikes"], data["targets"], BATCHSIZE, shuffle=True) 
+        
     else:
         dataloader_train = create_dataset_dense(
             tf.convert_to_tensor(data["inp_spikes"], dtype=data["inp_spikes"].dtype), 
@@ -301,16 +309,6 @@ def main(args):
 
     NUM_LAYERS = len(DENSE_SIZES)-1
 
-    # # loss_fns = [reg_func_single_layer for _ in range(num_layers-1)]
-    # # loss_fns.append(mse_softmax_loss_fn)
-    # # loss_fns = {f"rnn_{i}" if i>0 else "rnn" : reg_func_single_layer for i in range(num_layers-1)}
-    # loss_fns = {f"rnn_{i}" if i>0 else "rnn" : lambda x, y: 0.0 for i in range(num_layers-1)}
-    # loss_fns[f"rnn_{num_layers-1}"] = mse_softmax_loss_fn
-
-    # # metrics = [calc_activity for _ in range(num_layers-1)]
-    # # metrics.append(calc_accuracy)
-    # metrics = {f"rnn_{i}" if i>0 else "rnn": calc_activity for i in range(num_layers-1)}
-    # metrics[f"rnn_{num_layers-1}"] = calc_accuracy
 
     if LOG_FILE is not None:
         os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
@@ -318,27 +316,6 @@ def main(args):
         callbacks = [csv_logger]
     else:
         callbacks = None
-
-    # print(dataloader_train)
-    # print(next(iter(dataloader_train)))
-
-    # sys.exit()
-
-    # train_ipu(
-    #     num_epochs, 
-    #     train_steps_per_execution, 
-    #     batchsize_per_step,
-    #     dataset_sparse,
-    #     seq_len, 
-    #     dense_sizes, 
-    #     sparse_sizes, 
-    #     decay_constant, 
-    #     threshold,
-    #     mse_softmax_loss_fn,
-    #     metrics=calc_accuracy,
-    #     steps_per_epoch=steps_per_epoch,
-    #     callbacks=callbacks,
-    # )
 
     method_to_loss_fn = {
         "dense": sum_and_sparse_categorical_crossentropy,
@@ -371,51 +348,53 @@ def main(args):
 
     if USE_IPU:
 
-        # method_to_loss_fn = {
-        #     "dense": sum_and_sparse_categorical_crossentropy,
-        #     "sparse_ops": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=False),
-        #     "sparse_layer": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=True),
-        # }
-
-        train_mutli_ipu_benchmarking(
-            IMPL_METHOD,
-            NUM_EPOCHS, 
-            TRAIN_STEPS_PER_EXECUTION, 
-            BATCHSIZE_PER_STEP,
-            dataloader_train.repeat(),
-            SEQ_LEN, 
-            DENSE_SIZES, 
-            SPARSE_SIZES, 
-            DECAY_CONSTANT, 
-            THRESHOLD,
-            sum_and_sparse_categorical_crossentropy,
-            steps_per_epoch=STEPS_PER_EPOCH,
-            return_all=False,
-            transpose_weights=TRANSPOSE_WEIGHTS,
-            learning_rate=LEARNING_RATE,
-            num_ipus=NUM_IPUS,
-        )
-        sys.exit()
-
-        train_ipu(
-            IMPL_METHOD,
-            NUM_EPOCHS, 
-            TRAIN_STEPS_PER_EXECUTION, 
-            BATCHSIZE_PER_STEP,
-            dataloader_train.repeat(),
-            SEQ_LEN, 
-            DENSE_SIZES, 
-            SPARSE_SIZES, 
-            DECAY_CONSTANT, 
-            THRESHOLD,
-            simple_loss_fn_dense,
-            metrics=metrics,
-            steps_per_epoch=STEPS_PER_EPOCH,
-            callbacks=callbacks,
-            return_all=True if CALC_ACTIVITY else False,
-            transpose_weights=TRANSPOSE_WEIGHTS,
-            learning_rate=LEARNING_RATE,
-        )
+        if USE_MULTI_IPU:
+            method_to_loss_fn = {
+                "dense": sum_and_sparse_categorical_crossentropy,
+                "sparse_ops": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=False),
+                "sparse_layer": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=True),
+            }
+            print("\nMULTI IPU")
+            train_mutli_ipu_benchmarking(
+                IMPL_METHOD,
+                NUM_EPOCHS, 
+                TRAIN_STEPS_PER_EXECUTION, 
+                BATCHSIZE_PER_STEP,
+                dataloader_train.repeat(),
+                SEQ_LEN, 
+                DENSE_SIZES, 
+                SPARSE_SIZES, 
+                DECAY_CONSTANT, 
+                THRESHOLD,
+                sum_and_sparse_categorical_crossentropy,
+                steps_per_epoch=STEPS_PER_EPOCH,
+                return_all=False,
+                transpose_weights=TRANSPOSE_WEIGHTS,
+                learning_rate=LEARNING_RATE,
+                num_ipus=NUM_IPUS,
+            )
+            sys.exit()
+        else:
+            print("\nSINGLE IPU")
+            train_ipu(
+                IMPL_METHOD,
+                NUM_EPOCHS, 
+                TRAIN_STEPS_PER_EXECUTION, 
+                BATCHSIZE_PER_STEP,
+                dataloader_train.repeat(),
+                SEQ_LEN, 
+                DENSE_SIZES, 
+                SPARSE_SIZES, 
+                DECAY_CONSTANT, 
+                THRESHOLD,
+                loss_fn,
+                metrics=metrics,
+                steps_per_epoch=STEPS_PER_EPOCH,
+                callbacks=callbacks,
+                return_all=True if CALC_ACTIVITY else False,
+                transpose_weights=TRANSPOSE_WEIGHTS,
+                learning_rate=LEARNING_RATE,
+            )
     else:
         train_gpu(
             NUM_EPOCHS,

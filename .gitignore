@@ -8,6 +8,7 @@ slurm*
 benchmarking/convergence_*/
 benchmarking/improve_convergence*/
 benchmarking/nmnist_sweep*/
+benchmarking/nmnist_convergence*/
 benchmarking/nmnist_multiThresh_sweep*/
 custom_lif_single_layer/util_and_experiments/figures/
 custom_lif_single_layer/reports/
