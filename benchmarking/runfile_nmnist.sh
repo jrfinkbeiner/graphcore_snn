@@ -38,15 +38,15 @@ do
     for SPARSE_MUL in 16 64
     do
  
-    	for SECOND_THRESH in 0.8 0.9 -100.0 0.5 0.95 0.0
-	do
+    	for SECOND_THRESH in 0.8 0.9 -100.0 0.5 0.95 0.0 1.0
+	    do
     # python3 train_nmnist.py --use_ipu=0 --impl_method=dense --profile_run=0 --batchsize=$BATCHSIZE --lr=$LEARNING_RATE
     # for VARIABLE in 4 8 16 32 64 128
     # do
 
             python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=0 --sparse_multiplier=$SPARSE_MUL --batchsize=48 --lr=$LEARNING_RATE --transpose_weights=1 --second_thresh=$SECOND_THRESH
     
-	done
+	    done
     done
 done
 
