@@ -583,6 +583,47 @@ public:
 template class DenseSpikesMultiThresh<float>;
 // template class DenseSpikesMultiThresh<half>;
 
+
+template <typename FPType>
+class GenSparseSpikesMultiThresh : public poplar::Vertex {
+public:
+  poplar::Input<poplar::Vector<FPType>> state;
+  poplar::Input<poplar::Vector<FPType>> first_thresh;
+  poplar::Input<poplar::Vector<FPType>> second_thresh;
+  poplar::Input<unsigned> num_states;
+  poplar::Input<unsigned> start_id;
+  poplar::Output<poplar::Vector<unsigned>> repeated_sparse_spike_ids_thresh0;
+  poplar::Output<poplar::Vector<unsigned>> repeated_sparse_spike_ids_thresh1;
+  poplar::Output<unsigned> repeated_sparse_spike_nums_thresh0;
+  poplar::Output<unsigned> repeated_sparse_spike_nums_thresh1;
+
+  bool compute() {
+    unsigned numSpikesCounter_thresh0{0};
+    unsigned numSpikesCounter_thresh1{0};
+    unsigned state_id{start_id};
+
+    // for (unsigned i = random_offset_; i < num_dense_spikes; ++i) { // TODO implement random_offset_ with second loop when correct result
+    for (unsigned i = 0; i < num_states; ++i) {
+      if (state[i] > second_thresh[i]) {
+        if (state[i] > first_thresh[i]) { // just set: dense_spikes[0] = state > first_thresh; faster ?
+          repeated_sparse_spike_ids_thresh0[numSpikesCounter_thresh0] = state_id;
+          ++numSpikesCounter_thresh0;
+        } else {
+          repeated_sparse_spike_ids_thresh1[numSpikesCounter_thresh1] = state_id;
+          ++numSpikesCounter_thresh1;
+        }
+      }
+      ++state_id;
+    }
+    *repeated_sparse_spike_nums_thresh0 = numSpikesCounter_thresh0;
+    *repeated_sparse_spike_nums_thresh1 = numSpikesCounter_thresh1;
+    return true;
+  }
+};
+template class GenSparseSpikesMultiThresh<float>;
+
+
+
 template <typename dtype>
 class DenseToSparseSpikes : public poplar::Vertex {
 public:
@@ -841,22 +882,49 @@ public:
   }
 };
 
-template <typename FPType>
-class MulInPlaceCustom : public poplar::Vertex {
-public:
+// template <typename FPType>
+// // class MulInPlaceCustom : public poplar::Vertex {
+// class [[poplar::constraint("elem(*vec) != elem(*val)")]] MulInPlaceCustom : public poplar::Vertex {
+// public:
   
-  poplar::InOut<poplar::Vector<FPType>> vec;
-  poplar::Input<FPType> val;
+//   poplar::InOut<poplar::Vector<FPType>> vec;
+//   poplar::Input<FPType> val;
+//   poplar::Input<unsigned> end;
 
-  bool compute() {
-    for (unsigned i = 0; i < vec.size(); ++i) {
-      vec[i] = vec[i]*val;
-    }
-  return true;
-  }
-};
-template class MulInPlaceCustom<float>;
-// template class MulInPlaceCustom<half>;
+//   bool compute() {
+//     #pragma clang loop vectorize(enable) interleave(enable) // or -X -ffast-math to popc
+//     #pragma clang loop unroll(disable)
+//     for (unsigned i = 0; i < end; ++i) {
+//       vec[i] *= val;
+//     }
+//   return true;
+//   }
+// };
+// template class MulInPlaceCustom<float>;
+// // template class MulInPlaceCustom<half>;
+
+// template <typename FPType>
+// // class MulInPlaceCustom : public poplar::Vertex {
+// class [[poplar::constraint("elem(*vec) != elem(*val)")]] BatchedMulInPlaceCustom : public poplar::Vertex {
+// public:
+  
+//   poplar::InOut<poplar::Vector<FPType>> vec;
+//   poplar::Input<poplar::Vector<FPType>> val;
+//   poplar::Input<unsigned> end;
+//   poplar::Input<unsigned> batchsize;
+
+//   bool compute() {
+//     #pragma clang loop vectorize(enable) interleave(enable) // or -X -ffast-math to popc
+//     #pragma clang loop unroll(disable)
+//     for (unsigned i = 0; i < end; ++i) {
+//       vec[i] *= val;
+//     }
+//   return true;
+//   }
+// };
+// template class MulInPlaceCustom<float>;
+// // template class MulInPlaceCustom<half>;
+
 
 
 //---------------------------------------------- backward -----------------------------------------
@@ -890,6 +958,38 @@ public:
 };
 template class LIFStateOutGrad<float>;
 // template class LIFStateOutGrad<half>;
+
+
+template <typename FPType> 
+class calcLIFStateGrad_stateWise : public poplar::Vertex {
+public:
+  poplar::Input<poplar::Vector<FPType>> fwdState;
+  poplar::Input<poplar::Vector<FPType>> thresholds;
+  poplar::Input<poplar::Vector<FPType>> spike_grads;
+  poplar::Input<poplar::Vector<unsigned>> fwd_spikes_ids;
+  poplar::Input<unsigned> fwd_num_spikes;
+  poplar::Input<unsigned> neuron_start_id;
+  // poplar::Input<unsigned> neuron_end_id;
+  poplar::Input<unsigned> num_neurons;
+  poplar::InOut<poplar::Vector<FPType>> dLdState;
+  
+  bool compute() {
+    const FPType beta = 10.0; // TODO  don't hardcode here but give as input
+
+    for (unsigned i = 0; i < fwd_num_spikes; ++i) {
+      unsigned idx = fwd_spikes_ids[i];
+      unsigned neuron_idx = idx-neuron_start_id;
+      if (neuron_idx < num_neurons) { // TODO faster and corerct ?
+      // if ((neuron_start_id < idx) && (idx < neuron_end_id)) {
+        unsigned neuron_idx = idx-neuron_start_id;
+        dLdState[neuron_idx] += spike_grads[i] * superspike_surrogate(fwdState[neuron_idx] - thresholds[neuron_idx], beta);
+      }
+    }
+    return true;
+  }
+};
+template class calcLIFStateGrad_stateWise<float>;
+// template class calcLIFStateGrad_stateWise<half>;
 
 
 template <typename FPType>

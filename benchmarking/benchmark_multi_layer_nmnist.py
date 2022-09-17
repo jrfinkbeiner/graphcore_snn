@@ -122,8 +122,9 @@ def main(args):
 
     # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
 
-    ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
+    # ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
     # ROOT_PATH_DATA = "/Data/pgi-15/datasets"
+    ROOT_PATH_DATA = "/localdata/datasets/"
 
     PROFILE_RUN = bool(args.profile_run)
     USE_IPU = bool(args.use_ipu)

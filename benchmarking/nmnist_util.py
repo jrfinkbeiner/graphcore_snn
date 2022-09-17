@@ -167,6 +167,53 @@ def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='
     return dataset
 
 
+def create_shd_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='train', apply_flatten=False, delta_t=1000):
+    '''
+    root: root directory of tonic datasets
+    seq_len: maximum sequence length
+    dataset: 'train', 'val', or 'test
+    
+    returns a `tonic.datasets.SHD` instance
+    '''
+    assert dataset in ['train','val','test']
+    
+    if sparse:
+        assert sparse_size is not None, "For `sparse=True`, `sparse_size` must be given, got `None`."
+
+    if dataset == 'val':
+        raise NotImplementedError()
+    
+    sensor_size = tonic.datasets.NMNIST.sensor_size
+
+    if sparse:
+        transforms_list = [
+            transforms.Denoise(filter_time=10000),
+            ft.partial(events_to_sparse_tensors, deltat=delta_t,
+                            seq_len=seq_len,
+                            sparse_size=sparse_size),
+        ]
+        if apply_flatten:
+            def flatten_fn(dims, data):
+                return flatten_spike_ids(dims, data[0]), data[1]
+            transforms_list.append(ft.partial(flatten_fn, sensor_size))
+
+        transform_train = transforms.Compose(transforms_list)
+    else:
+        transform_train = transforms.Compose([
+            transforms.Denoise(filter_time=10000),
+            transforms.ToFrame(sensor_size, time_window=delta_t),
+            TimeSlice(seq_len),
+            # transforms.ToFrame(sensor_size, n_time_bins=seq_len),
+        ])
+
+    dataset = tonic.datasets.NMNIST(save_to=root,
+                                train=dataset == 'train',
+                                transform=transform_train,
+                                first_saccade_only=False) # TODO decide for first saccade... has to match sparse implementation...
+    return dataset
+
+
+
 def create_dense_batch(ids, dataset, batch_size):
     batched_data = []
     batched_labels = np.empty(batch_size, dtype=np.int32)
@@ -247,7 +294,6 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
         if shuffle:
             np.random.shuffle(idx_samples_base)
         idx_samples[iepoch*num_samples:(iepoch+1)*num_samples] = idx_samples_base
-    print(idx_samples)
 
     def gen_dense_batched():
         for ibatch in range(num_batches):

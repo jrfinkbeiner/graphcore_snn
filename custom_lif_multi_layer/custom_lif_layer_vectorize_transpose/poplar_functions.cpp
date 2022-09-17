@@ -395,7 +395,8 @@ poplar::Tensor alloc_neuronwise_contiguous(poplar::Graph& graph, const std::vect
   }
 
   poplar::Tensor allocTensor = poplar::concat(allocTensorVector, neuronDim);
-  return allocTensor;
+  poplar::Tensor allocTensor_tileContigous = graph.clone(allocTensor, dnai, poplar::TensorCloneMethod::GATHER_AND_PRESERVE_TILE_ORDER_AND_ALIASES);
+  return allocTensor_tileContigous;
 }
 
 poplar::Tensor alloc_neuronwise_contiguous(poplar::Graph& graph, const std::vector<size_t>& shape, poplar::Type type, size_t neuronDim, poplar::Graph::TileToTensorMapping neuronTileMapping, const poplar::DebugNameAndId &dnai = {}) {
@@ -436,12 +437,25 @@ poplar::Tensor alloc_neuronwise_contiguous(poplar::Graph& graph, const std::vect
 }
 
 
-poplar::Tensor alloc_neuronwise_contiguous(poplar::Graph& graph, const std::vector<size_t>& shape, poplar::Type type, size_t neuronDim, size_t &start_tile, size_t &end_tile, const poplar::DebugNameAndId &dnai = {}) {
+poplar::Tensor alloc_neuronwise_contiguous(poplar::Graph& graph, const std::vector<size_t>& shape_default, poplar::Type type, size_t neuronDim, size_t &start_tile, size_t &end_tile, const poplar::DebugNameAndId &dnai = {}) {
+  
+  std::cout << "shape: ";
+  printVector(shape_default);
+  
+  std::vector<size_t> shape;
+  if (shape_default.size() == 1) {
+    shape = {1, shape_default[0]};
+    neuronDim += 1;
+  } else {
+    shape = shape_default;
+  }
+
   poplar::Tensor allocTensor = graph.addVariable(type, shape, dnai);
   size_t numNeurons = shape[neuronDim];
   size_t num_tiles_this_tensor = end_tile - start_tile;
   size_t num_neurons_per_tile = (numNeurons + num_tiles_this_tensor - 1) / num_tiles_this_tensor;
   size_t num_full_tiles = (numNeurons % num_neurons_per_tile == 0) ?  num_tiles_this_tensor-1 : num_tiles_this_tensor-1;
+  std::cout << "00100" << std::endl;
 
   size_t start_neuron = 0;
   size_t end_neuron = 0;
@@ -450,11 +464,18 @@ poplar::Tensor alloc_neuronwise_contiguous(poplar::Graph& graph, const std::vect
     graph.setTileMapping(allocTensor.slice(start_neuron, end_neuron, neuronDim), itile+start_tile);
     start_neuron = end_neuron;
   }
+  std::cout << "00200" << std::endl;
   if (num_full_tiles != num_tiles_this_tensor) {
     graph.setTileMapping(allocTensor.slice(end_neuron, numNeurons, neuronDim), end_tile-1);
   }
+  std::cout << "00300" << std::endl;
   poplar::Tensor allocTensor_tileContigous = graph.clone(allocTensor, dnai, poplar::TensorCloneMethod::GATHER_AND_PRESERVE_TILE_ORDER_AND_ALIASES);
-  return allocTensor_tileContigous;
+  std::cout << "00400" << std::endl;
+  poplar::Tensor return_tensor = (shape_default.size() == 1) ? allocTensor_tileContigous[0]: allocTensor_tileContigous;
+
+  std::cout << "shape return_tensor: " << return_tensor.shapeToString() << std::endl;
+
+  return return_tensor;
 }
 
 
@@ -929,6 +950,20 @@ unsigned get_num_tiles_of_mapping(const poplar::Graph::TileToTensorMapping neuro
   return num_tiles_mapping;
 }
 
+unsigned get_max_elements_per_tile(const poplar::Graph::TileToTensorMapping tileMapping){
+  unsigned num_tiles_total = tileMapping.size();
+  unsigned num_tiles_mapping{0};
+  std::vector<unsigned> vals_per_tile;
+  for (unsigned tile = 0; tile < num_tiles_total; ++tile) {
+    unsigned vals_this_tile{0};
+    for (auto &tileRange: tileMapping[tile]){
+      vals_this_tile += tileRange.size();
+    }
+    vals_per_tile.push_back(vals_this_tile);
+  }
+  auto max_val = *std::max_element(vals_per_tile.begin(), vals_per_tile.end());
+  return max_val;
+}
 
 
 const std::vector<poplar::Tensor> performSharedUpdate(poplar::Graph &graph, const std::vector<poplar::Tensor> &oneMinus_decay_constants, 
@@ -956,7 +991,7 @@ const std::vector<poplar::Tensor> performSharedUpdate(poplar::Graph &graph, cons
 
 
 
-poplar::Tensor replicate_and_alloc_tensor(poplar::Graph &graph, poplar::Tensor &src, poplar::Graph::TileToTensorMapping tileMapping, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai = {}){
+poplar::Tensor replicate_and_alloc_tensor(poplar::Graph &graph, const poplar::Tensor &src, poplar::Graph::TileToTensorMapping tileMapping, poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai = {}){
 
   size_t num_tiles_this_layer = std::accumulate(tileMapping.begin(), tileMapping.end(), 0, [](size_t a, std::vector<poplar::Interval>& tileMapping){return a + (tileMapping.size()>0);});
   std::vector<size_t> src_shape = src.shape();

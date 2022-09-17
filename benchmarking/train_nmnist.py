@@ -135,9 +135,10 @@ def main(args):
 
     # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
 
-    ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
+    # ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
     # ROOT_PATH_DATA = "/Data/pgi-15/datasets"
-    ROOT_PATH_DATA = "/p/scratch/icei-hbp-2022-0011/common/datasets/"
+    # ROOT_PATH_DATA = "/p/scratch/icei-hbp-2022-0011/common/datasets/"
+    ROOT_PATH_DATA = "/localdata/datasets/"
 
     PROFILE_RUN = bool(args.profile_run)
     USE_IPU = bool(args.use_ipu)
@@ -231,6 +232,17 @@ def main(args):
     SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
 
     # # benchmarking presentation
+    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, 1470, 1468, 1076+384, NUM_CLASSES]
+    # SPARSE_SIZES_BASE = [64, 4, 4, 4, 4, 10]
+    # SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
+
+    # # benchmarking presentation
+    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, 1470, 1470, 1470, 1470, 1076+384, NUM_CLASSES]
+    # SPARSE_SIZES_BASE = [64, 4, 4, 4, 4, 4, 4, 10]
+    # SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
+
+
+    # # benchmarking presentation
     # DENSE_SIZES = [np.prod(IMAGE_DIMS), 512, 128, NUM_CLASSES]
     # SPARSE_SIZES_BASE = [32, 4, 2, 1, 10]
     # SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
@@ -261,7 +273,7 @@ def main(args):
     print("SECOND_THRESHOLD: ", SECOND_THRESHOLD) 
     # sys.exit()
 
-    USE_MULTI_IPU = NUM_IPUS > 1
+    USE_MULTI_IPU = True # NUM_IPUS > 1 # TODO change back!
     if USE_MULTI_IPU:
         print("WARNING: behaviour might be different than expected due to variable overwrite in multi-ipu version.")
 
@@ -274,11 +286,13 @@ def main(args):
 
     DECAY_CONSTANT = 0.95
     # SECOND_THRESHOLD = 0.9
-    THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
+    # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
+    THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-1)]]
     # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
     # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[-100]*(len(SPARSE_SIZES)-2), -100]]
 
-    LOG_FILE = f"nmnist_convergence_analysis/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
+    # LOG_FILE = f"nmnist_convergence_analysis/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
+    LOG_FILE = f"nmnist_multi_ipu/nmnist_{IMPL_METHOD}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
 
     # if SPARSE_METHOD:
     #     sys.exit()
