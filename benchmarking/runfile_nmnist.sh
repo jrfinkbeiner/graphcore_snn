@@ -1,4 +1,4 @@
-# export PYTHONPATH="${PYTHONPATH}:/p/home/jusers/finkbeiner1/jureca/util/tonic"
+export PYTHONPATH="${PYTHONPATH}:/p/home/jusers/finkbeiner1/jureca/util/tonic"
 
 # python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=0 --sparse_multiplier=32 --batchsize=48 --lr=0.0003 --transpose_weights=1
 # python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=0 --sparse_multiplier=4 --batchsize=48 --lr=0.001 --transpose_weights=1
@@ -19,7 +19,7 @@
 
 # POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports_neal/nmnist_sparse_layer_transpose_1472_neal_benchmark_numIPUs2_secondThresh0.9"}' python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --sparse_multiplier=16 --batchsize=48 --lr=0.001 --transpose_weights=1 --second_thresh=0.9 --num_ipus=2
 # POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports_bow/nmnist_sparse_layer_transpose_1472_bow_numIPUs1_secondThresh0.95_stateGradRowwise_preAllocFix_linAlloc"}' python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --sparse_multiplier=16 --batchsize=48 --lr=0.001 --transpose_weights=1 --second_thresh=0.95 --num_ipus=1
-POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports_bow/nmnist_sparse_layer_transpose_1472_bow_numIPUs1_secondThresh0.95_baseline_weightMul4.0"}' python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --sparse_multiplier=16 --batchsize=48 --lr=0.001 --transpose_weights=1 --second_thresh=0.95 --num_ipus=1
+POPLAR_ENGINE_OPTIONS='{"autoReport.all":"true","autoReport.directory":"./reports_bow/nmnist_sparse_layer_transpose_1472_bow_numIPUs1_secondThresh0.95_stateWiseStateGrad_noInpRepl"}' python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --sparse_multiplier=16 --batchsize=48 --lr=0.001 --transpose_weights=1 --second_thresh=0.95 --num_ipus=1
 
 # python3 train_nmnist.py --use_ipu=1 --impl_method=sparse_layer --profile_run=1 --sparse_multiplier=16 --batchsize=48 --lr=0.001 --transpose_weights=1 --second_thresh=0.95 --num_ipus=1
 

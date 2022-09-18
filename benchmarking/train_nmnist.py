@@ -137,8 +137,8 @@ def main(args):
 
     # ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
     # ROOT_PATH_DATA = "/Data/pgi-15/datasets"
-    # ROOT_PATH_DATA = "/p/scratch/icei-hbp-2022-0011/common/datasets/"
-    ROOT_PATH_DATA = "/localdata/datasets/"
+    ROOT_PATH_DATA = "/p/scratch/icei-hbp-2022-0011/common/datasets/"
+    # ROOT_PATH_DATA = "/localdata/datasets/"
 
     PROFILE_RUN = bool(args.profile_run)
     USE_IPU = bool(args.use_ipu)
@@ -273,7 +273,7 @@ def main(args):
     print("SECOND_THRESHOLD: ", SECOND_THRESHOLD) 
     # sys.exit()
 
-    USE_MULTI_IPU = True # NUM_IPUS > 1 # TODO change back!
+    USE_MULTI_IPU = NUM_IPUS > 1 # TODO change back!
     if USE_MULTI_IPU:
         print("WARNING: behaviour might be different than expected due to variable overwrite in multi-ipu version.")
 

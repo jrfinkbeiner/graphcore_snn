@@ -969,7 +969,7 @@ public:
   poplar::Input<poplar::Vector<unsigned>> fwd_spikes_ids;
   poplar::Input<unsigned> fwd_num_spikes;
   poplar::Input<unsigned> neuron_start_id;
-  // poplar::Input<unsigned> neuron_end_id;
+  poplar::Input<unsigned> neuron_end_id;
   poplar::Input<unsigned> num_neurons;
   poplar::InOut<poplar::Vector<FPType>> dLdState;
   
@@ -980,8 +980,8 @@ public:
       unsigned idx = fwd_spikes_ids[i];
       unsigned neuron_idx = idx-neuron_start_id;
       if (neuron_idx < num_neurons) { // TODO faster and corerct ?
-      // if ((neuron_start_id < idx) && (idx < neuron_end_id)) {
-        unsigned neuron_idx = idx-neuron_start_id;
+      // if ((neuron_start_id <= idx) && (idx < neuron_end_id)) {
+      //   unsigned neuron_idx = idx-neuron_start_id;
         dLdState[neuron_idx] += spike_grads[i] * superspike_surrogate(fwdState[neuron_idx] - thresholds[neuron_idx], beta);
       }
     }

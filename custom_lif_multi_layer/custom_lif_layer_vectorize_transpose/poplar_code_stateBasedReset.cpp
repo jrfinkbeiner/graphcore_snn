@@ -1342,30 +1342,32 @@ void calcLIFStateGrad(poplar::Graph &graph, const std::vector<poplar::Tensor> &w
 }
 
 
-void calcLIFStateGrad_stateWise(poplar::Graph &graph, const std::vector<poplar::Tensor> &fwdState, 
+void calcLIFStateGrad_stateWise(poplar::Graph &graph, const std::vector<poplar::Tensor> &fwdState, const std::vector<poplar::Tensor> &decay_constants, 
                             const std::vector<poplar::Tensor> &thresholds, const std::vector<BatchedSparseSpikes> &fwdOutSpikes,
                             std::vector<poplar::Tensor> &dLdState, const std::vector<poplar::Tensor> &dLdoutSpikes,
                             poplar::program::Sequence &prog, const poplar::DebugNameAndId &dnai) {
 
-  // bring spike tensor to tiles
-  std::vector<BatchedSparseSpikes> fwdOutSpikes_tileReplicated;
-  std::vector<poplar::Tensor> spike_grads_tileReplicated;
+  // // bring spike tensor to tiles
+  // std::vector<BatchedSparseSpikes> fwdOutSpikes_tileReplicated;
+  // std::vector<poplar::Tensor> spike_grads_tileReplicated;
   size_t num_layers = fwdState.size();
-  for (unsigned ilay=0; ilay<num_layers; ++ilay){
-    auto tileMapping = graph.getTileMapping(dLdState[ilay][0], true);
-    poplar::Tensor fwdOut_ids_replicated = replicate_and_alloc_tensor(graph, fwdOutSpikes[ilay].spike_ids, tileMapping, prog, {dnai, "create_fwdOut_ids_replicated"});
-    poplar::Tensor fwdOut_nums_replicated = replicate_and_alloc_tensor(graph, fwdOutSpikes[ilay].num_spikes.slice(1, 2, 1), tileMapping, prog, {dnai, "create_fwdOut_nums_replicated"});
-    poplar::Tensor spike_grads_repl = replicate_and_alloc_tensor(graph, dLdoutSpikes[ilay], tileMapping, prog, {dnai, "create_spike_grads_replicated"});
-    BatchedSparseSpikes fwdOuts_replicated = {fwdOut_ids_replicated, fwdOut_nums_replicated};
-    fwdOutSpikes_tileReplicated.push_back(fwdOuts_replicated);
-    spike_grads_tileReplicated.push_back(spike_grads_repl);
-  }
+  // for (unsigned ilay=0; ilay<num_layers; ++ilay){
+  //   auto tileMapping = graph.getTileMapping(dLdState[ilay][0], true);
+  //   poplar::Tensor fwdOut_ids_replicated = replicate_and_alloc_tensor(graph, fwdOutSpikes[ilay].spike_ids, tileMapping, prog, {dnai, "create_fwdOut_ids_replicated"});
+  //   poplar::Tensor fwdOut_nums_replicated = replicate_and_alloc_tensor(graph, fwdOutSpikes[ilay].num_spikes.slice(1, 2, 1), tileMapping, prog, {dnai, "create_fwdOut_nums_replicated"});
+  //   poplar::Tensor spike_grads_repl = replicate_and_alloc_tensor(graph, dLdoutSpikes[ilay], tileMapping, prog, {dnai, "create_spike_grads_replicated"});
+  //   BatchedSparseSpikes fwdOuts_replicated = {fwdOut_ids_replicated, fwdOut_nums_replicated};
+  //   fwdOutSpikes_tileReplicated.push_back(fwdOuts_replicated);
+  //   spike_grads_tileReplicated.push_back(spike_grads_repl);
+  // }
 
   auto cs = graph.addComputeSet({dnai, "calcLIFStateGrad_stateWise"});
 
   for (unsigned ilay=0; ilay<num_layers; ++ilay){
     auto dtype = fwdState[ilay].elementType();
     size_t batchsize = fwdState[ilay].dim(0);
+
+    popops::mulInPlace(graph, dLdState[ilay], decay_constants[ilay].expand({0}).upsample(batchsize, 0, poplar::UpsampleMethod::REPEAT), prog, dnai);
 
     auto neuronTileMapping = graph.getTileMapping(fwdState[ilay][0], true);
     const auto numTiles = graph.getTarget().getNumTiles();
@@ -1381,8 +1383,8 @@ void calcLIFStateGrad_stateWise(poplar::Graph &graph, const std::vector<poplar::
       std::cout << "fwdState[ilay]: " << fwdState[ilay].shapeToString() << std::endl;
       std::cout << "dLdState[ilay]: " << dLdState[ilay].shapeToString() << std::endl;
       std::cout << "thresholds[ilay]: " << thresholds[ilay].shapeToString() << std::endl;
-      std::cout << "fwdOutSpikes_tileReplicated[ilay].spike_ids: " << fwdOutSpikes_tileReplicated[ilay].spike_ids.shapeToString() << std::endl;
-      std::cout << "fwdOutSpikes_tileReplicated[ilay].num_spikes: " << fwdOutSpikes_tileReplicated[ilay].num_spikes.shapeToString() << std::endl;
+      // std::cout << "fwdOutSpikes_tileReplicated[ilay].spike_ids: " << fwdOutSpikes_tileReplicated[ilay].spike_ids.shapeToString() << std::endl;
+      // std::cout << "fwdOutSpikes_tileReplicated[ilay].num_spikes: " << fwdOutSpikes_tileReplicated[ilay].num_spikes.shapeToString() << std::endl;
 
       for (const auto &neuronRange: neuronTileMapping[tile]) {
         std::cout << "neuron_start_id: " << neuronRange.lower()  << std::endl;
@@ -1396,12 +1398,15 @@ void calcLIFStateGrad_stateWise(poplar::Graph &graph, const std::vector<poplar::
           auto v = graph.addVertex(cs, poputil::templateVertex("calcLIFStateGrad_stateWise", dtype),
                                     // {{"weights", weights[ilay][neuronId]},
                                     {{"fwdState", neuronStates[ibatch]},
-                                    {"fwd_spikes_ids", fwdOutSpikes_tileReplicated[ilay].spike_ids[num_occupied_tiles][ibatch]},
-                                    {"fwd_num_spikes", fwdOutSpikes_tileReplicated[ilay].num_spikes[num_occupied_tiles][ibatch][0]},
-                                    {"spike_grads", spike_grads_tileReplicated[ilay][num_occupied_tiles][ibatch]},
+                                    // {"fwd_spikes_ids", fwdOutSpikes_tileReplicated[ilay].spike_ids[num_occupied_tiles][ibatch]},
+                                    // {"fwd_num_spikes", fwdOutSpikes_tileReplicated[ilay].num_spikes[num_occupied_tiles][ibatch][0]},
+                                    // {"spike_grads", spike_grads_tileReplicated[ilay][num_occupied_tiles][ibatch]},
+                                    {"fwd_spikes_ids", fwdOutSpikes[ilay].spike_ids[ibatch]},
+                                    {"fwd_num_spikes", fwdOutSpikes[ilay].num_spikes[ibatch][1]},
+                                    {"spike_grads", dLdoutSpikes[ilay][ibatch]},
                                     {"thresholds", neuronThresholds},
                                     {"neuron_start_id", neuronRange.lower()},
-                                    // {"neuron_end_id", neuronRange.upper()},
+                                    {"neuron_end_id", neuronRange.upper()},
                                     {"num_neurons", neuronRange.size()},
                                     {"dLdState", neurondLdStates[ibatch]}});
           graph.setTileMapping(v, tile);
@@ -1922,7 +1927,7 @@ void performLIFStepBackwardPass(poplar::Graph &graph, const std::vector<poplar::
     std::cout << "thresholds[ilay]: " << thresholds[ilay].shapeToString() << std::endl;
   }
   // calcLIFStateGrad(graph, weights, fwdState, decay_constants, thresholds, fwdOutSpikes, dLdState, allDLdOutSpikes, prog, dnai);
-  calcLIFStateGrad_stateWise(graph, fwdState, thresholds, fwdOutSpikes, dLdState, allDLdOutSpikes, prog, dnai);
+  calcLIFStateGrad_stateWise(graph, fwdState, decay_constants, thresholds, fwdOutSpikes, dLdState, allDLdOutSpikes, prog, dnai);
 
   const std::vector<poplar::Tensor> intermediate_dLdState = performSharedUpdate(graph, oneMinus_decay_constants, dLdState, prog, {dnai, "performSharedUpdate"});
 
