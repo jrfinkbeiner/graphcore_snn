@@ -306,17 +306,23 @@ def create_shd_dataset(root, sparse, seq_len=1000, sparse_size=None, dataset='tr
 
 
 
-def create_dense_batch(ids, dataset, batch_size):
+def create_dense_batch(ids, dataset, batch_size, pool=None):
     batched_data = []
-    batched_labels = np.empty(batch_size, dtype=np.int32)
-    for i,idx in enumerate(ids):
-        data, label = dataset[idx]
-        data_flat = data.reshape(data.shape[0], -1).astype(np.float32)
-        # data_flat = data
-        # label = 0
-        # data_flat = np.empty((seq_len, np.prod(dataset.sensor_size))) #*data["x"][0]
-        batched_data.append(data_flat)
-        batched_labels[i] = label
+    if pool is None:
+        batched_labels = np.empty(batch_size, dtype=np.int32)
+        for i,idx in enumerate(ids):
+            data, label = dataset[idx]
+            data_flat = data.reshape(data.shape[0], -1).astype(np.float32)
+            batched_data.append(data_flat)
+            batched_labels[i] = label
+    else:
+        data = pool.map(get_dataset_item, ids)
+        batched_labels = []
+        for datai,label in data:
+            data_flat = datai.reshape(datai.shape[0], -1).astype(np.float32)
+            batched_data.append(data_flat)
+            batched_labels.append(label)
+        batched_labels = np.asarray(batched_labels, dtype=np.int32)
     batched_data = np.stack(batched_data)
     return {"inp_spikes": batched_data, "targets": batched_labels}        
 
@@ -413,6 +419,15 @@ def create_gener(dataset_name, root, sparse, num_epochs=1, seq_len=300, sparse_s
             ret_data = create_dense_batch(inds, dataset, batchsize)
             yield ret_data
 
+    def gen_dense_batched_multiproc():
+        with Pool(min(cpu_count(), batchsize), initializer=set_global_dataset, initargs=(dataset,)) as p:
+            for ibatch in range(num_batches):
+                inds = idx_samples[ibatch*batchsize:(ibatch+1)*batchsize]
+                ret_data = create_dense_batch(inds, dataset, batchsize, p)
+                yield ret_data
+
+
+
     def gen_dense():
         for i in idx_samples:
             data, label = dataset[i]
@@ -455,7 +470,7 @@ def create_gener(dataset_name, root, sparse, num_epochs=1, seq_len=300, sparse_s
         if use_multiprocessing:
             # TODO implement multiprocessing !!!
             # gen = gen_sparse_batched_multiproc if sparse else gen_dense_batched_multiproc
-            gen = gen_sparse_batched_multiproc if sparse else gen_dense_batched
+            gen = gen_sparse_batched_multiproc if sparse else gen_dense_batched_multiproc
         else:
             gen = gen_sparse_batched if sparse else gen_dense_batched
 
@@ -645,11 +660,11 @@ def flatten_data_tf(data, dims):
 #     return dataset
 
 
-def load_dataset_to_tensor_dict(root, sparse, seq_len, inp_dim, num_samples=None, iter_batchsize=None, shuffle=True):
+def load_dataset_to_tensor_dict(dataset_name, root, sparse, seq_len, inp_dim, num_samples=None, iter_batchsize=None, shuffle=True):
 
     if iter_batchsize is None:
         iter_batchsize = 1000
-    gen, num_samples = create_nmnist_gener(root, sparse, 1, seq_len=seq_len, sparse_size=inp_dim, num_samples=num_samples, batchsize=iter_batchsize, shuffle=shuffle, use_multiprocessing=True)
+    gen, num_samples = create_gener(dataset_name, root, sparse, 1, seq_len=seq_len, sparse_size=inp_dim, dataset_split="train", num_samples=num_samples, batchsize=iter_batchsize, shuffle=shuffle, use_multiprocessing=True)
 
     assert num_samples % iter_batchsize == 0, "`num_samples` must be divisible by `iter_batchsize`"
 
@@ -707,9 +722,9 @@ if __name__ == "__main__":
             # dataset='train', 
             dataset_split='train', 
             shuffle=False, 
-            batchsize=40, 
-            use_multiprocessing=True,
-            delta_t=500,
+            batchsize=2, 
+            use_multiprocessing=False,
+            delta_t=1000,
         )
         gens[sparse_str] = gen
         data_next = next(gen())

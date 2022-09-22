@@ -136,9 +136,9 @@ def main(args):
     # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
 
     # ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
-    # ROOT_PATH_DATA = "/Data/pgi-15/datasets"
+    ROOT_PATH_DATA = "/Data/pgi-15/datasets"
     # ROOT_PATH_DATA = "/p/scratch/icei-hbp-2022-0011/common/datasets/"
-    ROOT_PATH_DATA = "/localdata/datasets/"
+    # ROOT_PATH_DATA = "/localdata/datasets/"
 
     PROFILE_RUN = bool(args.profile_run)
     USE_IPU = bool(args.use_ipu)
@@ -151,22 +151,34 @@ def main(args):
     LEARNING_RATE = args.lr
     NUM_IPUS = args.num_ipus
     SECOND_THRESHOLD = args.second_thresh
+    DATASET_NAME = "DVSGesture"
 
     if USE_IPU:
         assert IMPL_METHOD is not None, "If `USE_IPU=True` the variable `IMPL_METHOD` must be set."
         assert IMPL_METHOD in ["dense", "sparse_ops", "sparse_layer"], f"`method` must be one of 'dense', 'sparse_ops', 'sparse_layer' or None, got '{IMPL_METHOD}'."
     SPARSE_METHOD = ("sparse" in IMPL_METHOD) and USE_IPU
 
-    NUM_CLASSES = 10
+
+    DATASET_NUM_CLASSES = {
+        "NMNIST": 10,
+        "DVSGesture": 11,
+        "SHD": 20,
+    }
+    NUM_CLASSES = DATASET_NUM_CLASSES[DATASET_NAME]
     if PROFILE_RUN:
         NUM_EPOCHS = 1
         SEQ_LEN = 100
     else:
-        NUM_EPOCHS = 35
-        SEQ_LEN = 100 # 300
+        NUM_EPOCHS = 200
+        SEQ_LEN = 300 # 300 for DVSGesture up to 97.5% acc
 
 
-    IMAGE_DIMS = (34,34,2)
+    DATASET_TO_IMAGE_DIMS = {
+        "NMNIST": (34, 34, 2),
+        "DVSGesture": (64, 64, 2),
+        "SHD": (700, 1, 1),
+    }
+    IMAGE_DIMS = DATASET_TO_IMAGE_DIMS[DATASET_NAME]
 
     # # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 512, 128, NUM_CLASSES]
     # # SPARSE_SIZES = [32, 48, 32, 16, 8]
@@ -226,10 +238,25 @@ def main(args):
     SPARSE_SIZES_BASE = [32, 4, 3, 2, 10]
     SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
 
-    # benchmarking presentation
-    DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, *[1472]*(2*(NUM_IPUS-1)), 1076+384, NUM_CLASSES]
-    SPARSE_SIZES_BASE = [64, 4, *[4]*(2*(NUM_IPUS-1)), 4, 10]
-    SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
+
+    if DATASET_NAME=="NMNIST":
+        # benchmarking presentation
+        DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, *[1472]*(2*(NUM_IPUS-1)), 1076+384, NUM_CLASSES]
+        SPARSE_SIZES_BASE = [64, 4, *[4]*(2*(NUM_IPUS-1)), 4, 10]
+        SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
+    elif DATASET_NAME=="DVSGesture":
+        # benchmarking presentation
+        DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, *[1472]*(2*(NUM_IPUS-1)), 1076, 384, NUM_CLASSES]
+        # DENSE_SIZES = [np.prod(IMAGE_DIMS), 980, 980, *[1472]*(3*(NUM_IPUS-1)), 980, NUM_CLASSES]
+        SPARSE_SIZES_BASE = [96, 4, *[4]*(2*(NUM_IPUS-1)), 4, 4, 10]
+        SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
+    elif DATASET_NAME=="SHD":
+        # benchmarking presentation
+        DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, *[1472]*(2*(NUM_IPUS-1)), 1076+384, NUM_CLASSES]
+        SPARSE_SIZES_BASE = [96, 4, *[4]*(2*(NUM_IPUS-1)), 4, 10]
+        SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
+    else:
+        raise ValueError(f"Unknown dataset name, got '{DATASET_NAME}'")
 
     # # benchmarking presentation
     # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, 1470, 1468, 1076+384, NUM_CLASSES]
@@ -249,12 +276,31 @@ def main(args):
 
     # BATCHSIZE = 48
     if PROFILE_RUN:
+        NUM_SAMPLES_TRAIN_DATASET = {
+            "NMNIST": BATCHSIZE*16,
+            "DVSGesture": BATCHSIZE*16,
+            "SHD": BATCHSIZE*16,
+        }
         # NUM_SAMPLES_TRAIN = BATCHSIZE*4
-        NUM_SAMPLES_TRAIN = BATCHSIZE*16
+        NUM_SAMPLES_TRAIN = NUM_SAMPLES_TRAIN_DATASET[DATASET_NAME]
     else:
-        # NUM_SAMPLES_TRAIN = BATCHSIZE*26*2 #54210
-        NUM_SAMPLES_TRAIN = 9984 #54210 # TODO change back !
-    assert NUM_SAMPLES_TRAIN <= 60000
+        NUM_SAMPLES_TRAIN_DATASET = {
+            "NMNIST": BATCHSIZE*26*2,
+            # "NMNIST": 9984,
+            "DVSGesture": 1077,
+            "SHD": 8156,
+        }
+        NUM_SAMPLES_TRAIN = NUM_SAMPLES_TRAIN_DATASET[DATASET_NAME]
+
+    MAX_SAMPLES = {
+        "NMNIST": 60000,
+        "DVSGesture": 1077,
+        "SHD": 8156,
+    }
+    assert NUM_SAMPLES_TRAIN <= MAX_SAMPLES[DATASET_NAME]
+
+
+
 
     print("#################################################################################################")
     print("SPARSE_MULTIPLIER: ", SPARSE_MULTIPLIER)
@@ -289,10 +335,13 @@ def main(args):
 
     DECAY_CONSTANT = 0.95
     # SECOND_THRESHOLD = 0.9
-    # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
-    THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-1)]]
+
+    THRESHOLD = 1.0 
     # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
     # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[-100]*(len(SPARSE_SIZES)-2), -100]]
+    # THRESHOLD_FISRT_AND_SECOND = [THRESHOLD, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-1)]]
+    # THRESHOLD_FISRT_AND_SECOND = [THRESHOLD, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
+    THRESHOLD_FISRT_AND_SECOND = [THRESHOLD, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
 
     # LOG_FILE = f"nmnist_convergence_analysis/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
     LOG_FILE = f"nmnist_multi_ipu/nmnist_{IMPL_METHOD}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
@@ -310,7 +359,13 @@ def main(args):
 
     # dataloader_train = get_nmnist_keras_dataset(rng, ROOT_PATH_DATA, SPARSE_METHOD, BATCHSIZE, seq_len=SEQ_LEN, sparse_size=SPARSE_SIZES[0])
 
-    data = load_dataset_to_tensor_dict(ROOT_PATH_DATA, SPARSE_METHOD, SEQ_LEN, INP_DIM, num_samples=NUM_SAMPLES_TRAIN, iter_batchsize=min(10000, NUM_SAMPLES_TRAIN))
+    ITER_BATCHISIZE_MULTI_PROC = {
+        "NMNIST": 10000,
+        "DVSGesture": 10000,
+        "SHD": 10000,
+    }
+
+    data = load_dataset_to_tensor_dict(DATASET_NAME, ROOT_PATH_DATA, SPARSE_METHOD, SEQ_LEN, INP_DIM, num_samples=NUM_SAMPLES_TRAIN, iter_batchsize=min(ITER_BATCHISIZE_MULTI_PROC[DATASET_NAME], NUM_SAMPLES_TRAIN))
     if SPARSE_METHOD:
         if USE_MULTI_IPU:
             dataloader_train = create_dataset_sparse_multi_ipu(data["inp_spike_ids"], data["num_inp_spikes"], data["targets"], BATCHSIZE, shuffle=True)   
@@ -382,7 +437,7 @@ def main(args):
                 DENSE_SIZES, 
                 SPARSE_SIZES, 
                 DECAY_CONSTANT, 
-                THRESHOLD,
+                THRESHOLD_FISRT_AND_SECOND,
                 sum_and_sparse_categorical_crossentropy,
                 steps_per_epoch=STEPS_PER_EPOCH,
                 return_all=False,
@@ -403,7 +458,7 @@ def main(args):
                 DENSE_SIZES, 
                 SPARSE_SIZES, 
                 DECAY_CONSTANT, 
-                THRESHOLD,
+                THRESHOLD_FISRT_AND_SECOND,
                 loss_fn,
                 metrics=metrics,
                 steps_per_epoch=STEPS_PER_EPOCH,
