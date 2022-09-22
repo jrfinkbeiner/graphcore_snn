@@ -5,8 +5,8 @@ import numpy as np
 
 from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense
 
-from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
-from multi_ipu import train_mutli_ipu_benchmarking, create_dataset_sparse_multi_ipu
+# from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
+# from multi_ipu import train_mutli_ipu_benchmarking, create_dataset_sparse_multi_ipu
 
 # from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense
 # from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, create_dataset_sparse, sparse2dense_ipu
@@ -142,7 +142,7 @@ def main(args):
     USE_IPU = bool(args.use_ipu)
     IMPL_METHOD = args.impl_method
     SPARSE_MULTIPLIER = args.sparse_multiplier
-    CALC_ACTIVITY = False
+    CALC_ACTIVITY = True
     MULTIPROCESSING = True
     TRANSPOSE_WEIGHTS = bool(args.transpose_weights)
     BATCHSIZE = args.batchsize
@@ -160,7 +160,7 @@ def main(args):
         NUM_EPOCHS = 1
         SEQ_LEN = 100
     else:
-        NUM_EPOCHS = 25
+        NUM_EPOCHS = 35
         SEQ_LEN = 100 # 300
 
 
@@ -239,7 +239,7 @@ def main(args):
         # NUM_SAMPLES_TRAIN = BATCHSIZE*4
         NUM_SAMPLES_TRAIN = BATCHSIZE*16
     else:
-        # NUM_SAMPLES_TRAIN = BATCHSIZE*26 #54210
+        # NUM_SAMPLES_TRAIN = BATCHSIZE*26*2 #54210
         NUM_SAMPLES_TRAIN = 9984 #54210 # TODO change back !
     assert NUM_SAMPLES_TRAIN <= 60000
 
@@ -267,13 +267,18 @@ def main(args):
     # STEPS_PER_EPOCH = int(9984/48/4) # TOODO change back !
     TRAIN_STEPS_PER_EXECUTION = STEPS_PER_EPOCH
 
+    print(STEPS_PER_EPOCH)
+    # sys.exit()
+
     DECAY_CONSTANT = 0.95
     # SECOND_THRESHOLD = 0.9
-    THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
+    THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[SECOND_THRESHOLD]*(len(DENSE_SIZES)-2), -100]]
+    THRESHOLD_FISRT_AND_SECOND = [1.0, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
     # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
     # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[-100]*(len(SPARSE_SIZES)-2), -100]]
 
-    LOG_FILE = f"nmnist_multiThresh_sweep_performance_3layers/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
+    # LOG_FILE = None # f"nmnist_multiThresh_sweep_performance_3layers/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
+    LOG_FILE = f"nmnist_convergence_analysis_ns{NUM_SAMPLES_TRAIN}_weightMul1.5/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
 
     # if SPARSE_METHOD:
     #     sys.exit()
@@ -298,6 +303,9 @@ def main(args):
             tf.convert_to_tensor(data["targets"], dtype=data["targets"].dtype), 
             BATCHSIZE, 
             shuffle=True) 
+
+    sys.exit()
+
 
     NUM_LAYERS = len(DENSE_SIZES)-1
 
@@ -387,7 +395,8 @@ def main(args):
             DENSE_SIZES, 
             SPARSE_SIZES, 
             DECAY_CONSTANT, 
-            THRESHOLD,
+            # THRESHOLD,
+            THRESHOLD_FISRT_AND_SECOND,
             sum_and_sparse_categorical_crossentropy,
             steps_per_epoch=STEPS_PER_EPOCH,
             return_all=False,
@@ -425,7 +434,8 @@ def main(args):
             SEQ_LEN, 
             DENSE_SIZES, 
             DECAY_CONSTANT, 
-            THRESHOLD,
+            # THRESHOLD,
+            THRESHOLD_FISRT_AND_SECOND,
             loss_fn,
             metrics=metrics, #calc_accuracy,
             steps_per_epoch=STEPS_PER_EPOCH,

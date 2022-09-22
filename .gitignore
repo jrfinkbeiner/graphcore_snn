@@ -22,6 +22,7 @@ benchmarking/convergence_sparsity_sweep_512/
 benchmarking/reports_*/
 build*/
 *.bc
+*.csv
 
 # Graphcore/Poplar extensions
 *.gp
