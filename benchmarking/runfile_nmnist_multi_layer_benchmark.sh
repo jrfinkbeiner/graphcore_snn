@@ -8,7 +8,7 @@ do
     do
         for MAX_ACTIVITY in 0.01 0.05 0.1
         do
-            for SECOND_THRESH in 0.9 0.95 0.98
+            for SECOND_THRESH in 0.9 0.95 # 0.98
             do
                 for NUM_HIDDEN_LAYERS in 2 3 4 5
                 do
