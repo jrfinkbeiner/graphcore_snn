@@ -33,9 +33,26 @@ def events_to_sparse_tensors(events,
                      order = ("x", "y", "p"),
                      deltat=1000,
                      seq_len=500,
-                     ds_w=1,
-                     ds_h=1,
-                     sparse_size=128):
+                     sparse_size=128,
+                     reduce_to_unique_spikes=False,
+                     dims=None):
+
+    if reduce_to_unique_spikes is not None:
+        assert dims is not None
+        dims_larger_one = []
+        dims_larger_one_ids = []
+        for i,dim in enumerate(dims):
+            if dim > 1:
+                dims_larger_one.append(dim)
+                dims_larger_one_ids.append(i)
+        ds = np.array([1] + [np.prod(dims[:i]) for i in range(1,len(dims_larger_one))], dtype=np.int16)
+        def flatten_spike_ids(spike_ids):
+            '''
+            Flattens N-dimensional data to a 1 dimensional integer, where N = len(dims).
+            dims: tuple whose elements specify the size of each dimension
+            '''
+            spike_ids_flat = np.sum([spike_ids[...,i]*d for i,d in zip(dims_larger_one_ids, ds)],axis=0)
+            return spike_ids_flat
 
     times = events["t"]
     # print("\nevents_to_sparse_tensors")
@@ -59,7 +76,14 @@ def events_to_sparse_tensors(events,
     for i, t in enumerate(ts):
         idx_end += find_first(times[idx_end:], t)
         if idx_end > idx_start:
-            ee = addrs[idx_start:idx_end]
+            if reduce_to_unique_spikes:
+                ee = addrs[idx_start:idx_end]
+                flat = flatten_spike_ids(ee)
+                uniques, inds = np.unique(flat, return_index=True, axis=-1)
+                ee = ee[inds]
+            else:
+                ee = addrs[idx_start:idx_end]
+
             #pol, x, y = ee[:, 0], (ee[:, 1] // ds_w).astype('int16'), (ee[:, 2] // ds_h).astype('int16')
 
             l = len(ee)
@@ -192,26 +216,34 @@ def create_dvsgesture_dataset(root, sparse, seq_len=300, sparse_size=None, datas
     if dataset == 'val':
         raise NotImplementedError()
     
-    sensor_size = tonic.datasets.DVSGesture.sensor_size
+    spatial_fac = 0.5
+    scale_fac = np.array([spatial_fac, spatial_fac, 1])
+    sensor_size = tuple((np.asarray(tonic.datasets.DVSGesture.sensor_size) * scale_fac).astype(np.int16).tolist())
 
+    transforms_list = [
+        transforms.Denoise(filter_time=10000),
+        transforms.Downsample(time_factor=1.0, spatial_factor=spatial_fac),
+    ]
     if sparse:
-        transforms_list = [
-            transforms.Denoise(filter_time=10000),
+        transforms_list.extend([
             ft.partial(events_to_sparse_tensors, deltat=delta_t,
                             seq_len=seq_len,
-                            sparse_size=sparse_size),
-        ]
+                            sparse_size=sparse_size,
+                            dims = sensor_size,
+                            reduce_to_unique_spikes = True),
+        ])
         if apply_flatten:
             def flatten_fn(dims, data):
                 return flatten_spike_ids(dims, data[0]), data[1]
             transforms_list.append(ft.partial(flatten_fn, sensor_size))
 
-        transform_train = transforms.Compose(transforms_list)
     else:
-        transform_train = transforms.Compose([
+        transforms_list.extend([
             transforms.Denoise(filter_time=10000),
+            transforms.Downsample(time_factor=1.0, spatial_factor=spatial_fac),
             transforms.ToFrame(sensor_size, time_window=delta_t),
             TimeSlice(seq_len),
+            lambda x: np.clip(x, 0, 1)
             # transforms.ToFrame(sensor_size, n_time_bins=seq_len),
         ])
         # transform_test = transforms.Compose([
@@ -219,6 +251,7 @@ def create_dvsgesture_dataset(root, sparse, seq_len=300, sparse_size=None, datas
         #     # transforms.ToFrame(sensor_size, time_window=1000.0),
         #     transforms.ToFrame(sensor_size, n_time_bins=seq_len),
         # ])
+    transform_train = transforms.Compose(transforms_list)
 
 
     dataset = tonic.datasets.DVSGesture(save_to=root,
@@ -668,30 +701,37 @@ if __name__ == "__main__":
             root="/localdata/datasets/", 
             sparse=use_sparse, 
             num_epochs=1, 
-            seq_len=1000, 
+            seq_len=3000, 
             sparse_size=128*4, 
             num_samples=None, 
             # dataset='train', 
             dataset_split='train', 
             shuffle=False, 
-            batchsize=1000, 
-            use_multiprocessing=False,
-            delta_t=10000,
+            batchsize=40, 
+            use_multiprocessing=True,
+            delta_t=500,
         )
         gens[sparse_str] = gen
         data_next = next(gen())
         data[sparse_str] = data_next
+
         print()
-        print(data["sparse"]["num_inp_spikes"].shape)
-        print(data["sparse"]["num_inp_spikes"])
-        print(data["sparse"]["num_inp_spikes"].mean(), data["sparse"]["num_inp_spikes"].std(), data["sparse"]["num_inp_spikes"].min(), data["sparse"]["num_inp_spikes"].max())
+        if use_sparse:
+            num_inp_spikes = data["sparse"]["num_inp_spikes"]
+        else:
+            print(data["dense"]["inp_spikes"].min(), data["dense"]["inp_spikes"].max())
+            data["dense"]["inp_spikes"] = np.clip(data["dense"]["inp_spikes"], 0, 1)
+            print(data["dense"]["inp_spikes"].min(), data["dense"]["inp_spikes"].max())
+            num_inp_spikes = data["dense"]["inp_spikes"].sum(axis=2).astype(np.int32)
+       
+        print(num_inp_spikes.shape)
+        print(num_inp_spikes)
+        print(num_inp_spikes.mean(), num_inp_spikes.std(), num_inp_spikes.min(), num_inp_spikes.max())
+        # sys.exit()
         import matplotlib.pyplot as plt
-        plt.hist(data["sparse"]["num_inp_spikes"].flatten(), bins=100)
+        plt.hist(num_inp_spikes.flatten(), bins=100)
         plt.show()
         sys.exit()
-        # use_multiprocessing = False
-        # dataset = create_nmnist_dataset("/Data/pgi-15/datasets", use_sparse, seq_len=100, sparse_size=128, dataset="train", apply_flatten=True if use_multiprocessing else False)
-        # data[sparse_str] = dataset[0]
 
     print()
     print(data["dense"]["inp_spikes"].shape)
@@ -709,51 +749,14 @@ if __name__ == "__main__":
     inp_spikes_ids_dense = np.argwhere(data["dense"]["inp_spikes"][0] > 0)
     inp_spikes_ids_sparse = data["sparse"]["inp_spike_ids"][0]
 
-
-    # sensor_size = tonic.datasets.NMNIST.sensor_size
-    sensor_size = tonic.datasets.DVSGesture.sensor_size
-    def flatten_fn_general(dims, data):
-        return flatten_spike_ids(dims, data[0]), data[1]
-    flatten_fn = ft.partial(flatten_fn_general, sensor_size)
-    print(sensor_size)
-
-
-    # import sys
-    # sys.exit()
-    # for i in range(len(num_inp_spikes_sparse)-1):
-    #     print(num_inp_spikes_dense[i], num_inp_spikes_sparse[i+1])
-    
-    def flatten_spike_id(sensor_dims, id_):
-        # return id_[0]*sensor_dims[0]*sensor_dims[1] + id_[1]*sensor_dims[0] + id_[2]
-        return  id_[1] + sensor_dims[1] * (id_[2] + id_[0] * sensor_dims[0])
-        # return id_[0] +  id_[2] * sensor_dims[2] + sensor_dims[1]*sensor_dims[2] * id_[1]
-
-    # def flatten_spike_ids_vec(sensor_dims, ids):
-    #     return  ids[...,1] + sensor_dims[1] * (ids[...,2] + ids[...,0] * sensor_dims[0])
-
-    def flatten_spike_ids_vec(dimx, dimy, dimp, ids):
-        return  ids[...,1] + dimy * (ids[...,2] + dimx * ids[...,0])
-
-
-    arr = np.arange(4*4*2).reshape((4,4,2))
-    print(arr)
-    print()
-    print(arr[:,:,0])    
-    print()
-    print(arr[:,0,0])    
-
-    # import sys
-    # sys.exit()
-
-
     print()
     print(np.all(num_inp_spikes_dense[:-1] == num_inp_spikes_sparse[1:]))
     print()
     print(inp_spikes_ids_dense.shape)
-    print(inp_spikes_ids_dense[:10])
+    print(inp_spikes_ids_dense[:50])
     print()
     print(inp_spikes_ids_sparse.shape)
-    print(inp_spikes_ids_sparse[:8, :3])
+    print(inp_spikes_ids_sparse[:8, :30])
     # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[0, 0]))
     # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[1, 0]))
     # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[2, 0]))
