@@ -133,20 +133,13 @@ def filter_layer_output(func, layer_id):
 
 
 
-def main(args, BENCH_SPECIFIER):
-
-    # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
-
-    # ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
-    # ROOT_PATH_DATA = "/Data/pgi-15/datasets"
-    # ROOT_PATH_DATA = "/p/scratch/icei-hbp-2022-0011/common/datasets/"
-    ROOT_PATH_DATA = "/localdata/datasets/"
+def main(args, ROOT_PATH_DATA):
 
     PROFILE_RUN = bool(args.profile_run)
     USE_IPU = bool(args.use_ipu)
     IMPL_METHOD = args.impl_method
     SPARSE_MULTIPLIER = args.sparse_multiplier
-    CALC_ACTIVITY = True
+    CALC_ACTIVITY = False
     MULTIPROCESSING = True
     TRANSPOSE_WEIGHTS = bool(args.transpose_weights)
     BATCHSIZE = args.batchsize
@@ -155,6 +148,8 @@ def main(args, BENCH_SPECIFIER):
     SECOND_THRESHOLD = args.second_thresh
     WEIGHT_MUL = args.weight_mul
     DATASET_NAME = args.dataset_name
+    BENCH_MODE = args.bench_specifier
+    
 
     if USE_IPU:
         assert IMPL_METHOD is not None, "If `USE_IPU=True` the variable `IMPL_METHOD` must be set."
@@ -175,71 +170,12 @@ def main(args, BENCH_SPECIFIER):
         NUM_EPOCHS = 35
         SEQ_LEN = 100 # 300 for DVSGesture up to 97.5% acc
 
-
     DATASET_TO_IMAGE_DIMS = {
         "NMNIST": (34, 34, 2),
         "DVSGesture": (64, 64, 2),
         "SHD": (700, 1, 1),
     }
     IMAGE_DIMS = DATASET_TO_IMAGE_DIMS[DATASET_NAME]
-
-    # # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 512, 128, NUM_CLASSES]
-    # # SPARSE_SIZES = [32, 48, 32, 16, 8]
-    # # # SPARSE_SIZES = [32*2, 48*2, 32*2, 16*2, 8]
-    # # # SPARSE_SIZES = [32*2, 64*4, 32*4, 16*4, 8]
-
-    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 1024, 1024, 1024, 512, 128, NUM_CLASSES]
-    # # DENSE_SIZES = [np.prod(IMAGE_DIMS), 128, NUM_CLASSES]
-    # # SPARSE_SIZES_BASE = [32, 64, 64, 64, 64, 32, 16, 8]
-
-
-    # # SPARSE_SIZES_BASE = [32, 4, 4, 4, 4, 2, 1, 1]
-    # # SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:-1], DENSE_SIZES[1:-1])]
-    # # SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
-    # SPARSE_SIZES_BASE = [2, 4, 4, 4, 4, 2, 1, 1]
-    # # SPARSE_SIZES_BASE = [2, 1, 1]
-    # SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[:-1], DENSE_SIZES[:-1])]
-    # SPARSE_SIZES = SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
-
-    # benchmarking presentation
-    DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 1024, 512, 512, 128, NUM_CLASSES]
-    SPARSE_SIZES_BASE = [32, 64, 4, 2, 2, 1, 1]
-    SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[:-1], DENSE_SIZES[:-1])]
-    SPARSE_SIZES = SPARSE_SIZES + [min(int(SPARSE_SIZES_BASE[-1]*SPARSE_MULTIPLIER), 8)]
-
-    # # benchmarking presentation
-    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 512, 128, NUM_CLASSES]
-    # SPARSE_SIZES_BASE = [16, 4, 2, 1]
-    # SPARSE_SIZES = [min(DENSE_SIZES[0], max(128, int(SPARSE_SIZES_BASE[0]*SPARSE_MULTIPLIER)))] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
-    # SPARSE_SIZES = [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE, DENSE_SIZES)]
-
-    # benchmarking presentation
-    DENSE_SIZES = [np.prod(IMAGE_DIMS), 1472, 1076, 384, NUM_CLASSES]
-    SPARSE_SIZES_BASE = [32, 4, 3, 2, 10]
-    SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
-
-    # # benchmarking presentation
-    # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1472, 1076+384, NUM_CLASSES]
-    # SPARSE_SIZES_BASE = [32, 4, 4, 10]
-    # SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
-    
-    # benchmarking presentation
-    DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, *[1472]*(2*(NUM_IPUS-1)), 1076+384, NUM_CLASSES]
-    SPARSE_SIZES_BASE = [32, 4, *[4]*(2*(NUM_IPUS-1)), 4, 10]
-    SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
-
-
-    # sys.exit()
-
-    # benchmarking presentation
-    DENSE_SIZES = [np.prod(IMAGE_DIMS), 2036, 640, 256, NUM_CLASSES]
-    SPARSE_SIZES_BASE = [32, 4, 2, 1, 10]
-    SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
-
-    # benchmarking presentation
-    DENSE_SIZES = [np.prod(IMAGE_DIMS), 1472, 1076, 384, NUM_CLASSES]
-    SPARSE_SIZES_BASE = [32, 4, 3, 2, 10]
-    SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
 
 
     if DATASET_NAME=="NMNIST":
@@ -318,7 +254,7 @@ def main(args, BENCH_SPECIFIER):
     print("NUM_IPUS: ", NUM_IPUS)
     print("SECOND_THRESHOLD: ", SECOND_THRESHOLD) 
     print("WEIGHT_MUL: ", WEIGHT_MUL) 
-    print("BENCH_SPECIFIER: ", BENCH_SPECIFIER) 
+    print("BENCH_MODE: ", BENCH_MODE) 
     
     # sys.exit()
 
@@ -329,45 +265,23 @@ def main(args, BENCH_SPECIFIER):
     rng = np.random.default_rng(42)
 
     BATCHSIZE_PER_STEP = BATCHSIZE
-    STEPS_PER_EPOCH = int(NUM_SAMPLES_TRAIN/BATCHSIZE/4)
-    # STEPS_PER_EPOCH = int(9984/48/4) # TOODO change back !
+    STEPS_PER_EPOCH = int(NUM_SAMPLES_TRAIN/BATCHSIZE/4) # TODO change back !
     TRAIN_STEPS_PER_EXECUTION = STEPS_PER_EPOCH
 
     print(STEPS_PER_EPOCH)
-    # sys.exit()
 
     DECAY_CONSTANT = 0.95
-    # SECOND_THRESHOLD = 0.9
-
     THRESHOLD = 1.0 
-    # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
-    # THRESHOLD = 1.0 if IMPL_METHOD!="sparse_layer" else [1.0, [*[-100]*(len(SPARSE_SIZES)-2), -100]]
     # THRESHOLD_FISRT_AND_SECOND = [THRESHOLD, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-1)]]
-    # THRESHOLD_FISRT_AND_SECOND = [THRESHOLD, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
     THRESHOLD_FISRT_AND_SECOND = [THRESHOLD, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
-
-    # LOG_FILE = f"nmnist_convergence_analysis/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
-    # LOG_FILE = f"nmnist_multi_ipu/nmnist_{IMPL_METHOD}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
     
-    BASE_FOLDER = f"final_bench_results/{DATASET_NAME}_{BENCH_SPECIFIER}/"
-    REL_FOLER_NAME = f"{DATASET_NAME}_{BENCH_SPECIFIER}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}/"
-    SPECIFIC_NAME = f"{DATASET_NAME}_{BENCH_SPECIFIER}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}"
+    BASE_FOLDER = f"final_bench_results/{DATASET_NAME}_{BENCH_MODE}/"
+    REL_FOLER_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}/"
+    SPECIFIC_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}"
     LOG_FILE = BASE_FOLDER + REL_FOLER_NAME + "log_" + SPECIFIC_NAME + ".csv"
-    TIMING_FILE = BASE_FOLDER + "timing_"
-
-    # if SPARSE_METHOD:
-    #     sys.exit()
-    #     dataloader_train = get_nmnist_dataset(sparse_sizes[0], int(steps_per_epoch*batchsize), batchsize_per_step, image_dims, seq_len, sparse=True)
-    # else:
+    TIMING_FILE = BASE_FOLDER + REL_FOLER_NAME + "timing_" + SPECIFIC_NAME
 
     INP_DIM = SPARSE_SIZES[0] if SPARSE_METHOD else DENSE_SIZES[0]
-    # dataloader_train = get_nmnist_dataset(ROOT_PATH_DATA, SPARSE_METHOD, NUM_EPOCHS, SEQ_LEN, INP_DIM, BATCHSIZE, dims=IMAGE_DIMS, multiprocessing=MULTIPROCESSING)
-    
-    # dataloader_train, _ = create_nmnist_gener(ROOT_PATH_DATA, SPARSE_METHOD, seq_len=SEQ_LEN, sparse_size=INP_DIM, num_samples=NUM_SAMPLES_TRAIN, batchsize=BATCHSIZE)
-    # dataloader_train = dataloader_train()
-
-    # dataloader_train = get_nmnist_keras_dataset(rng, ROOT_PATH_DATA, SPARSE_METHOD, BATCHSIZE, seq_len=SEQ_LEN, sparse_size=SPARSE_SIZES[0])
-
     ITER_BATCHISIZE_MULTI_PROC = {
         "NMNIST": 10000,
         "DVSGesture": 10000,
@@ -387,9 +301,6 @@ def main(args, BENCH_SPECIFIER):
             tf.convert_to_tensor(data["targets"], dtype=data["targets"].dtype), 
             BATCHSIZE, 
             shuffle=True) 
-
-    NUM_LAYERS = len(DENSE_SIZES)-1
-
 
     callbacks = [TimingCallback(TIMING_FILE)]
     if LOG_FILE is not None:
@@ -414,6 +325,7 @@ def main(args, BENCH_SPECIFIER):
         "sparse_layer": ft.partial(get_sparse_func, calc_activity, transpose=True),
     }
 
+    NUM_LAYERS = len(DENSE_SIZES)-1
     loss_fn = method_to_loss_fn[IMPL_METHOD] if not CALC_ACTIVITY else filter_layer_output(method_to_loss_fn[IMPL_METHOD], NUM_LAYERS-1)
 
     if CALC_ACTIVITY:
@@ -428,55 +340,52 @@ def main(args, BENCH_SPECIFIER):
 
     if USE_IPU:
 
-        if USE_MULTI_IPU:
-            method_to_loss_fn = {
-                "dense": sum_and_sparse_categorical_crossentropy,
-                "sparse_ops": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=False),
-                "sparse_layer": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=True),
-            }
-            print("\nMULTI IPU")
-            train_mutli_ipu_benchmarking(
-                IMPL_METHOD,
-                NUM_EPOCHS, 
-                TRAIN_STEPS_PER_EXECUTION, 
-                BATCHSIZE_PER_STEP,
-                dataloader_train.repeat(),
-                SEQ_LEN, 
-                DENSE_SIZES, 
-                SPARSE_SIZES, 
-                DECAY_CONSTANT, 
-                THRESHOLD_FISRT_AND_SECOND,
-                sum_and_sparse_categorical_crossentropy,
-                steps_per_epoch=STEPS_PER_EPOCH,
-                return_all=False,
-                transpose_weights=TRANSPOSE_WEIGHTS,
-                learning_rate=LEARNING_RATE,
-                num_ipus=NUM_IPUS,
-                weight_mul=WEIGHT_MUL,
-            )
-            sys.exit()
-        else:
-            print("\nSINGLE IPU")
-            train_ipu(
-                IMPL_METHOD,
-                NUM_EPOCHS, 
-                TRAIN_STEPS_PER_EXECUTION, 
-                BATCHSIZE_PER_STEP,
-                dataloader_train.repeat(),
-                SEQ_LEN, 
-                DENSE_SIZES, 
-                SPARSE_SIZES, 
-                DECAY_CONSTANT, 
-                THRESHOLD_FISRT_AND_SECOND,
-                loss_fn,
-                metrics=metrics,
-                steps_per_epoch=STEPS_PER_EPOCH,
-                callbacks=callbacks,
-                return_all=True if CALC_ACTIVITY else False,
-                transpose_weights=TRANSPOSE_WEIGHTS,
-                learning_rate=LEARNING_RATE,
-                weight_mul=WEIGHT_MUL,
-            )
+        # if USE_MULTI_IPU:
+        method_to_loss_fn = {
+            "dense": sum_and_sparse_categorical_crossentropy,
+            "sparse_ops": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=False),
+            "sparse_layer": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=True),
+        }
+        train_mutli_ipu_benchmarking(
+            IMPL_METHOD,
+            NUM_EPOCHS, 
+            TRAIN_STEPS_PER_EXECUTION, 
+            BATCHSIZE_PER_STEP,
+            dataloader_train.repeat(),
+            SEQ_LEN, 
+            DENSE_SIZES, 
+            SPARSE_SIZES, 
+            DECAY_CONSTANT, 
+            THRESHOLD_FISRT_AND_SECOND,
+            sum_and_sparse_categorical_crossentropy,
+            steps_per_epoch=STEPS_PER_EPOCH,
+            return_all=False,
+            transpose_weights=TRANSPOSE_WEIGHTS,
+            learning_rate=LEARNING_RATE,
+            num_ipus=NUM_IPUS,
+            weight_mul=WEIGHT_MUL,
+        )
+        # else:
+        #     train_ipu(
+        #         IMPL_METHOD,
+        #         NUM_EPOCHS, 
+        #         TRAIN_STEPS_PER_EXECUTION, 
+        #         BATCHSIZE_PER_STEP,
+        #         dataloader_train.repeat(),
+        #         SEQ_LEN, 
+        #         DENSE_SIZES, 
+        #         SPARSE_SIZES, 
+        #         DECAY_CONSTANT, 
+        #         THRESHOLD_FISRT_AND_SECOND,
+        #         loss_fn,
+        #         metrics=metrics,
+        #         steps_per_epoch=STEPS_PER_EPOCH,
+        #         callbacks=callbacks,
+        #         return_all=True if CALC_ACTIVITY else False,
+        #         transpose_weights=TRANSPOSE_WEIGHTS,
+        #         learning_rate=LEARNING_RATE,
+        #         weight_mul=WEIGHT_MUL,
+        #     )
     else:
         train_gpu(
             NUM_EPOCHS,
@@ -531,7 +440,16 @@ if __name__ == "__main__":
     parser.add_argument('--second_thresh', type=float, default=0.9, help="Second threshold, default `0.9`.")
     parser.add_argument('--num_ipus', type=int, default=1, help="Number of IPUs to use, default `1`.")
     parser.add_argument('--weight_mul', type=float, default=1.0, help="Weight multiplier in weight init, default `1`.")
-    parser.add_argument('--dataset_name', type=str, default="NMNIST", help="dataset name, in ['NMNIST', 'DVSGesture', 'SHD'].")
+    parser.add_argument('--dataset_name', type=str, default="NMNIST", help="dataset name, in ['NMNIST' (default), 'DVSGesture', 'SHD'].")
+    parser.add_argument('--bench_mode', type=str, default="base", help="Benchmarking mode, in ['base' (default), 'multi_layer', 'multi_ipu', 'multi_neuron'].")
 
     args = parser.parse_args()
-    main(args)
+
+    # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
+
+    # ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
+    # ROOT_PATH_DATA = "/Data/pgi-15/datasets"
+    # ROOT_PATH_DATA = "/p/scratch/icei-hbp-2022-0011/common/datasets/"
+    ROOT_PATH_DATA = "/localdata/datasets/"
+
+    main(args, ROOT_PATH_DATA)
