@@ -5,8 +5,8 @@ import numpy as np
 
 from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense, TimingCallback
 
-from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
-from multi_ipu import train_mutli_ipu_benchmarking, create_dataset_sparse_multi_ipu
+# from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
+# from multi_ipu import train_mutli_ipu_benchmarking, create_dataset_sparse_multi_ipu
 
 # from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense
 # from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, create_dataset_sparse, sparse2dense_ipu
@@ -148,7 +148,10 @@ def main(args, ROOT_PATH_DATA):
     SECOND_THRESHOLD = args.second_thresh
     WEIGHT_MUL = args.weight_mul
     DATASET_NAME = args.dataset_name
-    BENCH_MODE = args.bench_specifier
+    BENCH_MODE = args.bench_mode
+    MAX_ACTIVITY = args.max_activity
+    NUM_HIDDEN_LAYERS = args.num_hidden_layers
+    SPARSE_SIZE_INP = args.sparse_size_inp
     
 
     if USE_IPU:
@@ -167,8 +170,14 @@ def main(args, ROOT_PATH_DATA):
         NUM_EPOCHS = 1
         SEQ_LEN = 100
     else:
-        NUM_EPOCHS = 35
-        SEQ_LEN = 100 # 300 for DVSGesture up to 97.5% acc
+        NUM_EPOCHS = 100
+
+        SEQ_LEN_DATASET = {
+            "NMNIST": 100,
+            "DVSGesture": 50,
+            "SHD": 100,
+        }
+        SEQ_LEN = SEQ_LEN_DATASET[DATASET_NAME] # 300 for DVSGesture up to 97.5% acc
 
     DATASET_TO_IMAGE_DIMS = {
         "NMNIST": (34, 34, 2),
@@ -178,24 +187,50 @@ def main(args, ROOT_PATH_DATA):
     IMAGE_DIMS = DATASET_TO_IMAGE_DIMS[DATASET_NAME]
 
 
-    if DATASET_NAME=="NMNIST":
-        # benchmarking presentation
-        DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, *[1472]*(2*(NUM_IPUS-1)), 1076+384, NUM_CLASSES]
+    NEURON_TO_SPLIT = 1471*2 - NUM_CLASSES
+    HIDDEN_LAYER_DENSE_SIZES = [int(2*(NEURON_TO_SPLIT / NUM_HIDDEN_LAYERS // 2 + (((NEURON_TO_SPLIT % int(NUM_HIDDEN_LAYERS*2))) > 2*ilay))) for ilay in range(NUM_HIDDEN_LAYERS)]
+    HIDDEN_LAYER_SPARSE_SIZES = [int((MAX_ACTIVITY*hid_dense_size//2)*2) for hid_dense_size in HIDDEN_LAYER_DENSE_SIZES]
+
+    NEURON_TO_SPLIT = 1471*2 - NUM_CLASSES
+    HIDDEN_LAYER_DENSE_SIZES_LAST = [int(2*(NEURON_TO_SPLIT / NUM_HIDDEN_LAYERS // 2 + (((NEURON_TO_SPLIT % int(NUM_HIDDEN_LAYERS*2))) > 2*ilay))) for ilay in range(NUM_HIDDEN_LAYERS)]
+    HIDDEN_LAYER_SPARSE_SIZES_LAST = [int((MAX_ACTIVITY*hid_dense_size//2)*2) for hid_dense_size in HIDDEN_LAYER_DENSE_SIZES]
+
+
+    # # benchmarking presentation
+    # DENSE_SIZES = [np.prod(IMAGE_DIMS), *HIDDEN_LAYER_DENSE_SIZES, NUM_CLASSES]
+    # SPARSE_SIZES = [32, *HIDDEN_LAYER_SPARSE_SIZES, int(max((MAX_ACTIVITY*NUM_CLASSES//2)*2, 2))]
+
+
+    DENSE_SIZES = [np.prod(IMAGE_DIMS), *HIDDEN_LAYER_DENSE_SIZES*(NUM_IPUS-1), *HIDDEN_LAYER_DENSE_SIZES_LAST, NUM_CLASSES]
+    if BENCH_MODE == "multi_neuron":
+        SPARSE_SIZES = [SPARSE_SIZE_INP, *HIDDEN_LAYER_SPARSE_SIZES*(NUM_IPUS-1), *HIDDEN_LAYER_SPARSE_SIZES_LAST, int(max((MAX_ACTIVITY*NUM_CLASSES//2)*2, 2))]
+    else:
         SPARSE_SIZES_BASE = [64, 4, *[4]*(2*(NUM_IPUS-1)), 4, 10]
         SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
-    elif DATASET_NAME=="DVSGesture":
-        # benchmarking presentation
-        DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, *[1472]*(2*(NUM_IPUS-1)), 1076, 384, NUM_CLASSES]
-        # DENSE_SIZES = [np.prod(IMAGE_DIMS), 980, 980, *[1472]*(3*(NUM_IPUS-1)), 980, NUM_CLASSES]
-        SPARSE_SIZES_BASE = [96, 4, *[4]*(2*(NUM_IPUS-1)), 4, 4, 10]
-        SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
-    elif DATASET_NAME=="SHD":
-        # benchmarking presentation
-        DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, *[1472]*(2*(NUM_IPUS-1)), 1076+384, NUM_CLASSES]
-        SPARSE_SIZES_BASE = [96, 4, *[4]*(2*(NUM_IPUS-1)), 4, 10]
-        SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
-    else:
-        raise ValueError(f"Unknown dataset name, got '{DATASET_NAME}'")
+
+    # if DATASET_NAME=="NMNIST":
+    #     # benchmarking presentation
+    #     # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, *[1472]*(2*(NUM_IPUS-1)), 1076+384, NUM_CLASSES]
+    #     # SPARSE_SIZES_BASE = [64, 4, *[4]*(2*(NUM_IPUS-1)), 4, 10]
+
+    #     DENSE_SIZES = [np.prod(IMAGE_DIMS), *HIDDEN_LAYER_DENSE_SIZES*(NUM_IPUS-1), *HIDDEN_LAYER_DENSE_SIZES_LAST, NUM_CLASSES]
+    #     if BENCH_MODE == "multi_neuron":
+    #         SPARSE_SIZES = [SPARSE_SIZE_INP, *HIDDEN_LAYER_SPARSE_SIZES*(NUM_IPUS-1), *HIDDEN_LAYER_SPARSE_SIZES_LAST, int(max((MAX_ACTIVITY*NUM_CLASSES//2)*2, 2))]
+    #     else:
+    #         SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
+    # elif DATASET_NAME=="DVSGesture":
+    #     # benchmarking presentation
+    #     DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, *[1472]*(2*(NUM_IPUS-1)), 1076, 384, NUM_CLASSES]
+    #     # DENSE_SIZES = [np.prod(IMAGE_DIMS), 980, 980, *[1472]*(3*(NUM_IPUS-1)), 980, NUM_CLASSES]
+    #     SPARSE_SIZES_BASE = [SPARSE_SIZE_INP, 4, *[4]*(2*(NUM_IPUS-1)), 4, 4, 10]
+    #     SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
+    # elif DATASET_NAME=="SHD":
+    #     # benchmarking presentation
+    #     DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, *[1472]*(2*(NUM_IPUS-1)), 1076+384, NUM_CLASSES]
+    #     SPARSE_SIZES_BASE = [SPARSE_SIZE_INP, 4, *[4]*(2*(NUM_IPUS-1)), 4, 10]
+    #     SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
+    # else:
+    #     raise ValueError(f"Unknown dataset name, got '{DATASET_NAME}'")
 
     # # benchmarking presentation
     # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, 1470, 1468, 1076+384, NUM_CLASSES]
@@ -277,7 +312,7 @@ def main(args, ROOT_PATH_DATA):
     
     BASE_FOLDER = f"final_bench_results/{DATASET_NAME}_{BENCH_MODE}/"
     REL_FOLER_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}/"
-    SPECIFIC_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}"
+    SPECIFIC_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_maxAct{MAX_ACTIVITY}_sparseSizeInp{SPARSE_SIZE_INP}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}"
     LOG_FILE = BASE_FOLDER + REL_FOLER_NAME + "log_" + SPECIFIC_NAME + ".csv"
     TIMING_FILE = BASE_FOLDER + REL_FOLER_NAME + "timing_" + SPECIFIC_NAME
 
@@ -442,14 +477,18 @@ if __name__ == "__main__":
     parser.add_argument('--weight_mul', type=float, default=1.0, help="Weight multiplier in weight init, default `1`.")
     parser.add_argument('--dataset_name', type=str, default="NMNIST", help="dataset name, in ['NMNIST' (default), 'DVSGesture', 'SHD'].")
     parser.add_argument('--bench_mode', type=str, default="base", help="Benchmarking mode, in ['base' (default), 'multi_layer', 'multi_ipu', 'multi_neuron'].")
+    parser.add_argument('--max_activity', type=float, default=0.05, help="Max activity in case of 'multi_layer'-mode.")
+    parser.add_argument('--num_hidden_layers', type=int, default=2, help="Number of IPUs to use, default `1`.")
+    parser.add_argument('--sparse_size_inp', type=int, default=64, help="sparse size for input.")
+
 
     args = parser.parse_args()
 
     # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
 
     # ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
-    # ROOT_PATH_DATA = "/Data/pgi-15/datasets"
+    ROOT_PATH_DATA = "/Data/pgi-15/datasets"
     # ROOT_PATH_DATA = "/p/scratch/icei-hbp-2022-0011/common/datasets/"
-    ROOT_PATH_DATA = "/localdata/datasets/"
+    # ROOT_PATH_DATA = "/localdata/datasets/"
 
     main(args, ROOT_PATH_DATA)
