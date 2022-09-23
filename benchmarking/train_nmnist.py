@@ -3,7 +3,7 @@ import sys
 import functools as ft
 import numpy as np
 
-from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense
+from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense, TimingCallback
 
 # from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
 # from multi_ipu import train_mutli_ipu_benchmarking, create_dataset_sparse_multi_ipu
@@ -131,6 +131,8 @@ def filter_layer_output(func, layer_id):
 #     return dataset
 
 
+
+
 def main(args):
 
     # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
@@ -151,7 +153,7 @@ def main(args):
     LEARNING_RATE = args.lr
     NUM_IPUS = args.num_ipus
     SECOND_THRESHOLD = args.second_thresh
-    DATASET_NAME = "DVSGesture"
+    DATASET_NAME = "NMNIST"
 
     if USE_IPU:
         assert IMPL_METHOD is not None, "If `USE_IPU=True` the variable `IMPL_METHOD` must be set."
@@ -169,8 +171,8 @@ def main(args):
         NUM_EPOCHS = 1
         SEQ_LEN = 100
     else:
-        NUM_EPOCHS = 200
-        SEQ_LEN = 300 # 300 for DVSGesture up to 97.5% acc
+        NUM_EPOCHS = 10
+        SEQ_LEN = 10 # 300 for DVSGesture up to 97.5% acc
 
 
     DATASET_TO_IMAGE_DIMS = {
@@ -299,9 +301,6 @@ def main(args):
     }
     assert NUM_SAMPLES_TRAIN <= MAX_SAMPLES[DATASET_NAME]
 
-
-
-
     print("#################################################################################################")
     print("SPARSE_MULTIPLIER: ", SPARSE_MULTIPLIER)
     print("DENSE_SIZES: ", DENSE_SIZES)
@@ -344,7 +343,8 @@ def main(args):
     THRESHOLD_FISRT_AND_SECOND = [THRESHOLD, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
 
     # LOG_FILE = f"nmnist_convergence_analysis/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
-    LOG_FILE = f"nmnist_multi_ipu/nmnist_{IMPL_METHOD}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
+    LOG_FILE = None # f"nmnist_multi_ipu/nmnist_{IMPL_METHOD}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
+    TIMING_FILE = "timing/timing_file"
 
     # if SPARSE_METHOD:
     #     sys.exit()
@@ -382,12 +382,11 @@ def main(args):
     NUM_LAYERS = len(DENSE_SIZES)-1
 
 
+    callbacks = [TimingCallback(TIMING_FILE)]
     if LOG_FILE is not None:
-        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+        os.makedirs(os.path.dirname(os.path.abspath(LOG_FILE)), exist_ok=True)
         csv_logger = keras.callbacks.CSVLogger(LOG_FILE, append=True, separator=';')
-        callbacks = [csv_logger]
-    else:
-        callbacks = None
+        callbacks.append(csv_logger)
 
     method_to_loss_fn = {
         "dense": sum_and_sparse_categorical_crossentropy,
