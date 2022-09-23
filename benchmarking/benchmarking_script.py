@@ -5,8 +5,8 @@ import numpy as np
 
 from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense, TimingCallback
 
-# from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
-# from multi_ipu import train_mutli_ipu_benchmarking, create_dataset_sparse_multi_ipu
+from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
+from multi_ipu import train_mutli_ipu_benchmarking, create_dataset_sparse_multi_ipu
 
 # from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense
 # from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, create_dataset_sparse, sparse2dense_ipu
@@ -313,7 +313,7 @@ def main(args, ROOT_PATH_DATA):
     BASE_FOLDER = f"final_bench_results/{DATASET_NAME}_{BENCH_MODE}/"
     REL_FOLER_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}/"
     SPECIFIC_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_maxAct{MAX_ACTIVITY}_sparseSizeInp{SPARSE_SIZE_INP}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}"
-    LOG_FILE = BASE_FOLDER + REL_FOLER_NAME + "log_" + SPECIFIC_NAME + ".csv"
+    LOG_FILE = None # BASE_FOLDER + REL_FOLER_NAME + "log_" + SPECIFIC_NAME + ".csv"
     TIMING_FILE = BASE_FOLDER + REL_FOLER_NAME + "timing_" + SPECIFIC_NAME
 
     INP_DIM = SPARSE_SIZES[0] if SPARSE_METHOD else DENSE_SIZES[0]
@@ -487,8 +487,8 @@ if __name__ == "__main__":
     # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
 
     # ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
-    ROOT_PATH_DATA = "/Data/pgi-15/datasets"
+    # ROOT_PATH_DATA = "/Data/pgi-15/datasets"
     # ROOT_PATH_DATA = "/p/scratch/icei-hbp-2022-0011/common/datasets/"
-    # ROOT_PATH_DATA = "/localdata/datasets/"
+    ROOT_PATH_DATA = "/localdata/datasets/"
 
     main(args, ROOT_PATH_DATA)

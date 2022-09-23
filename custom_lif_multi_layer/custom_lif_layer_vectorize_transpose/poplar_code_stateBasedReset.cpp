@@ -168,7 +168,6 @@ void genBatchedLIFOutSpikes2ThreshsMutliWorker(poplar::Graph &graph, std::vector
     const size_t batchsize = state[ilay].dim(0);
 
     const unsigned layer_vertex_start_tile = determine_start_tile_spike_gen(layers_to_ipu_mapping[ilay], layer_ids_per_ipu[ilay], batchsize, num_tiles_per_ipu);
-    std::cout << ilay << ": layer_vertex_start_tile" << layer_vertex_start_tile << std::endl;
     for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
       auto v = graph.addVertex(cs2, "LIFOutSpikesMultiThreshsCombine",
                                 // {{"repeated_out_spikes_ids", repeated_out_spikes_ids[ilay][ibatch]},
@@ -233,12 +232,12 @@ BatchedSparseSpikes gen_sparseBatchSpikes(poplar::Graph &graph, poplar::Tensor &
       graph.setTileMapping(neuronRepeatedBatchSpikeIds, tile);
       graph.setTileMapping(neuronRepeatedBatchSpikeNums, tile);
 
-      std::cout << "\ngen_sparseBatchSpikes, " << "tile: " << tile << std::endl;
-      std::cout << "neuronStates: " << neuronStates.shapeToString() << std::endl;
-      std::cout << "first_thresh: " << neuronThresholds.shapeToString() << std::endl;
-      std::cout << "numStates: " << per_repeat_batchsize << std::endl;
-      std::cout << "repeated_out_spikes_ids: " << neuronRepeatedBatchSpikeIds.shapeToString() << std::endl;
-      std::cout << "repeated_num_out_spikes_first: " << neuronRepeatedBatchSpikeNums.shapeToString() << std::endl;
+      // std::cout << "\ngen_sparseBatchSpikes, " << "tile: " << tile << std::endl;
+      // std::cout << "neuronStates: " << neuronStates.shapeToString() << std::endl;
+      // std::cout << "first_thresh: " << neuronThresholds.shapeToString() << std::endl;
+      // std::cout << "numStates: " << per_repeat_batchsize << std::endl;
+      // std::cout << "repeated_out_spikes_ids: " << neuronRepeatedBatchSpikeIds.shapeToString() << std::endl;
+      // std::cout << "repeated_num_out_spikes_first: " << neuronRepeatedBatchSpikeNums.shapeToString() << std::endl;
 
 
       if ((num_repeats_batch==3) && (numNeuronsThisThile==2)) {
@@ -259,7 +258,7 @@ BatchedSparseSpikes gen_sparseBatchSpikes(poplar::Graph &graph, poplar::Tensor &
           const unsigned worker_start = iwor*per_repeat_batchsize;
           const unsigned worker_end = (iwor+1)*per_repeat_batchsize;
           poplar::Tensor neuronStatesWorker = neuronStates.slice(worker_start, worker_end, 0).dimShuffle({1,0});
-          std::cout << "neuronStatesWorker: " << neuronStatesWorker.shapeToString() << std::endl;
+          // std::cout << "neuronStatesWorker: " << neuronStatesWorker.shapeToString() << std::endl;
           for (unsigned ineuron = 0; ineuron < numNeuronsThisThile; ++ineuron) {
             auto v = graph.addVertex(cs, poputil::templateVertex("SpikesMultiThreshsSplitWorkerBatchSpikes", dtype),
                                         {{"state", neuronStatesWorker[ineuron]},
@@ -307,17 +306,17 @@ BatchedSparseSpikes repeatedBatchSpikeIds_to_repeatedNeuronSpikeIds(poplar::Grap
   auto dtype_nums = repeatedBacthSpikeIdsMultiThresh.num_spikes.elementType();
   // poplar::TargetType target_type = graph.getTarget().getTargetType();
 
-  std::cout << "num_occupied_tiles: " << num_occupied_tiles << std::endl;
-  std::cout << "num_repeats_batch: " << num_repeats_batch << std::endl;
-  std::cout << "batchsize: " << batchsize << std::endl;
-  std::cout << "sparse_size: " << sparse_size << std::endl;
+  // std::cout << "num_occupied_tiles: " << num_occupied_tiles << std::endl;
+  // std::cout << "num_repeats_batch: " << num_repeats_batch << std::endl;
+  // std::cout << "batchsize: " << batchsize << std::endl;
+  // std::cout << "sparse_size: " << sparse_size << std::endl;
 
 
   unsigned num_repeats_neurons = num_neurons / sparse_size + ((num_neurons % sparse_size) > 0);
   unsigned repeat_neuron_size = num_neurons / num_repeats_neurons + ((num_neurons % num_repeats_neurons) > 0);
   
-  std::cout << "num_repeats_neurons: " << num_repeats_neurons << std::endl;
-  std::cout << "repeat_neuron_size: " << repeat_neuron_size << std::endl;
+  // std::cout << "num_repeats_neurons: " << num_repeats_neurons << std::endl;
+  // std::cout << "repeat_neuron_size: " << repeat_neuron_size << std::endl;
 
   printVector(tensor_tile_ids);
 
@@ -345,16 +344,16 @@ BatchedSparseSpikes repeatedBatchSpikeIds_to_repeatedNeuronSpikeIds(poplar::Grap
       graph.setTileMapping(repeatedNeuronSpikeIds[irepneuron][ithr][irepbatch], tile_id);
       graph.setTileMapping(repeatedNeuronSpikeNums[irepneuron][ithr][irepbatch], tile_id);
       
-      std::cout << "\nbatch_spike_ids: " << bacthSpikeIds_neuronRange[irepbatch][ithr].flatten().shapeToString() << std::endl;
-      std::cout << "batch_spike_ids non flat: " << bacthSpikeIds_neuronRange[irepbatch][ithr].shapeToString() << std::endl;
-      std::cout << "batch_num_spikes: " << bacthSpikeNums_neuronRange[irepbatch][ithr].shapeToString() << std::endl;
-      std::cout << "per_repeat_batchsize: " << per_repeat_batchsize << std::endl;
-      std::cout << "num_neurons: " << neuron_end-neuron_start << std::endl;
-      std::cout << "neuron_offset: " << neuron_start << std::endl;
-      std::cout << "sparse_size: " << sparse_size << std::endl;
-      std::cout << "neuron_spike_ids non flat: " << repeatedNeuronSpikeIds[irepneuron][ithr][irepbatch].shapeToString() << std::endl;
-      std::cout << "neuron_spike_ids: " << repeatedNeuronSpikeIds[irepneuron][ithr][irepbatch].flatten().shapeToString() << std::endl;
-      std::cout << "neuron_num_spikes: " << repeatedNeuronSpikeNums[irepneuron][ithr][irepbatch].shapeToString() << std::endl;
+      // std::cout << "\nbatch_spike_ids: " << bacthSpikeIds_neuronRange[irepbatch][ithr].flatten().shapeToString() << std::endl;
+      // std::cout << "batch_spike_ids non flat: " << bacthSpikeIds_neuronRange[irepbatch][ithr].shapeToString() << std::endl;
+      // std::cout << "batch_num_spikes: " << bacthSpikeNums_neuronRange[irepbatch][ithr].shapeToString() << std::endl;
+      // std::cout << "per_repeat_batchsize: " << per_repeat_batchsize << std::endl;
+      // std::cout << "num_neurons: " << neuron_end-neuron_start << std::endl;
+      // std::cout << "neuron_offset: " << neuron_start << std::endl;
+      // std::cout << "sparse_size: " << sparse_size << std::endl;
+      // std::cout << "neuron_spike_ids non flat: " << repeatedNeuronSpikeIds[irepneuron][ithr][irepbatch].shapeToString() << std::endl;
+      // std::cout << "neuron_spike_ids: " << repeatedNeuronSpikeIds[irepneuron][ithr][irepbatch].flatten().shapeToString() << std::endl;
+      // std::cout << "neuron_num_spikes: " << repeatedNeuronSpikeNums[irepneuron][ithr][irepbatch].shapeToString() << std::endl;
 
       auto v = graph.addVertex(cs, "BatchSpikeIds2NeuronSpikeIds",
                                 {{"batch_spike_ids", bacthSpikeIds_neuronRange[irepbatch][ithr].flatten()},
@@ -411,8 +410,8 @@ void combineRepeatedNeuronSpikeIds(poplar::Graph &graph, BatchedSparseSpikes &re
     double vertex_occ_tile_scaling = num_occupied_tiles_layer / batchsize;
     unsigned occ_tile_id = vertex_occ_tile_scaling * ibatch; // TODO improve ?
     unsigned tile_id = state_tile_ids[occ_tile_id];
-    std::cout << "\ncombineRepeatedNeuronSpikeIds" << std::endl;
-    std::cout << "occ_tile_id: " << occ_tile_id << ", tile_id: " << tile_id << std::endl;
+    // std::cout << "\ncombineRepeatedNeuronSpikeIds" << std::endl;
+    // std::cout << "occ_tile_id: " << occ_tile_id << ", tile_id: " << tile_id << std::endl;
 
     auto v = graph.addVertex(cs, "LIFOutSpikesMultiThreshsCombine",
                               {{"repeated_out_spikes_ids", repeatedNeuronSpikeIds[0][inrb][iprb].flatten()},
@@ -598,12 +597,12 @@ BatchedSparseSpikes dense_to_sparse_spikes_multi_tile_spread(poplar::Graph &grap
   const bool sparseSmallerStatesPerWorker = sparse_size < max_num_states_per_worker;
   const unsigned sparse_size_to_use = (sparseSmallerStatesPerWorker) ? sparse_size: max_num_states_per_worker;
 
-  std::cout << "\ndense_to_sparse_spikes_multi_tile_spread" << std::endl;
-  std::cout << "num_tile_spread_fac: " << num_tile_spread_fac << std::endl;
-  std::cout << "num_workers: " << num_workers << std::endl;
-  std::cout << "max_num_states_per_worker: " << max_num_states_per_worker << std::endl;
-  std::cout << "sparse_size_to_use: " << sparse_size_to_use << std::endl;
-  std::cout << "sparseSmallerStatesPerWorker: " << sparseSmallerStatesPerWorker << std::endl;
+  // std::cout << "\ndense_to_sparse_spikes_multi_tile_spread" << std::endl;
+  // std::cout << "num_tile_spread_fac: " << num_tile_spread_fac << std::endl;
+  // std::cout << "num_workers: " << num_workers << std::endl;
+  // std::cout << "max_num_states_per_worker: " << max_num_states_per_worker << std::endl;
+  // std::cout << "sparse_size_to_use: " << sparse_size_to_use << std::endl;
+  // std::cout << "sparseSmallerStatesPerWorker: " << sparseSmallerStatesPerWorker << std::endl;
 
 
 
@@ -629,7 +628,7 @@ BatchedSparseSpikes dense_to_sparse_spikes_multi_tile_spread(poplar::Graph &grap
     worker_end += numStatesThisWorker;
     poplar::Tensor dense_spikes_worker = dense_spikes.slice(worker_start, worker_end, 0).dimShuffle({1,2,0});
 
-    std::cout << "numStatesThisWorker: " << numStatesThisWorker << std::endl;
+    // std::cout << "numStatesThisWorker: " << numStatesThisWorker << std::endl;
 
     unsigned vertex_id{0 + iwor/num_workers_per_tile};
     for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
@@ -680,12 +679,12 @@ BatchedSparseSpikes dense_to_sparse_spikes_multi_tile_spread_with_combine(poplar
   const unsigned sparse_size_to_use = (sparseSmallerStatesPerWorker) ? sparse_size: max_num_states_per_worker;
   const unsigned sparse_size_combined = (sparseSmallerStatesPerTile) ? sparse_size: max_num_states_per_tile;
 
-  std::cout << "\ndense_to_sparse_spikes_multi_tile_spread" << std::endl;
-  std::cout << "num_tile_spread_fac: " << num_tile_spread_fac << std::endl;
-  std::cout << "num_workers: " << num_workers << std::endl;
-  std::cout << "max_num_states_per_worker: " << max_num_states_per_worker << std::endl;
-  std::cout << "sparse_size_to_use: " << sparse_size_to_use << std::endl;
-  std::cout << "sparseSmallerStatesPerWorker: " << sparseSmallerStatesPerWorker << std::endl;
+  // std::cout << "\ndense_to_sparse_spikes_multi_tile_spread" << std::endl;
+  // std::cout << "num_tile_spread_fac: " << num_tile_spread_fac << std::endl;
+  // std::cout << "num_workers: " << num_workers << std::endl;
+  // std::cout << "max_num_states_per_worker: " << max_num_states_per_worker << std::endl;
+  // std::cout << "sparse_size_to_use: " << sparse_size_to_use << std::endl;
+  // std::cout << "sparseSmallerStatesPerWorker: " << sparseSmallerStatesPerWorker << std::endl;
 
   poplar::Tensor repeated_sparse_spike_ids = graph.addVariable(poplar::UNSIGNED_INT, {batchsize, num_thresholds, num_workers, sparse_size_to_use}, {dnai, "repeatedNeuronSpikeIds"});
   poplar::Tensor repeated_sparse_spike_nums = graph.addVariable(poplar::UNSIGNED_INT, {batchsize, num_thresholds, num_workers}, {dnai, "repeatedNeuronSpikeIds"});
@@ -918,12 +917,12 @@ BatchedSparseSpikes sparse_spikes_combine_stage1(poplar::Graph &graph, BatchedSp
   const unsigned sparse_size_to_use = (sparseSmallerStatesPerWorker) ? sparse_size: max_num_states_per_worker;
   const unsigned sparse_size_combined = (sparseSmallerStatesPerTile) ? sparse_size: max_num_states_per_tile;
 
-  std::cout << "\ndense_to_sparse_spikes_multi_tile_spread" << std::endl;
-  std::cout << "num_tile_spread_fac: " << num_tile_spread_fac << std::endl;
-  std::cout << "num_workers: " << num_workers << std::endl;
-  std::cout << "max_num_states_per_worker: " << max_num_states_per_worker << std::endl;
-  std::cout << "sparse_size_to_use: " << sparse_size_to_use << std::endl;
-  std::cout << "sparseSmallerStatesPerWorker: " << sparseSmallerStatesPerWorker << std::endl;
+  // std::cout << "\ndense_to_sparse_spikes_multi_tile_spread" << std::endl;
+  // std::cout << "num_tile_spread_fac: " << num_tile_spread_fac << std::endl;
+  // std::cout << "num_workers: " << num_workers << std::endl;
+  // std::cout << "max_num_states_per_worker: " << max_num_states_per_worker << std::endl;
+  // std::cout << "sparse_size_to_use: " << sparse_size_to_use << std::endl;
+  // std::cout << "sparseSmallerStatesPerWorker: " << sparseSmallerStatesPerWorker << std::endl;
 
   poplar::Tensor repeated_sparse_spike_ids = graph.addVariable(poplar::UNSIGNED_INT, {batchsize, num_thresholds, num_workers, sparse_size_to_use}, {dnai, "repeatedNeuronSpikeIds"});
   poplar::Tensor repeated_sparse_spike_nums = graph.addVariable(poplar::UNSIGNED_INT, {batchsize, num_thresholds, num_workers}, {dnai, "repeatedNeuronSpikeIds"});
@@ -1058,7 +1057,7 @@ void combine_repeated_sparse_spikes_multi_thresh(poplar::Graph &graph, BatchedSp
   const unsigned batchsize = repeated_sparse_spike_nums.dim(0);
   const unsigned num_workers = repeated_sparse_spike_nums.dim(2);
   const unsigned dim_per_worker = repeated_sparse_spike_ids.dim(3);
-  std::cout << " repeated_sparse_spike_ids.shapeToString(): " << repeated_sparse_spike_ids.shapeToString() << std::endl;
+  // std::cout << " repeated_sparse_spike_ids.shapeToString(): " << repeated_sparse_spike_ids.shapeToString() << std::endl;
 
 
   for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
