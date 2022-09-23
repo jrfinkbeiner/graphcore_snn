@@ -12,7 +12,7 @@ do
             do
                 for NUM_HIDDEN_LAYERS in 2 3 4 5
                 do
-                    python3 benchmarking_script.py --use_ipu=1 --impl_method=sparse_layer --profile_run=0 --max_activity=$MAX_ACTIVITY --batchsize=$BATCHSIZE --lr=$LEARNING_RATE --transpose_weights=1 --second_thresh=$SECOND_THRESH --num_hidden_layers=$NUM_HIDDEN_LAYERS --bench_mode=multi_layer --weight_mul=2.0 --sparse_size_inp=64 --dataset_name=SHD
+                    python3 benchmarking_script.py --use_ipu=1 --impl_method=sparse_layer --profile_run=0 --max_activity=$MAX_ACTIVITY --batchsize=$BATCHSIZE --lr=$LEARNING_RATE --transpose_weights=1 --second_thresh=$SECOND_THRESH --num_hidden_layers=$NUM_HIDDEN_LAYERS --bench_mode=multi_layer --weight_mul=2.0 --sparse_size_inp=96 --dataset_name=SHD
                 done 
             done
         done

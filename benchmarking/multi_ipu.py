@@ -369,7 +369,7 @@ def model_fn_sparse_ops(sparse_shapes, seq_len, dense_shapes, decay_constant, th
 
     return (inp_spike_ids, num_inp_spikes), output
 
-def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None, num_ipus=1):
+def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None, num_ipus=1, weight_mul=1.0):
     if return_all:
         warnings.warn("All layers outputs will be returned. But note that only gradient propagation through the last layers outputs is implemented."
                     " Adding loss terms to other layers outputs will be ignored and will result in a wrong gradient.", UserWarning)
@@ -385,7 +385,7 @@ def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, 
 
     init_states = [tf.zeros((batchsize_per_step, dense_shapes[i+1]), dtype=tf.float32, name=f"init_state_{i}") for i in range(num_layers)]
     out = KerasMultiLIFLayerSparse(
-            dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed, num_ipus
+            dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed, num_ipus, weight_mul
         )(inp_spikes, init_states)
     out_spike_ids, num_out_spikes, states = out[:num_layers], out[num_layers:2*num_layers], out[2*num_layers:]
 
@@ -427,7 +427,7 @@ class KerasSparseIdentity(keras.layers.Layer):
         return type(x)(x.ids @ self.eye, x.num_nzelements)
 
 
-def model_fn_sparse_layer_multi_ipu(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None, num_ipus=1):
+def model_fn_sparse_layer_multi_ipu(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None, num_ipus=1, weight_mul=1.0):
     if return_all:
         warnings.warn("All layers outputs will be returned. But note that only gradient propagation through the last layers outputs is implemented."
                     " Adding loss terms to other layers outputs will be ignored and will result in a wrong gradient.", UserWarning)
@@ -450,7 +450,7 @@ def model_fn_sparse_layer_multi_ipu(sparse_shapes, seq_len, dense_shapes, decay_
         init_states = [tf.zeros((batchsize_per_step, dense_shapes[i+1]), dtype=tf.float32, name=f"init_state_{i}") for i in range(num_layers)]
     
         out = KerasMultiLIFLayerSparse(
-                dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed, num_ipus
+                dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed, num_ipus, weight_mul
             )(inp_spikes, init_states)
         out_spike_ids, num_out_spikes, states = out[:num_layers], out[num_layers:2*num_layers], out[2*num_layers:]
 
@@ -679,6 +679,7 @@ def train_mutli_ipu_benchmarking(
         learning_rate=1e-2,
         num_ipus=1,
         seed=None,
+        weight_mul=1.0,
         **optim_kwargs
     ):
     # set ipu config and strategy 
@@ -694,13 +695,13 @@ def train_mutli_ipu_benchmarking(
         method_to_model_fn = {
             # "dense": model_fn_dense, 
             "sparse_ops": ft.partial(model_fn_sparse_ops, sparse_sizes, transpose_weights=False),
-            "sparse_layer": ft.partial(model_fn_sparse_layer_multi_ipu, sparse_sizes, transpose_weights=True, num_ipus=num_ipus),
+            "sparse_layer": ft.partial(model_fn_sparse_layer_multi_ipu, sparse_sizes, transpose_weights=True, num_ipus=num_ipus, weight_mul=weight_mul),
         }
     else:
         method_to_model_fn = {
             # "dense": model_fn_dense, 
             "sparse_ops": ft.partial(model_fn_sparse_ops, sparse_sizes, transpose_weights=False),
-            "sparse_layer": ft.partial(model_fn_sparse_layer, sparse_sizes, transpose_weights=True),
+            "sparse_layer": ft.partial(model_fn_sparse_layer, sparse_sizes, transpose_weights=True, weight_mul=weight_mul),
         }
 
     with strategy.scope():

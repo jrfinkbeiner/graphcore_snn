@@ -37,7 +37,7 @@ def events_to_sparse_tensors(events,
                      reduce_to_unique_spikes=False,
                      dims=None):
 
-    if reduce_to_unique_spikes is not None:
+    if reduce_to_unique_spikes:
         assert dims is not None
         dims_larger_one = []
         dims_larger_one_ids = []
@@ -171,7 +171,9 @@ def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='
             transforms.Denoise(filter_time=10000),
             ft.partial(events_to_sparse_tensors, deltat=delta_t,
                             seq_len=seq_len,
-                            sparse_size=sparse_size),
+                            sparse_size=sparse_size,
+                            dims = sensor_size,
+                            reduce_to_unique_spikes = True),
         ]
         if apply_flatten:
             def flatten_fn(dims, data):
@@ -184,6 +186,7 @@ def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='
             transforms.Denoise(filter_time=10000),
             transforms.ToFrame(sensor_size, time_window=delta_t),
             TimeSlice(seq_len),
+            lambda x: np.clip(x, 0, 1)
             # transforms.ToFrame(sensor_size, n_time_bins=seq_len),
         ])
         # transform_test = transforms.Compose([
@@ -243,7 +246,7 @@ def create_dvsgesture_dataset(root, sparse, seq_len=300, sparse_size=None, datas
             transforms.Downsample(time_factor=1.0, spatial_factor=spatial_fac),
             transforms.ToFrame(sensor_size, time_window=delta_t),
             TimeSlice(seq_len),
-            lambda x: np.clip(x, 0, 1)
+            lambda x: np.clip(x, 0, 1),
             # transforms.ToFrame(sensor_size, n_time_bins=seq_len),
         ])
         # transform_test = transforms.Compose([
@@ -283,7 +286,9 @@ def create_shd_dataset(root, sparse, seq_len=1000, sparse_size=None, dataset='tr
             # transforms.Denoise(filter_time=10000),
             ft.partial(events_to_sparse_tensors, deltat=delta_t,
                             seq_len=seq_len,
-                            sparse_size=sparse_size),
+                            sparse_size=sparse_size,
+                            dims = sensor_size,
+                            reduce_to_unique_spikes = True),
         ]
         if apply_flatten:
             def flatten_fn(dims, data):
@@ -296,6 +301,7 @@ def create_shd_dataset(root, sparse, seq_len=1000, sparse_size=None, dataset='tr
             # transforms.Denoise(filter_time=10000),
             transforms.ToFrame(sensor_size, time_window=delta_t),
             TimeSlice(seq_len),
+            lambda x: np.clip(x, 0, 1),
             # transforms.ToFrame(sensor_size, n_time_bins=seq_len),
         ])
 
