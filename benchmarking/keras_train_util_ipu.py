@@ -490,8 +490,8 @@ def custom_multi_lif_layer_sparse(sparse_sizes, transpose_weights, weights, init
     return out
 
 class KerasMultiLIFLayerSparse(KerasMultiLIFLayerBase):
-    def __init__(self, dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights=False, seed=None, num_ipus=1):
-        super().__init__(dense_shapes, decay_constant, threshold, transpose_weights, seed)
+    def __init__(self, dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights=False, seed=None, num_ipus=1, weight_mul=1.0):
+        super().__init__(dense_shapes, decay_constant, threshold, transpose_weights, seed, weight_mul)
         assert len(dense_shapes) == len(sparse_shapes), "`dense_shapes` and `sparse_shapes` must have the same nmber of elements."
         self.sparse_shapes = sparse_shapes
         self.neuron_tileMappings = determine_neuron_tileMappings(dense_shapes, sparse_shapes, num_ipus, min_neurons_per_tile=2 if transpose_weights else 1)
@@ -608,7 +608,7 @@ def KerasMultiLIFLayerSparseOps(dense_shapes, sparse_shapes, decay_constant, thr
     return tf.keras.layers.RNN(KerasMultiLIFLayerSparseCell(dense_shapes, sparse_shapes, decay_constant, threshold, batchsize, seed), **kwargs)
 
 
-def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None, num_ipus=1):
+def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None, num_ipus=1, weight_mul=1.0):
     if return_all:
         warnings.warn("All layers outputs will be returned. But note that only gradient propagation through the last layers outputs is implemented."
                     " Adding loss terms to other layers outputs will be ignored and will result in a wrong gradient.", UserWarning)
@@ -624,7 +624,7 @@ def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, 
 
     init_states = [tf.zeros((batchsize_per_step, dense_shapes[i+1]), dtype=tf.float32) for i in range(num_layers)]
     out = KerasMultiLIFLayerSparse(
-            dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed, num_ipus
+            dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed, num_ipus, weight_mul
         )(inp_spikes, init_states)
     out_spike_ids, num_out_spikes, states = out[:num_layers], out[num_layers:2*num_layers], out[2*num_layers:]
 
@@ -721,6 +721,7 @@ def train_ipu(
         num_ipus=1,
         seed=None,
         grad_scale_facs=None,
+        weight_mul=1.0,
     ):
     # set ipu config and strategy 
     ipu_config = ipu.config.IPUConfig()
@@ -736,7 +737,7 @@ def train_ipu(
     method_to_model_fn = {
         "dense": model_fn_dense, 
         "sparse_ops": ft.partial(model_fn_sparse_ops, sparse_shapes, transpose_weights=transpose_weights), 
-        "sparse_layer": ft.partial(model_fn_sparse_layer, sparse_shapes, transpose_weights=transpose_weights, num_ipus=num_ipus),
+        "sparse_layer": ft.partial(model_fn_sparse_layer, sparse_shapes, transpose_weights=transpose_weights, num_ipus=num_ipus, weight_mul=weight_mul),
     }
 
     with strategy.scope():

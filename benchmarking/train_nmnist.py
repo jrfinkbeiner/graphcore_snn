@@ -5,8 +5,8 @@ import numpy as np
 
 from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense
 
-# from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
-# from multi_ipu import train_mutli_ipu_benchmarking, create_dataset_sparse_multi_ipu
+from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
+from multi_ipu import train_mutli_ipu_benchmarking, create_dataset_sparse_multi_ipu
 
 # from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense
 # from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, create_dataset_sparse, sparse2dense_ipu
@@ -136,9 +136,9 @@ def main(args):
     # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
 
     # ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
-    ROOT_PATH_DATA = "/Data/pgi-15/datasets"
+    # ROOT_PATH_DATA = "/Data/pgi-15/datasets"
     # ROOT_PATH_DATA = "/p/scratch/icei-hbp-2022-0011/common/datasets/"
-    # ROOT_PATH_DATA = "/localdata/datasets/"
+    ROOT_PATH_DATA = "/localdata/datasets/"
 
     PROFILE_RUN = bool(args.profile_run)
     USE_IPU = bool(args.use_ipu)
@@ -151,6 +151,7 @@ def main(args):
     LEARNING_RATE = args.lr
     NUM_IPUS = args.num_ipus
     SECOND_THRESHOLD = args.second_thresh
+    WEIGHT_MUL = args.weight_mul
     DATASET_NAME = "DVSGesture"
 
     if USE_IPU:
@@ -169,8 +170,8 @@ def main(args):
         NUM_EPOCHS = 1
         SEQ_LEN = 100
     else:
-        NUM_EPOCHS = 200
-        SEQ_LEN = 300 # 300 for DVSGesture up to 97.5% acc
+        NUM_EPOCHS = 35
+        SEQ_LEN = 50 # 300 for DVSGesture up to 97.5% acc
 
 
     DATASET_TO_IMAGE_DIMS = {
@@ -344,7 +345,8 @@ def main(args):
     THRESHOLD_FISRT_AND_SECOND = [THRESHOLD, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
 
     # LOG_FILE = f"nmnist_convergence_analysis/nmnist_{IMPL_METHOD}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
-    LOG_FILE = f"nmnist_multi_ipu/nmnist_{IMPL_METHOD}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
+    # LOG_FILE = f"nmnist_multi_ipu/nmnist_{IMPL_METHOD}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
+    LOG_FILE = f"ench_results/{DATASET_NAME}_weightMul{WEIGHT_MUL}/nmnist_{IMPL_METHOD}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}.csv"
 
     # if SPARSE_METHOD:
     #     sys.exit()
@@ -444,6 +446,7 @@ def main(args):
                 transpose_weights=TRANSPOSE_WEIGHTS,
                 learning_rate=LEARNING_RATE,
                 num_ipus=NUM_IPUS,
+                weight_mul=WEIGHT_MUL,
             )
             sys.exit()
         else:
@@ -466,6 +469,7 @@ def main(args):
                 return_all=True if CALC_ACTIVITY else False,
                 transpose_weights=TRANSPOSE_WEIGHTS,
                 learning_rate=LEARNING_RATE,
+                weight_mul=WEIGHT_MUL,
             )
     else:
         train_gpu(
@@ -520,6 +524,7 @@ if __name__ == "__main__":
     parser.add_argument('--lr', type=float, default=1e-2, help="Learning rate for optimizer, default `1e-2`.")
     parser.add_argument('--second_thresh', type=float, default=0.9, help="Second threshold, default `0.9`.")
     parser.add_argument('--num_ipus', type=int, default=1, help="Number of IPUs to use, default `1`.")
+    parser.add_argument('--weight_mul', type=float, default=1.0, help="Weight multiplier in weight init, default `1`.")
 
     args = parser.parse_args()
     main(args)

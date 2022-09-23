@@ -53,7 +53,7 @@ def get_shape(in_features: int, out_features: int, transpose: bool):
 
 
 class KerasMultiLIFLayerBase(keras.layers.Layer):
-    def __init__(self, dense_shapes, decay_constant, threshold, transpose_weights=False, seed=None):
+    def __init__(self, dense_shapes, decay_constant, threshold, transpose_weights=False, seed=None, weight_mul=1.0):
         super().__init__()
         assert len(dense_shapes) > 1, "`dense_shapes` must be of at least length 2, generating a network with no hidden layers."
         self.num_layers = len(dense_shapes)-1
@@ -63,6 +63,7 @@ class KerasMultiLIFLayerBase(keras.layers.Layer):
         self.version_multi_thresh = isinstance(self.threshold_value, (list, tuple)) and (len(self.threshold_value) > 1)
         self.transpose_weights = transpose_weights
         self.seed = seed
+        self.weight_mul = weight_mul
         # self.current_second_threshs = [-100.0 for i in range(self.num_layers)] if self.version_multi_thresh else None
         if self.version_multi_thresh:
             self.current_second_threshs = self.threshold_value[1] if isinstance(self.threshold_value[1], (tuple, list)) \
@@ -74,7 +75,7 @@ class KerasMultiLIFLayerBase(keras.layers.Layer):
         def custom_init(in_feat, out_feat, dtype):
             # limit = (6/(in_feat + out_feat))**0.5
             # limit = (6/(in_feat))**0.5 * 2.0
-            limit = (6/(in_feat))**0.5 * 1.5
+            limit = (6/(in_feat))**0.5 * self.weight_mul
             shape = get_shape(in_feat, out_feat, self.transpose_weights)
             print(f"limit={limit}")
             # return tf.random.uniform(shape, minval=0, maxval=limit, dtype=dtype)
