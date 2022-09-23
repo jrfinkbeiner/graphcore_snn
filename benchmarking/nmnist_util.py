@@ -56,7 +56,7 @@ def events_to_sparse_tensors(events,
 
     times = events["t"]
     # print("\nevents_to_sparse_tensors")
-    print(f"{times.min():5}, {times.max():12}")
+    # print(f"{times.min():5}, {times.max():12}")
     if "y" in events.dtype.names:
         # addrs = np.stack([events[name], events["x"], events["y"] for name in events.dtype.names], axis=1) # TODO which order ?
         addrs = np.stack([events[name] for name in order], axis=1) # TODO which order ?
@@ -682,7 +682,6 @@ def load_dataset_to_tensor_dict(dataset_name, root, sparse, seq_len, inp_dim, nu
         num_inp_spikes = np.empty((num_samples, seq_len, 1), dtype=np.int32)
         labels = np.empty((num_samples,), dtype=np.int32)
         for i,data in enumerate(gen()):
-            print(i)
             inp_spike_ids[i*iter_batchsize:(i+1)*iter_batchsize] = data["inp_spike_ids"]
             num_inp_spikes[i*iter_batchsize:(i+1)*iter_batchsize] = np.expand_dims(data["num_inp_spikes"], axis=-1)
             labels[i*iter_batchsize:(i+1)*iter_batchsize] = data["targets"]
@@ -695,7 +694,6 @@ def load_dataset_to_tensor_dict(dataset_name, root, sparse, seq_len, inp_dim, nu
         inp_spikes = np.empty((num_samples, seq_len, inp_dim), dtype=np.float32)
         labels = np.empty((num_samples,), dtype=np.int32)
         for i,data in enumerate(gen()):
-            print(i)
             inp_spikes[i*iter_batchsize:(i+1)*iter_batchsize] = data["inp_spikes"]
             labels[i*iter_batchsize:(i+1)*iter_batchsize] = data["targets"]
         ret_val = {

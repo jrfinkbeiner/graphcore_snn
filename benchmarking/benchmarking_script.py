@@ -202,7 +202,7 @@ def main(args, ROOT_PATH_DATA):
 
 
     DENSE_SIZES = [np.prod(IMAGE_DIMS), *HIDDEN_LAYER_DENSE_SIZES*(NUM_IPUS-1), *HIDDEN_LAYER_DENSE_SIZES_LAST, NUM_CLASSES]
-    if BENCH_MODE == "multi_neuron":
+    if BENCH_MODE == "multi_layer":
         SPARSE_SIZES = [SPARSE_SIZE_INP, *HIDDEN_LAYER_SPARSE_SIZES*(NUM_IPUS-1), *HIDDEN_LAYER_SPARSE_SIZES_LAST, int(max((MAX_ACTIVITY*NUM_CLASSES//2)*2, 2))]
     else:
         SPARSE_SIZES_BASE = [64, 4, *[4]*(2*(NUM_IPUS-1)), 4, 10]
@@ -293,7 +293,7 @@ def main(args, ROOT_PATH_DATA):
     
     # sys.exit()
 
-    USE_MULTI_IPU = NUM_IPUS > 1 # TODO change back!
+    USE_MULTI_IPU = True # NUM_IPUS > 1 # TODO change back!
     if USE_MULTI_IPU:
         print("WARNING: behaviour might be different than expected due to variable overwrite in multi-ipu version.")
 
@@ -375,52 +375,52 @@ def main(args, ROOT_PATH_DATA):
 
     if USE_IPU:
 
-        # if USE_MULTI_IPU:
-        method_to_loss_fn = {
-            "dense": sum_and_sparse_categorical_crossentropy,
-            "sparse_ops": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=False),
-            "sparse_layer": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=True),
-        }
-        train_mutli_ipu_benchmarking(
-            IMPL_METHOD,
-            NUM_EPOCHS, 
-            TRAIN_STEPS_PER_EXECUTION, 
-            BATCHSIZE_PER_STEP,
-            dataloader_train.repeat(),
-            SEQ_LEN, 
-            DENSE_SIZES, 
-            SPARSE_SIZES, 
-            DECAY_CONSTANT, 
-            THRESHOLD_FISRT_AND_SECOND,
-            sum_and_sparse_categorical_crossentropy,
-            steps_per_epoch=STEPS_PER_EPOCH,
-            return_all=False,
-            transpose_weights=TRANSPOSE_WEIGHTS,
-            learning_rate=LEARNING_RATE,
-            num_ipus=NUM_IPUS,
-            weight_mul=WEIGHT_MUL,
-        )
-        # else:
-        #     train_ipu(
-        #         IMPL_METHOD,
-        #         NUM_EPOCHS, 
-        #         TRAIN_STEPS_PER_EXECUTION, 
-        #         BATCHSIZE_PER_STEP,
-        #         dataloader_train.repeat(),
-        #         SEQ_LEN, 
-        #         DENSE_SIZES, 
-        #         SPARSE_SIZES, 
-        #         DECAY_CONSTANT, 
-        #         THRESHOLD_FISRT_AND_SECOND,
-        #         loss_fn,
-        #         metrics=metrics,
-        #         steps_per_epoch=STEPS_PER_EPOCH,
-        #         callbacks=callbacks,
-        #         return_all=True if CALC_ACTIVITY else False,
-        #         transpose_weights=TRANSPOSE_WEIGHTS,
-        #         learning_rate=LEARNING_RATE,
-        #         weight_mul=WEIGHT_MUL,
-        #     )
+        if USE_MULTI_IPU:
+            method_to_loss_fn = {
+                "dense": sum_and_sparse_categorical_crossentropy,
+                "sparse_ops": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=False),
+                "sparse_layer": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=True),
+            }
+            train_mutli_ipu_benchmarking(
+                IMPL_METHOD,
+                NUM_EPOCHS, 
+                TRAIN_STEPS_PER_EXECUTION, 
+                BATCHSIZE_PER_STEP,
+                dataloader_train.repeat(),
+                SEQ_LEN, 
+                DENSE_SIZES, 
+                SPARSE_SIZES, 
+                DECAY_CONSTANT, 
+                THRESHOLD_FISRT_AND_SECOND,
+                sum_and_sparse_categorical_crossentropy,
+                steps_per_epoch=STEPS_PER_EPOCH,
+                return_all=False,
+                transpose_weights=TRANSPOSE_WEIGHTS,
+                learning_rate=LEARNING_RATE,
+                num_ipus=NUM_IPUS,
+                weight_mul=WEIGHT_MUL,
+            )
+        else:
+            train_ipu(
+                IMPL_METHOD,
+                NUM_EPOCHS, 
+                TRAIN_STEPS_PER_EXECUTION, 
+                BATCHSIZE_PER_STEP,
+                dataloader_train.repeat(),
+                SEQ_LEN, 
+                DENSE_SIZES, 
+                SPARSE_SIZES, 
+                DECAY_CONSTANT, 
+                THRESHOLD_FISRT_AND_SECOND,
+                loss_fn,
+                metrics=metrics,
+                steps_per_epoch=STEPS_PER_EPOCH,
+                callbacks=callbacks,
+                return_all=True if CALC_ACTIVITY else False,
+                transpose_weights=TRANSPOSE_WEIGHTS,
+                learning_rate=LEARNING_RATE,
+                weight_mul=WEIGHT_MUL,
+            )
     else:
         train_gpu(
             NUM_EPOCHS,
