@@ -713,11 +713,11 @@ if __name__ == "__main__":
         sparse_str = "sparse" if use_sparse else "dense"
         # gen, num_samples = create_nmnist_gener(
         gen, num_samples = create_gener(
-            "NMNIST",
+            # "NMNIST",
             # "SHD",
-            # "DVSGesture",
-            root="/Data/pgi-15/datasets", 
-            # root="/localdata/datasets/", 
+            "DVSGesture",
+            # root="/Data/pgi-15/datasets", 
+            root="/localdata/datasets/", 
             sparse=use_sparse, 
             num_epochs=1, 
             seq_len=100, 
@@ -727,7 +727,7 @@ if __name__ == "__main__":
             dataset_split='train', 
             shuffle=False, 
             batchsize=100, 
-            use_multiprocessing=False,
+            use_multiprocessing=True,
             delta_t=1000,
         )
         gens[sparse_str] = gen

@@ -152,6 +152,7 @@ def main(args, ROOT_PATH_DATA):
     MAX_ACTIVITY = args.max_activity
     NUM_HIDDEN_LAYERS = args.num_hidden_layers
     SPARSE_SIZE_INP = args.sparse_size_inp
+    IPU_ID = args.ipu_id if args.ipu_id >= 0 else None 
     NUM_NEURONS_PER_TILE = 2
 
     if USE_IPU:
@@ -259,8 +260,8 @@ def main(args, ROOT_PATH_DATA):
         NUM_SAMPLES_TRAIN = NUM_SAMPLES_TRAIN_DATASET[DATASET_NAME]
     else:
         NUM_SAMPLES_TRAIN_DATASET = {
-            "NMNIST": BATCHSIZE*26*2,
-            # "NMNIST": 9984,
+            # "NMNIST": BATCHSIZE*26*2,
+            "NMNIST": 9984,
             "DVSGesture": 1077,
             "SHD": 8156,
         }
@@ -291,6 +292,7 @@ def main(args, ROOT_PATH_DATA):
     print("WEIGHT_MUL: ", WEIGHT_MUL) 
     print("BENCH_MODE: ", BENCH_MODE) 
     print("NUM_NEURONS_PER_TILE: ", NUM_NEURONS_PER_TILE) 
+    print("MAX_ACTIVITY: ", MAX_ACTIVITY) 
     
     # sys.exit()
 
@@ -301,7 +303,8 @@ def main(args, ROOT_PATH_DATA):
     rng = np.random.default_rng(42)
 
     BATCHSIZE_PER_STEP = BATCHSIZE
-    STEPS_PER_EPOCH = int(NUM_SAMPLES_TRAIN/BATCHSIZE/4) # TODO change back !
+    # STEPS_PER_EPOCH = int(NUM_SAMPLES_TRAIN/BATCHSIZE/4) # TODO change back !
+    STEPS_PER_EPOCH = 200 # TODO change back !
     TRAIN_STEPS_PER_EXECUTION = STEPS_PER_EPOCH
 
     print(STEPS_PER_EPOCH)
@@ -309,11 +312,11 @@ def main(args, ROOT_PATH_DATA):
     DECAY_CONSTANT = 0.95
     THRESHOLD = 1.0 
     THRESHOLD_FISRT_AND_SECOND = [THRESHOLD, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-1)]]
-    # THRESHOLD_FISRT_AND_SECOND = [THRESHOLD, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
+    # THRESHOLD_FISRT_AND_SECOND = [THRMAX_ACTIVITYRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
     
     BASE_FOLDER = f"final_bench_results/{DATASET_NAME}_{BENCH_MODE}/"
     REL_FOLER_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}/"
-    SPECIFIC_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_numHid{NUM_HIDDEN_LAYERS}_maxAct{MAX_ACTIVITY}_sparseSizeInp{SPARSE_SIZE_INP}_numNeuonsPT{NUM_NEURONS_PER_TILE}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}"
+    SPECIFIC_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_numHid{NUM_HIDDEN_LAYERS}_maxAct{MAX_ACTIVITY}_sparseSizeInp{SPARSE_SIZE_INP}_numNeuonsPT{NUM_NEURONS_PER_TILE}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}_stepsPerEpoch{STEPS_PER_EPOCH}"
     LOG_FILE = None # BASE_FOLDER + REL_FOLER_NAME + "log_" + SPECIFIC_NAME + ".csv"
     TIMING_FILE = BASE_FOLDER + REL_FOLER_NAME + "timing_" + SPECIFIC_NAME
 
@@ -401,6 +404,7 @@ def main(args, ROOT_PATH_DATA):
                 learning_rate=LEARNING_RATE,
                 num_ipus=NUM_IPUS,
                 weight_mul=WEIGHT_MUL,
+                ipu_id=IPU_ID,
             )
         else:
             train_ipu(
@@ -482,6 +486,7 @@ if __name__ == "__main__":
     parser.add_argument('--max_activity', type=float, default=0.05, help="Max activity in case of 'multi_layer'-mode.")
     parser.add_argument('--num_hidden_layers', type=int, default=2, help="Number of IPUs to use, default `1`.")
     parser.add_argument('--sparse_size_inp', type=int, default=64, help="sparse size for input.")
+    parser.add_argument('--ipu_id', type=int, default=-1, help="IPU ID to use.")
 
 
     args = parser.parse_args()

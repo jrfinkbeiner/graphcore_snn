@@ -681,11 +681,15 @@ def train_mutli_ipu_benchmarking(
         num_ipus=1,
         seed=None,
         weight_mul=1.0,
+        ipu_id=None,
         **optim_kwargs
     ):
     # set ipu config and strategy 
     ipu_config = ipu.config.IPUConfig()
-    ipu_config.auto_select_ipus = num_ipus
+    if ipu_id is None:
+        ipu_config.auto_select_ipus = num_ipus
+    else:
+        ipu_config.select_ipus = ipu_id
     ipu_config.configure_ipu_system()
     strategy = ipu.ipu_strategy.IPUStrategy()
 
