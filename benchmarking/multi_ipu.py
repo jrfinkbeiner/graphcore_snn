@@ -674,6 +674,7 @@ def train_mutli_ipu_benchmarking(
         threshold,
         loss_fn,
         steps_per_epoch=None,
+        callbacks=None,
         return_all=False,
         transpose_weights=False,
         learning_rate=1e-2,
@@ -734,7 +735,7 @@ def train_mutli_ipu_benchmarking(
         model.summary()
         start_time = time.time()
         print('\nTraining')
-        model.fit(dataset, epochs=num_epochs, steps_per_epoch=steps_per_epoch, workers=batch_size)
+        model.fit(dataset, epochs=num_epochs, steps_per_epoch=steps_per_epoch, workers=batch_size, callbacks=callbacks)
         print("\nFinal time: ", time.time()-start_time)
 
 

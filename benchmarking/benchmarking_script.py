@@ -394,6 +394,7 @@ def main(args, ROOT_PATH_DATA):
                 THRESHOLD_FISRT_AND_SECOND,
                 sum_and_sparse_categorical_crossentropy,
                 steps_per_epoch=STEPS_PER_EPOCH,
+                callbacks=callbacks,
                 return_all=False,
                 transpose_weights=TRANSPOSE_WEIGHTS,
                 learning_rate=LEARNING_RATE,
