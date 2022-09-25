@@ -219,7 +219,8 @@ def create_dvsgesture_dataset(root, sparse, seq_len=300, sparse_size=None, datas
     if dataset == 'val':
         raise NotImplementedError()
     
-    spatial_fac = 0.5
+    # spatial_fac = 0.5
+    spatial_fac = 0.375
     scale_fac = np.array([spatial_fac, spatial_fac, 1])
     sensor_size = tuple((np.asarray(tonic.datasets.DVSGesture.sensor_size) * scale_fac).astype(np.int16).tolist())
 

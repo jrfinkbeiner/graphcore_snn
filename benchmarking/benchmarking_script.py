@@ -182,7 +182,8 @@ def main(args, ROOT_PATH_DATA):
 
     DATASET_TO_IMAGE_DIMS = {
         "NMNIST": (34, 34, 2),
-        "DVSGesture": (64, 64, 2),
+        # "DVSGesture": (64, 64, 2),
+        "DVSGesture": (48, 48, 2),
         "SHD": (700, 1, 1),
     }
     IMAGE_DIMS = DATASET_TO_IMAGE_DIMS[DATASET_NAME]
