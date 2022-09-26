@@ -51,7 +51,7 @@ def tile_mapping_const_number_states_per_tile(num_neurons, neurons_per_tile, TIL
     end_tiles = []
     tileMappings = []
     for ilay,max_tiles_ilay in enumerate(layerwise_max_tiles):
-        print(ilay, max_tiles_ilay)
+        # print(ilay, max_tiles_ilay)
         if max_tiles_ilay > USABLE_TILES_PER_IPU[ipu_id]:
             tile_mapping_possible = False
             break
@@ -103,7 +103,6 @@ def determine_neuron_tileMappings_multiIPU(dense_sizes, sparse_sizes, num_ipus, 
         if tile_mapping is not None:
             tile_mapping_found = True
         print(f"tile_mapping_found={tile_mapping_found}")
-
     return tile_mapping
     
     # layerwise_max_tiles = np.ceil(num_neurons / min_neurons_per_tile)

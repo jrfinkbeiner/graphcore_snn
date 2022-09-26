@@ -153,7 +153,7 @@ def main(args, ROOT_PATH_DATA):
     NUM_HIDDEN_LAYERS = args.num_hidden_layers
     SPARSE_SIZE_INP = args.sparse_size_inp
     IPU_ID = args.ipu_id if args.ipu_id >= 0 else None 
-    NUM_NEURONS_PER_TILE = 2
+    NUM_NEURONS_PER_TILE = args.num_neurons_per_tile
 
     if USE_IPU:
         assert IMPL_METHOD is not None, "If `USE_IPU=True` the variable `IMPL_METHOD` must be set."
@@ -172,16 +172,20 @@ def main(args, ROOT_PATH_DATA):
         SEQ_LEN = 100
     else:
         NUM_EPOCHS = 100
+        if BENCH_MODE != "multi_neuron":
+            SEQ_LEN_DATASET = {
+                "NMNIST": 100,
+                "DVSGesture": 50,
+                "SHD": 100,
+            }
+            SEQ_LEN = SEQ_LEN_DATASET[DATASET_NAME] # 300 for DVSGesture up to 97.5% acc
+        else:
+            SEQ_LEN = 10
 
-        SEQ_LEN_DATASET = {
-            "NMNIST": 100,
-            "DVSGesture": 50,
-            "SHD": 100,
-        }
-        SEQ_LEN = SEQ_LEN_DATASET[DATASET_NAME] # 300 for DVSGesture up to 97.5% acc
 
     DATASET_TO_IMAGE_DIMS = {
-        "NMNIST": (34, 34, 2),
+        # "NMNIST": (34, 34, 2),
+        "NMNIST": (24, 24, 2),
         # "DVSGesture": (64, 64, 2),
         "DVSGesture": (48, 48, 2),
         "SHD": (700, 1, 1),
@@ -189,12 +193,12 @@ def main(args, ROOT_PATH_DATA):
     IMAGE_DIMS = DATASET_TO_IMAGE_DIMS[DATASET_NAME]
 
 
-    NEURON_TO_SPLIT = 1471*2 - NUM_CLASSES
-    HIDDEN_LAYER_DENSE_SIZES = [int(2*(NEURON_TO_SPLIT / NUM_HIDDEN_LAYERS // 2 + (((NEURON_TO_SPLIT % int(NUM_HIDDEN_LAYERS*2))) > 2*ilay))) for ilay in range(NUM_HIDDEN_LAYERS)]
+    NEURON_TO_SPLIT = 1471*NUM_NEURONS_PER_TILE
+    HIDDEN_LAYER_DENSE_SIZES = [int(NUM_NEURONS_PER_TILE*(NEURON_TO_SPLIT / NUM_HIDDEN_LAYERS // NUM_NEURONS_PER_TILE + (((NEURON_TO_SPLIT % int(NUM_HIDDEN_LAYERS*NUM_NEURONS_PER_TILE))) > NUM_NEURONS_PER_TILE*ilay))) for ilay in range(NUM_HIDDEN_LAYERS)]
     HIDDEN_LAYER_SPARSE_SIZES = [int((MAX_ACTIVITY*hid_dense_size//2)*2) for hid_dense_size in HIDDEN_LAYER_DENSE_SIZES]
 
-    NEURON_TO_SPLIT = 1471*2 - NUM_CLASSES
-    HIDDEN_LAYER_DENSE_SIZES_LAST = [int(2*(NEURON_TO_SPLIT / NUM_HIDDEN_LAYERS // 2 + (((NEURON_TO_SPLIT % int(NUM_HIDDEN_LAYERS*2))) > 2*ilay))) for ilay in range(NUM_HIDDEN_LAYERS)]
+    NEURON_TO_SPLIT = 1471*NUM_NEURONS_PER_TILE - ((NUM_CLASSES // NUM_NEURONS_PER_TILE + ((NUM_CLASSES % NUM_NEURONS_PER_TILE) > 0))* NUM_NEURONS_PER_TILE)
+    HIDDEN_LAYER_DENSE_SIZES_LAST = [int(NUM_NEURONS_PER_TILE*(NEURON_TO_SPLIT / NUM_HIDDEN_LAYERS // NUM_NEURONS_PER_TILE + (((NEURON_TO_SPLIT % int(NUM_HIDDEN_LAYERS*NUM_NEURONS_PER_TILE))) > NUM_NEURONS_PER_TILE*ilay))) for ilay in range(NUM_HIDDEN_LAYERS)]
     HIDDEN_LAYER_SPARSE_SIZES_LAST = [int((MAX_ACTIVITY*hid_dense_size//2)*2) for hid_dense_size in HIDDEN_LAYER_DENSE_SIZES]
 
 
@@ -204,7 +208,7 @@ def main(args, ROOT_PATH_DATA):
 
 
     DENSE_SIZES = [np.prod(IMAGE_DIMS), *HIDDEN_LAYER_DENSE_SIZES*(NUM_IPUS-1), *HIDDEN_LAYER_DENSE_SIZES_LAST, NUM_CLASSES]
-    if BENCH_MODE == "multi_layer":
+    if BENCH_MODE in ["multi_layer", "multi_neuron"]:
         SPARSE_SIZES = [SPARSE_SIZE_INP, *HIDDEN_LAYER_SPARSE_SIZES*(NUM_IPUS-1), *HIDDEN_LAYER_SPARSE_SIZES_LAST, int(max((MAX_ACTIVITY*NUM_CLASSES//2)*2, 2))]
     else:
         SPARSE_SIZES_BASE = [64, 4, *[4]*(2*(NUM_IPUS-1)), 4, 10]
@@ -283,6 +287,7 @@ def main(args, ROOT_PATH_DATA):
     print("NUM_SAMPLES_TRAIN: ", NUM_SAMPLES_TRAIN)
     print("SEQ_LEN: ", SEQ_LEN)
     print()
+    print("DATASET_NAME: ", DATASET_NAME)
     print("PROFILE_RUN: ", PROFILE_RUN)
     print("USE_IPU: ", USE_IPU)
     print("IMPL_METHOD: ", IMPL_METHOD)
@@ -292,10 +297,9 @@ def main(args, ROOT_PATH_DATA):
     print("SECOND_THRESHOLD: ", SECOND_THRESHOLD) 
     print("WEIGHT_MUL: ", WEIGHT_MUL) 
     print("BENCH_MODE: ", BENCH_MODE) 
+    print("NUM_HIDDEN_LAYERS: ", NUM_HIDDEN_LAYERS) 
     print("NUM_NEURONS_PER_TILE: ", NUM_NEURONS_PER_TILE) 
-    print("MAX_ACTIVITY: ", MAX_ACTIVITY) 
-    
-    # sys.exit()
+    print("MAX_ACTIVITY: ", MAX_ACTIVITY)
 
     USE_MULTI_IPU = True # NUM_IPUS > 1 # TODO change back!
     if USE_MULTI_IPU:
@@ -305,7 +309,7 @@ def main(args, ROOT_PATH_DATA):
 
     BATCHSIZE_PER_STEP = BATCHSIZE
     # STEPS_PER_EPOCH = int(NUM_SAMPLES_TRAIN/BATCHSIZE/4) # TODO change back !
-    STEPS_PER_EPOCH = 200 # TODO change back !
+    STEPS_PER_EPOCH = 1000 if BENCH_MODE == "multi_neuron" else 200 # TODO change back !
     TRAIN_STEPS_PER_EXECUTION = STEPS_PER_EPOCH
 
     print(STEPS_PER_EPOCH)
@@ -315,9 +319,9 @@ def main(args, ROOT_PATH_DATA):
     THRESHOLD_FISRT_AND_SECOND = [THRESHOLD, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-1)]]
     # THRESHOLD_FISRT_AND_SECOND = [THRMAX_ACTIVITYRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
     
-    BASE_FOLDER = f"final_bench_results/{DATASET_NAME}_{BENCH_MODE}/"
+    BASE_FOLDER = f"final_bench_results_multi_ipu/{DATASET_NAME}_{BENCH_MODE}/"
     REL_FOLER_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}/"
-    SPECIFIC_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_numHid{NUM_HIDDEN_LAYERS}_maxAct{MAX_ACTIVITY}_sparseSizeInp{SPARSE_SIZE_INP}_numNeuonsPT{NUM_NEURONS_PER_TILE}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}_stepsPerEpoch{STEPS_PER_EPOCH}"
+    SPECIFIC_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_numHid{NUM_HIDDEN_LAYERS}_hidLayerSize{HIDDEN_LAYER_DENSE_SIZES[0]}_maxAct{MAX_ACTIVITY}_sparseSizeInp{SPARSE_SIZE_INP}_numNeuonsPT{NUM_NEURONS_PER_TILE}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}_stepsPerEpoch{STEPS_PER_EPOCH}"
     LOG_FILE = None # BASE_FOLDER + REL_FOLER_NAME + "log_" + SPECIFIC_NAME + ".csv"
     TIMING_FILE = BASE_FOLDER + REL_FOLER_NAME + "timing_" + SPECIFIC_NAME
 
@@ -379,13 +383,13 @@ def main(args, ROOT_PATH_DATA):
         metrics = [method_to_metr_fn_to_last[IMPL_METHOD]]
 
     if USE_IPU:
-
         if USE_MULTI_IPU:
             method_to_loss_fn = {
                 "dense": sum_and_sparse_categorical_crossentropy,
                 "sparse_ops": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=False),
                 "sparse_layer": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=True),
             }
+            OPT = tf.keras.optimizers.SGD if BENCH_MODE=="multi_neuron" else tf.keras.optimizers.Adam
             train_mutli_ipu_benchmarking(
                 IMPL_METHOD,
                 NUM_EPOCHS, 
@@ -406,6 +410,7 @@ def main(args, ROOT_PATH_DATA):
                 num_ipus=NUM_IPUS,
                 weight_mul=WEIGHT_MUL,
                 ipu_id=IPU_ID,
+                opt=OPT,
             )
         else:
             train_ipu(
@@ -488,7 +493,7 @@ if __name__ == "__main__":
     parser.add_argument('--num_hidden_layers', type=int, default=2, help="Number of IPUs to use, default `1`.")
     parser.add_argument('--sparse_size_inp', type=int, default=64, help="sparse size for input.")
     parser.add_argument('--ipu_id', type=int, default=-1, help="IPU ID to use.")
-
+    parser.add_argument('--num_neurons_per_tile', type=int, default=2, help="The maximal number of neurons per Tile.")
 
     args = parser.parse_args()
 

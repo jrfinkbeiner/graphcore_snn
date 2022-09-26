@@ -682,6 +682,7 @@ def train_mutli_ipu_benchmarking(
         seed=None,
         weight_mul=1.0,
         ipu_id=None,
+        opt=None,
         **optim_kwargs
     ):
     # set ipu config and strategy 
@@ -729,7 +730,12 @@ def train_mutli_ipu_benchmarking(
         model.set_infeed_queue_options(prefetch_depth=2)
         model.set_outfeed_queue_options(buffer_depth=2)
 
-        optim = tf.keras.optimizers.Adam(learning_rate=learning_rate, **optim_kwargs) # NOTE 1e-2 worked quite well
+        if opt is not None:
+            optim = opt(learning_rate=learning_rate, **optim_kwargs)
+        else:
+            optim = tf.keras.optimizers.Adam(learning_rate=learning_rate, **optim_kwargs)
+
+        # optim = tf.keras.optimizers.Adam(learning_rate=learning_rate, **optim_kwargs) # NOTE 1e-2 worked quite well
         # optim = tf.keras.optimizers.SGD(learning_rate=5e-2, momentum=0.9, nesterov=False, name="SGD")
 
         model.compile(optim, loss_fn,

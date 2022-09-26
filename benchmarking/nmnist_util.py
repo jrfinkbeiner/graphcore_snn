@@ -144,7 +144,7 @@ class TimeSlice:
         # print(sequence.shape)
         slice = np.zeros((self.seq_len, *sequence.shape[1:]))
         seq_to_use = min(self.seq_len, sequence.shape[0])
-        slice[:seq_to_use] = sequence[:seq_to_use]
+        slice[:seq_to_use] = sequence[50:50+seq_to_use]
         return slice
 
 
@@ -166,9 +166,17 @@ def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='
     
     sensor_size = tonic.datasets.NMNIST.sensor_size
 
+    # spatial_fac = 0.5
+    spatial_fac = 24/34
+    scale_fac = np.array([spatial_fac, spatial_fac, 1])
+    sensor_size = tuple((np.asarray(tonic.datasets.NMNIST.sensor_size) * scale_fac).astype(np.int16).tolist())
+
+
+
     if sparse:
         transforms_list = [
             transforms.Denoise(filter_time=10000),
+            transforms.Downsample(time_factor=1.0, spatial_factor=spatial_fac),
             ft.partial(events_to_sparse_tensors, deltat=delta_t,
                             seq_len=seq_len,
                             sparse_size=sparse_size,
@@ -184,6 +192,7 @@ def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='
     else:
         transform_train = transforms.Compose([
             transforms.Denoise(filter_time=10000),
+            transforms.Downsample(time_factor=1.0, spatial_factor=spatial_fac),
             transforms.ToFrame(sensor_size, time_window=delta_t),
             TimeSlice(seq_len),
             lambda x: np.clip(x, 0, 1)
@@ -710,18 +719,18 @@ if __name__ == "__main__":
     gens = {}
     data = {}
     # for use_sparse in [True, False]:
-    for use_sparse in [False]:
+    for use_sparse in [True]:
         sparse_str = "sparse" if use_sparse else "dense"
         # gen, num_samples = create_nmnist_gener(
         gen, num_samples = create_gener(
-            # "NMNIST",
+            "NMNIST",
             # "SHD",
-            "DVSGesture",
+            # "DVSGesture",
             # root="/Data/pgi-15/datasets", 
             root="/localdata/datasets/", 
             sparse=use_sparse, 
             num_epochs=1, 
-            seq_len=100, 
+            seq_len=10, 
             sparse_size=128*4, 
             num_samples=None, 
             # dataset='train', 
@@ -738,6 +747,7 @@ if __name__ == "__main__":
         print()
         if use_sparse:
             num_inp_spikes = data["sparse"]["num_inp_spikes"]
+            print("max spike id: ", data["sparse"]["inp_spike_ids"].max())
         else:
             print(data["dense"]["inp_spikes"].min(), data["dense"]["inp_spikes"].max())
             data["dense"]["inp_spikes"] = np.clip(data["dense"]["inp_spikes"], 0, 1)
