@@ -170,9 +170,6 @@ class KerasMultiLIFLayerBase(keras.layers.Layer):
                 name=f"thresholds_{ilay}",
             ) for ilay in range(1, self.num_layers+1)]
 
-
-        print(self.thresholds)
-
     def create_thresh_tensor(self, threshs_1, threshs_2):
         thresholds = [tf.Variable(
                 initial_value=tf.stack([
@@ -225,8 +222,8 @@ def pure_tf_lif_step_dense_secondthresh(weights, state, inp_, decay_constants, t
 
 
 class KerasMultiLIFLayerDenseCell(KerasMultiLIFLayerBase):
-    def __init__(self, dense_shapes, decay_constant, threshold, transpose_weights=False, seed=None):
-        super().__init__(dense_shapes, decay_constant, threshold, transpose_weights, seed)
+    def __init__(self, dense_shapes, decay_constant, threshold, transpose_weights=False, seed=None, weight_mul=1.0):
+        super().__init__(dense_shapes, decay_constant, threshold, transpose_weights, seed, weight_mul)
         state_shapes = dense_shapes[1:]*2
         self.state_size = [tf.TensorShape((dim,)) for dim in state_shapes]
         self.output_size = [tf.TensorShape((shape_,)) for shape_ in dense_shapes[1:]]
@@ -254,13 +251,13 @@ class KerasMultiLIFLayerDenseCell(KerasMultiLIFLayerBase):
         state_new = [*all_neuron_states, *all_out_spikes]
         return all_out_spikes, state_new
 
-def KerasMultiLIFLayerDense(dense_shapes, decay_constant, threshold, transpose_weights=False, seed=None, **kwargs):
-    return tf.keras.layers.RNN(KerasMultiLIFLayerDenseCell(dense_shapes, decay_constant, threshold, transpose_weights, seed), **kwargs)
+def KerasMultiLIFLayerDense(dense_shapes, decay_constant, threshold, transpose_weights=False, seed=None, weight_mul=1.0, **kwargs):
+    return tf.keras.layers.RNN(KerasMultiLIFLayerDenseCell(dense_shapes, decay_constant, threshold, transpose_weights, seed, weight_mul), **kwargs)
 
-def model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, seed=None, return_all=False):
+def model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, seed=None, return_all=False, weight_mul=1.0):
     inp_spikes = keras.Input(shape=(seq_len, dense_shapes[0]), batch_size=batchsize_per_step, name="inp_spikes", dtype=tf.float32)
     out_spikes = KerasMultiLIFLayerDense(
-            dense_shapes, decay_constant, threshold, False, seed, return_sequences=True, time_major=False
+            dense_shapes, decay_constant, threshold, False, seed, return_sequences=True, time_major=False, weight_mul=weight_mul
     )(inp_spikes)
     if return_all:
         out = out_spikes
@@ -305,18 +302,25 @@ def train_gpu(
         return_all=False,
         learning_rate=1e-2,
         seed=None,
+        weight_mul=1.0,
+        opt=None,
+        **optim_kwargs
     ):
 
     # init model
-    inputs, outputs = model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize, return_all=return_all, seed=seed)
+    inputs, outputs = model_fn_dense(seq_len, dense_shapes, decay_constant, threshold, batchsize, return_all=return_all, seed=seed, weight_mul=weight_mul)
     targets = keras.Input((1,), name="targets")
     model = keras.Model([inputs, targets], outputs)
 
     # Compile our model with Stochastic Gradient Descent as an optimizer
     # and Categorical Cross Entropy as a loss.
     # optim = tf.keras.optimizers.SGD(learning_rate=1e-1, momentum=0.9, nesterov=False, name="SGD")
-    optim = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    
+    if opt is not None:
+        optim = opt(learning_rate=learning_rate, **optim_kwargs)
+    else:
+        optim = tf.keras.optimizers.Adam(learning_rate=learning_rate, **optim_kwargs)
+
+
     
     model.add_loss(loss_fn(targets, outputs))
     if metrics is not None:

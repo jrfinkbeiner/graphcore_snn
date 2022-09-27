@@ -35,9 +35,9 @@ do
 		else
 			IPU_ID=-1
 		fi
-	            NUM_HIDDEN_LAYERS=$((NUM_NEURONS_PER_TILE/2*NUM_HIDDEN_LAYERS_BASE))
-		    echo $IPU_ID
-                    python3 benchmarking_script.py --use_ipu=1 --impl_method=sparse_layer --profile_run=0 --max_activity=$MAX_ACTIVITY --batchsize=$BATCHSIZE --lr=$LEARNING_RATE --transpose_weights=1 --second_thresh=$SECOND_THRESH --num_hidden_layers=$NUM_HIDDEN_LAYERS --bench_mode=multi_neuron --weight_mul=2.0 --sparse_size_inp=48 --dataset_name=SHD --num_neurons_per_tile=$NUM_NEURONS_PER_TILE --ipu_id=$IPU_ID --num_ipus=$NUM_IPUs
+			NUM_HIDDEN_LAYERS=$((NUM_NEURONS_PER_TILE/2*NUM_HIDDEN_LAYERS_BASE))
+            # python3 benchmarking_script.py --use_ipu=1 --impl_method=sparse_layer --profile_run=0 --max_activity=$MAX_ACTIVITY --batchsize=$BATCHSIZE --lr=$LEARNING_RATE --transpose_weights=1 --second_thresh=$SECOND_THRESH --num_hidden_layers=$NUM_HIDDEN_LAYERS --bench_mode=multi_neuron --weight_mul=2.0 --sparse_size_inp=48 --dataset_name=SHD --num_neurons_per_tile=$NUM_NEURONS_PER_TILE --ipu_id=$IPU_ID --num_ipus=$NUM_IPUs
+            python3 benchmarking_script.py --use_ipu=1 --impl_method=sparse_layer --profile_run=0 --max_activity=$MAX_ACTIVITY --batchsize=$BATCHSIZE --lr=$LEARNING_RATE --transpose_weights=1 --second_thresh=$SECOND_THRESH --num_hidden_layers=$NUM_HIDDEN_LAYERS --bench_mode=multi_neuron --weight_mul=2.0 --sparse_size_inp=48 --dataset_name=SHD --num_neurons_per_tile=$NUM_NEURONS_PER_TILE --ipu_id=$IPU_ID --num_ipus=$NUM_IPUs			
 		done
 	    	done 
 		done

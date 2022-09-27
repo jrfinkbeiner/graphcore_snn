@@ -5,8 +5,8 @@ import numpy as np
 
 from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense, TimingCallback
 
-from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
-from multi_ipu import train_mutli_ipu_benchmarking, create_dataset_sparse_multi_ipu
+# from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
+# from multi_ipu import train_mutli_ipu_benchmarking, create_dataset_sparse_multi_ipu
 
 # from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense
 # from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, create_dataset_sparse, sparse2dense_ipu
@@ -171,7 +171,7 @@ def main(args, ROOT_PATH_DATA):
         NUM_EPOCHS = 1
         SEQ_LEN = 100
     else:
-        NUM_EPOCHS = 100
+        NUM_EPOCHS = 11
         if BENCH_MODE != "multi_neuron":
             SEQ_LEN_DATASET = {
                 "NMNIST": 100,
@@ -319,9 +319,10 @@ def main(args, ROOT_PATH_DATA):
     THRESHOLD_FISRT_AND_SECOND = [THRESHOLD, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-1)]]
     # THRESHOLD_FISRT_AND_SECOND = [THRMAX_ACTIVITYRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
     
-    BASE_FOLDER = f"final_bench_results_multi_ipu/{DATASET_NAME}_{BENCH_MODE}/"
-    REL_FOLER_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}/"
-    SPECIFIC_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_numHid{NUM_HIDDEN_LAYERS}_hidLayerSize{HIDDEN_LAYER_DENSE_SIZES[0]}_maxAct{MAX_ACTIVITY}_sparseSizeInp{SPARSE_SIZE_INP}_numNeuonsPT{NUM_NEURONS_PER_TILE}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}_stepsPerEpoch{STEPS_PER_EPOCH}"
+    ADD_STR = "_RTX3090" if IMPL_METHOD == "dense" else ""
+    BASE_FOLDER = f"final_bench_results/{DATASET_NAME}_{BENCH_MODE}/"
+    REL_FOLER_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}{ADD_STR}_weightMul{WEIGHT_MUL}/"
+    SPECIFIC_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}{ADD_STR}_weightMul{WEIGHT_MUL}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_numHid{NUM_HIDDEN_LAYERS}_hidLayerSize{HIDDEN_LAYER_DENSE_SIZES[0]}_maxAct{MAX_ACTIVITY}_sparseSizeInp{SPARSE_SIZE_INP}_numNeuonsPT{NUM_NEURONS_PER_TILE}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}_stepsPerEpoch{STEPS_PER_EPOCH}"
     LOG_FILE = None # BASE_FOLDER + REL_FOLER_NAME + "log_" + SPECIFIC_NAME + ".csv"
     TIMING_FILE = BASE_FOLDER + REL_FOLER_NAME + "timing_" + SPECIFIC_NAME
 
@@ -382,6 +383,7 @@ def main(args, ROOT_PATH_DATA):
     else:
         metrics = [method_to_metr_fn_to_last[IMPL_METHOD]]
 
+    OPT = tf.keras.optimizers.SGD if BENCH_MODE=="multi_neuron" else tf.keras.optimizers.Adam
     if USE_IPU:
         if USE_MULTI_IPU:
             method_to_loss_fn = {
@@ -389,7 +391,6 @@ def main(args, ROOT_PATH_DATA):
                 "sparse_ops": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=False),
                 "sparse_layer": get_sum_and_sparse_categorical_crossentropy_sparse_out(DENSE_SIZES[-1], transpose=True),
             }
-            OPT = tf.keras.optimizers.SGD if BENCH_MODE=="multi_neuron" else tf.keras.optimizers.Adam
             train_mutli_ipu_benchmarking(
                 IMPL_METHOD,
                 NUM_EPOCHS, 
@@ -442,14 +443,16 @@ def main(args, ROOT_PATH_DATA):
             SEQ_LEN, 
             DENSE_SIZES, 
             DECAY_CONSTANT, 
-            # THRESHOLD,
-            THRESHOLD_FISRT_AND_SECOND,
+            THRESHOLD,
+            # THRESHOLD_FISRT_AND_SECOND,
             loss_fn,
             metrics=metrics, #calc_accuracy,
             steps_per_epoch=STEPS_PER_EPOCH,
             callbacks=callbacks,
             return_all=True if CALC_ACTIVITY else False,
             learning_rate=LEARNING_RATE,
+            weight_mul=WEIGHT_MUL,
+            opt=OPT,      
         )
 
 
@@ -500,8 +503,8 @@ if __name__ == "__main__":
     # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
 
     # ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
-    # ROOT_PATH_DATA = "/Data/pgi-15/datasets"
+    ROOT_PATH_DATA = "/Data/pgi-15/datasets"
     # ROOT_PATH_DATA = "/p/scratch/icei-hbp-2022-0011/common/datasets/"
-    ROOT_PATH_DATA = "/localdata/datasets/"
+    # ROOT_PATH_DATA = "/localdata/datasets/"
 
     main(args, ROOT_PATH_DATA)
