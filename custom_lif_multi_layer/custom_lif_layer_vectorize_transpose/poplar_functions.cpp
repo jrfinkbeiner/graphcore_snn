@@ -439,9 +439,6 @@ poplar::Tensor alloc_neuronwise_contiguous(poplar::Graph& graph, const std::vect
 
 poplar::Tensor alloc_neuronwise_contiguous(poplar::Graph& graph, const std::vector<size_t>& shape_default, poplar::Type type, size_t neuronDim, size_t &start_tile, size_t &end_tile, const poplar::DebugNameAndId &dnai = {}) {
   
-  std::cout << "shape: ";
-  printVector(shape_default);
-  
   std::vector<size_t> shape;
   if (shape_default.size() == 1) {
     shape = {1, shape_default[0]};
@@ -455,7 +452,6 @@ poplar::Tensor alloc_neuronwise_contiguous(poplar::Graph& graph, const std::vect
   size_t num_tiles_this_tensor = end_tile - start_tile;
   size_t num_neurons_per_tile = (numNeurons + num_tiles_this_tensor - 1) / num_tiles_this_tensor;
   size_t num_full_tiles = (numNeurons % num_neurons_per_tile == 0) ?  num_tiles_this_tensor-1 : num_tiles_this_tensor-1;
-  std::cout << "00100" << std::endl;
 
   size_t start_neuron = 0;
   size_t end_neuron = 0;
@@ -464,17 +460,11 @@ poplar::Tensor alloc_neuronwise_contiguous(poplar::Graph& graph, const std::vect
     graph.setTileMapping(allocTensor.slice(start_neuron, end_neuron, neuronDim), itile+start_tile);
     start_neuron = end_neuron;
   }
-  std::cout << "00200" << std::endl;
   if (num_full_tiles != num_tiles_this_tensor) {
     graph.setTileMapping(allocTensor.slice(end_neuron, numNeurons, neuronDim), end_tile-1);
   }
-  std::cout << "00300" << std::endl;
   poplar::Tensor allocTensor_tileContigous = graph.clone(allocTensor, dnai, poplar::TensorCloneMethod::GATHER_AND_PRESERVE_TILE_ORDER_AND_ALIASES);
-  std::cout << "00400" << std::endl;
   poplar::Tensor return_tensor = (shape_default.size() == 1) ? allocTensor_tileContigous[0]: allocTensor_tileContigous;
-
-  std::cout << "shape return_tensor: " << return_tensor.shapeToString() << std::endl;
-
   return return_tensor;
 }
 
