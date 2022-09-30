@@ -2,11 +2,12 @@ export PYTHONPATH="${PYTHONPATH}:/p/home/jusers/finkbeiner1/jureca/util/tonic_fo
 
 # # for BATCHSIZE in 6 48 96
 # for BATCHSIZE in 48 # 6 96
-for BATCHSIZE in 12 24 # 6 96
+# for BATCHSIZE in 12 24 # 6 96
+for BATCHSIZE in 24 # 6 96
 do
     for LEARNING_RATE in 0.003
     do
-        for MAX_ACTIVITY in 0.05
+        for MAX_ACTIVITY in 0.05 0.01 0.025 0.05 0.1
         do
             for SECOND_THRESH in 0.9
             do

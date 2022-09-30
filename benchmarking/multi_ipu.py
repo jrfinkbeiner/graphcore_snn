@@ -379,8 +379,11 @@ def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, 
     inp_spike_ids = keras.Input(shape=(seq_len, sparse_shapes[0]), batch_size=batchsize_per_step, dtype=tf.float32, name="inp_spike_ids")
     num_inp_spikes = keras.Input(shape=(seq_len, 1), batch_size=batchsize_per_step, dtype=tf.int32, name="num_inp_spikes")
     
-    spike_ids = [tf.transpose(inp_spike_ids, perm=[1, 0, 2]), *[tf.zeros((batchsize_per_step, sparse_shapes[ilay]), dtype=inp_spike_ids.dtype ) for ilay in range(1, num_layers)]]
-    num_spikes = [tf.transpose(num_inp_spikes, perm=[1, 0, 2]), *[tf.zeros((batchsize_per_step,1), dtype=num_inp_spikes.dtype ) for ilay in range(1, num_layers)]]
+    # spike_ids = [tf.transpose(inp_spike_ids, perm=[1, 0, 2]), *[tf.zeros((batchsize_per_step, sparse_shapes[ilay]), dtype=inp_spike_ids.dtype ) for ilay in range(1, num_layers)]]
+    # num_spikes = [tf.transpose(num_inp_spikes, perm=[1, 0, 2]), *[tf.zeros((batchsize_per_step,1), dtype=num_inp_spikes.dtype ) for ilay in range(1, num_layers)]]
+    spike_ids = [tf.transpose(inp_spike_ids, perm=[1, 0, 2]), *[tf.repeat(tf.expand_dims(tf.range(0, sparse_shapes[ilay], delta=1,  dtype=inp_spike_ids.dtype), axis=0), batchsize_per_step, axis=0) for ilay in range(1, num_layers)]]
+    # spike_ids = [tf.transpose(inp_spike_ids, perm=[1, 0, 2]), *[tf.repeat(tf.expand_dims(tf.range(dense_shapes[ilay]-5, dense_shapes[ilay]-5+sparse_shapes[ilay], delta=1,  dtype=inp_spike_ids.dtype), axis=0), batchsize_per_step, axis=0) for ilay in range(1, num_layers)]]
+    num_spikes = [tf.transpose(num_inp_spikes, perm=[1, 0, 2]), *[tf.cast(tf.fill((batchsize_per_step,1), sparse_shapes[ilay]), dtype=num_inp_spikes.dtype) for ilay in range(1, num_layers)]]
     inp_spikes = [SparseBinaryVec(ids,nz_elemts) for ids,nz_elemts in zip(spike_ids, num_spikes)]
 
     init_states = [tf.zeros((batchsize_per_step, dense_shapes[i+1]), dtype=tf.float32, name=f"init_state_{i}") for i in range(num_layers)]
@@ -401,6 +404,7 @@ def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, 
     else:
         out = SparseBinaryVec(out_spike_ids[-1], num_out_spikes[-1])
 
+    out = KerasSparseIdentity()(out)
     dense_spikes = sparse2dense_ipu(out, dense_shapes[-1])
     output = tf.transpose(dense_spikes, perm=[1, 0, 2])
 
@@ -413,7 +417,6 @@ class KerasSparseIdentity(keras.layers.Layer):
 
     def build(self, input_shape):
 
-        print(input_shape)
         last_dim = input_shape.ids[-1]
 
         self.eye = tf.Variable(
@@ -423,7 +426,6 @@ class KerasSparseIdentity(keras.layers.Layer):
         )
 
     def call(self, x):
-        print(x)
         return type(x)(x.ids @ self.eye, x.num_nzelements)
 
 
@@ -443,8 +445,10 @@ def model_fn_sparse_layer_multi_ipu(sparse_shapes, seq_len, dense_shapes, decay_
         # spike_ids_0 = tf.transpose(inp_spike_ids, perm=[1, 0, 2], name="inp_spike_ids_0_transp")
         # num_spikes_0 = tf.transpose(inp_spike_ids, perm=[1, 0, 2], name="inp_spike_ids_0_transp")
 
-        spike_ids = [tf.transpose(inp_spike_ids, perm=[1, 0, 2], name="inp_spike_ids_0_transp"), *[tf.zeros((batchsize_per_step, sparse_shapes[ilay]), dtype=inp_spike_ids.dtype, name=f"intial_spike_ids_{ilay}") for ilay in range(1, num_layers)]]
-        num_spikes = [tf.transpose(num_inp_spikes, perm=[1, 0, 2], name="nup_inp_spikes_0_transp"), *[tf.zeros((batchsize_per_step,1), dtype=num_inp_spikes.dtype, name=f"intial_num_spikes_{ilay}") for ilay in range(1, num_layers)]]
+        # spike_ids = [tf.transpose(inp_spike_ids, perm=[1, 0, 2], name="inp_spike_ids_0_transp"), *[tf.zeros((batchsize_per_step, sparse_shapes[ilay]), dtype=inp_spike_ids.dtype, name=f"intial_spike_ids_{ilay}") for ilay in range(1, num_layers)]]
+        # num_spikes = [tf.transpose(num_inp_spikes, perm=[1, 0, 2], name="nup_inp_spikes_0_transp"), *[tf.zeros((batchsize_per_step,1), dtype=num_inp_spikes.dtype, name=f"intial_num_spikes_{ilay}") for ilay in range(1, num_layers)]]
+        spike_ids = [tf.transpose(inp_spike_ids, perm=[1, 0, 2]), *[tf.repeat(tf.expand_dims(tf.range(0, sparse_shapes[ilay], delta=1,  dtype=inp_spike_ids.dtype), axis=0), batchsize_per_step, axis=0) for ilay in range(1, num_layers)]]
+        num_spikes = [tf.transpose(num_inp_spikes, perm=[1, 0, 2]), *[tf.cast(tf.fill((batchsize_per_step,1), sparse_shapes[ilay]), dtype=num_inp_spikes.dtype) for ilay in range(1, num_layers)]]
         inp_spikes = [SparseBinaryVec(ids,nz_elemts) for ids,nz_elemts in zip(spike_ids, num_spikes)]
 
         init_states = [tf.zeros((batchsize_per_step, dense_shapes[i+1]), dtype=tf.float32, name=f"init_state_{i}") for i in range(num_layers)]
@@ -472,18 +476,11 @@ def model_fn_sparse_layer_multi_ipu(sparse_shapes, seq_len, dense_shapes, decay_
         with ipu.keras.PipelineStage(iipu):
             out = KerasSparseIdentity()(out)
 
-
-
     with ipu.keras.PipelineStage(num_ipus-1):
-        print("\nOut shapes")
-        print(out)
-        print(out.ids.shape)
-        print(out.num_nzelements.shape)
-
+        # if num_ipus < 12:
+        #     out = KerasSparseIdentity()(out)
         dense_spikes = sparse2dense_ipu(out, dense_shapes[-1])
         output = tf.transpose(dense_spikes, perm=[1, 0, 2])
-        print(output.shape)
-
 
     # for ipu_id in range(2, num_ipus):
     #     with ipu.keras.PipelineStage(ipu_id):

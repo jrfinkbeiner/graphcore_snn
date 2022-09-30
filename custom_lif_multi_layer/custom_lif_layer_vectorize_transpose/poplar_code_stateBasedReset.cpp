@@ -716,7 +716,7 @@ BatchedSparseSpikes dense_to_sparse_spikes_multi_tile_spread_with_combine(poplar
     worker_end += numStatesThisWorker;
     poplar::Tensor dense_spikes_worker = dense_spikes.slice(worker_start, worker_end, 0).dimShuffle({1,2,0});
 
-    std::cout << "numStatesThisWorker: " << numStatesThisWorker << std::endl;
+    // std::cout << "numStatesThisWorker: " << numStatesThisWorker << std::endl;
 
     // unsigned vertex_id{0 + iwor/num_workers_per_tile};
     for (unsigned ibatch = 0; ibatch < batchsize; ++ibatch) {
@@ -818,7 +818,7 @@ BatchedSparseSpikes gen_sparse_spikes(poplar::Graph &graph, const poplar::Tensor
   const unsigned num_tiles_state = get_num_tiles_of_mapping(graph.getTileMapping(state));
   const unsigned max_num_neurons_per_tile = get_max_elements_per_tile(graph.getTileMapping(state[0]));
   const unsigned sparse_size_combined = max_num_neurons_per_tile; // std::min(sparse_size, max_num_neurons_per_tile); // TODO adjust code
-  std::cout << "\nmax_num_neurons_per_tile: " << max_num_neurons_per_tile << std::endl;
+  // std::cout << "\nmax_num_neurons_per_tile: " << max_num_neurons_per_tile << std::endl;
 
   poplar::Tensor combined_repeated_sparse_spike_ids = graph.addVariable(poplar::UNSIGNED_INT, {batchsize, num_thresholds, num_tiles_state, sparse_size_combined}, {dnai, "combinedRepeatedNeuronSpikeIds"});
   poplar::Tensor combined_repeated_sparse_spike_nums = graph.addVariable(poplar::UNSIGNED_INT, {batchsize, num_thresholds, num_tiles_state}, {dnai, "combinedRepeatedNeuronSpikeIds"});
@@ -1502,10 +1502,10 @@ poplar::Tensor customReduceSparseInpSpikesGrad_stage1_layer(poplar::Graph &graph
   // }
   bool lastExchangeGroupLarger = num_occupied_tiles % exchangeGroupSize;
 
-  std::cout << "exchangeGroupSize: " << exchangeGroupSize << std::endl;
-  std::cout << "numExchangeGroups: " << numExchangeGroups << std::endl;
-  std::cout << "exchangeBatchSize: " << exchangeBatchSize << std::endl;
-  std::cout << "lastExchangeGroupLarger: " << lastExchangeGroupLarger << std::endl;
+  // std::cout << "exchangeGroupSize: " << exchangeGroupSize << std::endl;
+  // std::cout << "numExchangeGroups: " << numExchangeGroups << std::endl;
+  // std::cout << "exchangeBatchSize: " << exchangeBatchSize << std::endl;
+  // std::cout << "lastExchangeGroupLarger: " << lastExchangeGroupLarger << std::endl;
 
   std::vector<unsigned> tensor_tile_ids = get_tensor_tile_ids(graph, dLdx);
 
@@ -1636,10 +1636,10 @@ poplar::Tensor customReduceSparseInpSpikesGrad_stage1_layer_evenAlloc(poplar::Gr
 
   bool lastExchangeGroupLarger = num_occupied_tiles % exchangeGroupSize;
 
-  std::cout << "exchangeGroupSize: " << exchangeGroupSize << std::endl;
-  std::cout << "numExchangeGroups: " << numExchangeGroups << std::endl;
-  std::cout << "exchangeBatchSize: " << exchangeBatchSize << std::endl;
-  std::cout << "lastExchangeGroupLarger: " << lastExchangeGroupLarger << std::endl;
+  // std::cout << "exchangeGroupSize: " << exchangeGroupSize << std::endl;
+  // std::cout << "numExchangeGroups: " << numExchangeGroups << std::endl;
+  // std::cout << "exchangeBatchSize: " << exchangeBatchSize << std::endl;
+  // std::cout << "lastExchangeGroupLarger: " << lastExchangeGroupLarger << std::endl;
 
   // std::vector<unsigned> tensor_tile_ids = get_tensor_tile_ids(graph, dLdx);
   // printVector(tensor_tile_ids);
@@ -2084,7 +2084,7 @@ extern "C" poplar::Tensor Build_allocator(
   std::string tensor_name;
   poplar::Tensor allocTensor;
 
-  std::cout << "Build_allocator: " << operand << ", " << operand/num_layers << ", " <<  layer_id << std::endl;
+  // std::cout << "Build_allocator: " << operand << ", " << operand/num_layers << ", " <<  layer_id << std::endl;
 
   // std::cout << "\noperand: " << operand << ", operand/num_layers: " << operand/num_layers << std::endl;
   // std::cout << "layer_id: " << layer_id << std::endl;
