@@ -322,13 +322,26 @@ def main(args, ROOT_PATH_DATA):
     
     # BASE_FOLDER = f"final_bench_results_multi_ipu/{DATASET_NAME}_{BENCH_MODE}/"
     # BASE_FOLDER = f"final_bench_results_fixedAct/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
-    BASE_FOLDER = f"failure_analysis/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
+    # if IPU_ID is None:
+    #     BASE_FOLDER = f"final_bench_results_fixedAct/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
+    #     # BASE_FOLDER = f"final_bench_results_multi_ipu/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
+    # else:
+    #     BASE_FOLDER = f"final_bench_results/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
+    BASE_FOLDER = f"final_bench_results/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
+
+    # BASE_FOLDER = f"failure_analysis/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
     REL_FOLER_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}/"
     SPECIFIC_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_numHid{NUM_HIDDEN_LAYERS}_hidLayerSize{HIDDEN_LAYER_DENSE_SIZES[0]}_maxAct{MAX_ACTIVITY}_sparseSizeInp{SPARSE_SIZE_INP}_numNeuonsPT{NUM_NEURONS_PER_TILE}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}_stepsPerEpoch{STEPS_PER_EPOCH}"
     LOG_FILE = None # BASE_FOLDER + REL_FOLER_NAME + "log_" + SPECIFIC_NAME + ".csv"
     TIMING_FILE = BASE_FOLDER + REL_FOLER_NAME + "timing_" + SPECIFIC_NAME
 
-    if os.path.isfile(TIMING_FILE+".npz"):
+    REL_FOLER_NAME_2 = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}/"
+    SPECIFIC_NAME_2 = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_numHid{NUM_HIDDEN_LAYERS}_hidLayerSize{HIDDEN_LAYER_DENSE_SIZES[0]}_maxAct{MAX_ACTIVITY}_sparseSizeInp{SPARSE_SIZE_INP}_numNeuonsPT{NUM_NEURONS_PER_TILE}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{3e-3:.0e}_batchize{BATCHSIZE}_stepsPerEpoch{STEPS_PER_EPOCH}"
+    LOG_FILE_2 = None # BASE_FOLDER + REL_FOLER_NAME + "log_" + SPECIFIC_NAME + ".csv"
+    TIMING_FILE_2 = BASE_FOLDER + REL_FOLER_NAME_2 + "timing_" + SPECIFIC_NAME_2
+
+
+    if os.path.isfile(TIMING_FILE+".npz") or os.path.isfile(TIMING_FILE_2+".npz"):
         print("\ntiming file already exists")
         sys.exit()
     # print("\ntiming file doesn't already exists")
