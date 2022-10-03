@@ -306,7 +306,7 @@ def main(args, ROOT_PATH_DATA):
     BATCHSIZE_PER_STEP = BATCHSIZE
     # STEPS_PER_EPOCH = int(NUM_SAMPLES_TRAIN/BATCHSIZE/4) # TODO change back !
     STEPS_PER_EPOCH = 200 # TODO change back !
-    TRAIN_STEPS_PER_EXECUTION = STEPS_PER_EPOCH
+    TRAIN_STEPS_PER_EXECUTION = int(STEPS_PER_EPOCH // 2)
 
     print(STEPS_PER_EPOCH)
 
@@ -315,11 +315,17 @@ def main(args, ROOT_PATH_DATA):
     THRESHOLD_FISRT_AND_SECOND = [THRESHOLD, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-1)]]
     # THRESHOLD_FISRT_AND_SECOND = [THRMAX_ACTIVITYRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
     
-    BASE_FOLDER = f"final_bench_results/{DATASET_NAME}_{BENCH_MODE}/"
+    # BASE_FOLDER = f"final_bench_results/{DATASET_NAME}_{BENCH_MODE}/"
+    BASE_FOLDER = f"final_bench_results/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
+    # BASE_FOLDER = f"final_bench_results_fixedAct/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
     REL_FOLER_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}/"
     SPECIFIC_NAME = f"{DATASET_NAME}_{BENCH_MODE}_{IMPL_METHOD}_weightMul{WEIGHT_MUL}_numIPUs{NUM_IPUS}_sparseMul{SPARSE_MULTIPLIER}_numHid{NUM_HIDDEN_LAYERS}_maxAct{MAX_ACTIVITY}_sparseSizeInp{SPARSE_SIZE_INP}_numNeuonsPT{NUM_NEURONS_PER_TILE}_secondThresh{SECOND_THRESHOLD}_decayConst{DECAY_CONSTANT}_lr{LEARNING_RATE:.0e}_batchize{BATCHSIZE}_stepsPerEpoch{STEPS_PER_EPOCH}"
     LOG_FILE = None # BASE_FOLDER + REL_FOLER_NAME + "log_" + SPECIFIC_NAME + ".csv"
     TIMING_FILE = BASE_FOLDER + REL_FOLER_NAME + "timing_" + SPECIFIC_NAME
+
+    if os.path.isfile(TIMING_FILE+".npz"):
+        print("\ntiming file already exists")
+        sys.exit()
 
     INP_DIM = SPARSE_SIZES[0] if SPARSE_METHOD else DENSE_SIZES[0]
     ITER_BATCHISIZE_MULTI_PROC = {

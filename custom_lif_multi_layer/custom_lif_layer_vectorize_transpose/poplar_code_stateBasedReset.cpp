@@ -2260,7 +2260,7 @@ extern "C" poplar::program::Program Build(
         throw poputil::poplibs_error("Input 'inputs[2]' for every except the first layer must be tensors of rank 2 (batch_size, inp_dim).");
       }
       if (num_inp_spikes_int[ilay].rank() != 2) {
-        throw poputil::poplibs_error("Input 'inputs[2]' for every except the first layer must be tensors of rank 3 (batch_size, 1).");
+        throw poputil::poplibs_error("Input 'inputs[3]' for every except the first layer must be tensors of rank 3 (batch_size, 1).");
       }
     }
 
