@@ -12,15 +12,15 @@ do
             for SECOND_THRESH in 0.9
             do
                 for NUM_HIDDEN_LAYERS_BASE in 4 3 2
-		do
-		for NUM_NEURONS_PER_TILE in 16 # 2 4 8 # 16 # 32
-                do
-	            NUM_HIDDEN_LAYERS=$((NUM_NEURONS_PER_TILE/2*NUM_HIDDEN_LAYERS_BASE))
-		    echo $NUM_HIDDEN_LAYERS
-                    python3 benchmarking_script.py --use_ipu=1 --impl_method=sparse_layer --profile_run=0 --max_activity=$MAX_ACTIVITY --batchsize=$BATCHSIZE --lr=$LEARNING_RATE --transpose_weights=1 --second_thresh=$SECOND_THRESH --num_hidden_layers=$NUM_HIDDEN_LAYERS --bench_mode=multi_neuron --weight_mul=2.0 --sparse_size_inp=48 --dataset_name=SHD --num_neurons_per_tile=$NUM_NEURONS_PER_TILE --ipu_id=8
-                done 
-		done
-	    done
+		        do
+		            for NUM_NEURONS_PER_TILE in 2 4 8 16 32
+                    do
+                    NUM_HIDDEN_LAYERS=$((NUM_NEURONS_PER_TILE/2*NUM_HIDDEN_LAYERS_BASE))
+                    python3 benchmarking_script.py --use_ipu=1 --impl_method=sparse_layer --profile_run=0 --max_activity=$MAX_ACTIVITY --batchsize=$BATCHSIZE --lr=$LEARNING_RATE --transpose_weights=1 --second_thresh=$SECOND_THRESH --num_hidden_layers=$NUM_HIDDEN_LAYERS --bench_mode=multi_neuron --weight_mul=2.0 --sparse_size_inp=48 --dataset_name=SHD --num_neurons_per_tile=$NUM_NEURONS_PER_TILE --ipu_id=4
+                    # CUDA_VISIBLE_DEVICES="3" python3 benchmarking_script.py --use_ipu=0 --impl_method=dense --profile_run=0 --max_activity=$MAX_ACTIVITY --batchsize=$BATCHSIZE --lr=$LEARNING_RATE --transpose_weights=1 --second_thresh=$SECOND_THRESH --num_hidden_layers=$NUM_HIDDEN_LAYERS --bench_mode=multi_neuron --weight_mul=2.0 --sparse_size_inp=32 --dataset_name=NMNIST --num_neurons_per_tile=$NUM_NEURONS_PER_TILE --ipu_id=0
+                    done 
+		        done
+	        done
         done
     done
 done
