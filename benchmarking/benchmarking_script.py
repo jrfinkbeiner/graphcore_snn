@@ -6,8 +6,8 @@ import numpy as np
 
 from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense, TimingCallback
 
-# from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
-# from multi_ipu import train_mutli_ipu_benchmarking, create_dataset_sparse_multi_ipu
+from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, sparse2dense_ipu, create_dataset_sparse
+from multi_ipu import train_mutli_ipu_benchmarking, create_dataset_sparse_multi_ipu
 
 # from keras_train_util import train_gpu, simple_loss_fn_dense, train_gpu, sparse2dense, create_dataset_dense
 # from keras_train_util_ipu import train_ipu, simple_loss_fn_sparse, create_dataset_sparse, sparse2dense_ipu
@@ -172,7 +172,7 @@ def main(args, ROOT_PATH_DATA):
         NUM_EPOCHS = 1
         SEQ_LEN = 100
     else:
-        NUM_EPOCHS = 11
+        NUM_EPOCHS = 21
         if BENCH_MODE != "multi_neuron":
             SEQ_LEN_DATASET = {
                 "NMNIST": 100,
@@ -318,8 +318,8 @@ def main(args, ROOT_PATH_DATA):
     THRESHOLD_FISRT_AND_SECOND = [THRESHOLD, [*[SECOND_THRESHOLD]*(len(SPARSE_SIZES)-1)]]
     # THRESHOLD_FISRT_AND_SECOND = [THRMAX_ACTIVITYRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
     
-    BASE_FOLDER = f"final_bench_results/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
-    # BASE_FOLDER = f"final_bench_results_multi_ipu/{DATASET_NAME}_{BENCH_MODE}/"
+    # BASE_FOLDER = f"final_bench_results/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
+    BASE_FOLDER = f"final_bench_results_multi_ipu/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
     # BASE_FOLDER = f"final_bench_results_fixedAct/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
     # if IPU_ID is None:
     #     BASE_FOLDER = f"final_bench_results_fixedAct/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
@@ -521,8 +521,8 @@ if __name__ == "__main__":
     # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
 
     # ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
-    ROOT_PATH_DATA = "/Data/pgi-15/datasets"
+    # ROOT_PATH_DATA = "/Data/pgi-15/datasets"
     # ROOT_PATH_DATA = "/p/scratch/icei-hbp-2022-0011/common/datasets/"
-    # ROOT_PATH_DATA = "/localdata/datasets/"
+    ROOT_PATH_DATA = "/localdata/datasets/"
 
     main(args, ROOT_PATH_DATA)

@@ -10,7 +10,7 @@ for BATCHSIZE in 24 # 6 96
 do
     for LEARNING_RATE in 0.00003
     do
-	for MAX_ACTIVITY in 0.05 0.025 # 0.01 0.1
+	for MAX_ACTIVITY in 0.05 # 0.025 # 0.01 0.1
         # for MAX_ACTIVITY in 0.05
         do
             for SECOND_THRESH in 0.9
@@ -21,7 +21,8 @@ do
 		do
 		# for NUM_IPUs in 2 4 # 8
 		# for NUM_IPUs in 16
-		for NUM_IPUs in 1 2 4 # 8
+		# for NUM_IPUs in 1 2 4 # 8
+		for NUM_IPUs in 8 16
 		do
 
 		# if [[ $NUM_IPUs -eq 2 ]]
@@ -61,7 +62,7 @@ for BATCHSIZE in 48 96 192 # 384 # 6 96
 do
     for LEARNING_RATE in 0.00003
     do
-	for MAX_ACTIVITY in 0.05 0.025 # 0.025 # 0.01 0.1
+	for MAX_ACTIVITY in 0.05 # 0.025 # 0.025 # 0.01 0.1
         # for MAX_ACTIVITY in 0.05
         do
             for SECOND_THRESH in 0.9
@@ -72,7 +73,8 @@ do
 		do
 		# for NUM_IPUs in 2 4 # 8
 		# for NUM_IPUs in 16
-		for NUM_IPUs in 1 2 4 # 8 # 16
+		# for NUM_IPUs in 1 2 4 # 8 # 16
+		for NUM_IPUs in 8 16
 		do
 
 			IPU_ID=-1
@@ -95,7 +97,7 @@ for BATCHSIZE in 24 # 6 96
 do
     for LEARNING_RATE in 0.00003
     do
-	for MAX_ACTIVITY in 0.05 0.025 # 0.01 0.1
+	for MAX_ACTIVITY in 0.05 # 0.025 # 0.01 0.1
         # for MAX_ACTIVITY in 0.05
         do
             for SECOND_THRESH in 0.9
@@ -106,7 +108,8 @@ do
 		do
 		# for NUM_IPUs in 2 4 # 8
 		# for NUM_IPUs in 16
-		for NUM_IPUs in 1 2 4 # 8
+		# for NUM_IPUs in 1 2 4 # 8
+		for NUM_IPUs in 8 16
 		do
 
 		# if [[ $NUM_IPUs -eq 2 ]]
@@ -146,7 +149,7 @@ for BATCHSIZE in 48 96 192 # 384 # 6 96
 do
     for LEARNING_RATE in 0.00003
     do
-	for MAX_ACTIVITY in 0.05 0.025 # 0.025 # 0.01 0.1
+	for MAX_ACTIVITY in 0.05 # 0.025 # 0.025 # 0.01 0.1
         # for MAX_ACTIVITY in 0.05
         do
             for SECOND_THRESH in 0.9
@@ -157,7 +160,8 @@ do
 		do
 		# for NUM_IPUs in 2 4 # 8
 		# for NUM_IPUs in 16
-		for NUM_IPUs in 1 2 4 # 8 # 16
+		# for NUM_IPUs in 1 2 4 # 8 # 16
+		for NUM_IPUs in 8 16
 		do
 
 			IPU_ID=-1
