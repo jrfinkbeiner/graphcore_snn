@@ -319,8 +319,8 @@ def main(args, ROOT_PATH_DATA):
     # THRESHOLD_FISRT_AND_SECOND = [THRMAX_ACTIVITYRESHOLD]*(len(SPARSE_SIZES)-2), -100]]
     
     # BASE_FOLDER = f"final_bench_results/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
-    BASE_FOLDER = f"final_bench_results_multi_ipu/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
-    # BASE_FOLDER = f"final_bench_results_fixedAct/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
+    # BASE_FOLDER = f"final_bench_results_multi_ipu/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
+    BASE_FOLDER = f"final_bench_results_fixedAct/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
     # if IPU_ID is None:
     #     BASE_FOLDER = f"final_bench_results_fixedAct/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
     #     # BASE_FOLDER = f"final_bench_results_multi_ipu/{DATASET_NAME}_{BENCH_MODE}_numSuperBatches2/"
