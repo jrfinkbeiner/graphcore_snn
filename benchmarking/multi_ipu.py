@@ -424,10 +424,14 @@ class KerasSparseIdentity(keras.layers.Layer):
             trainable=True,
             name=f"identity_eye",
         )
+        # self.ones = tf.Variable(
+        #     initial_value=tf.ones(last_dim),
+        #     trainable=True,
+        #     name=f"identity_eye",
+        # )
 
     def call(self, x):
         return type(x)(x.ids @ self.eye, x.num_nzelements)
-
 
 def model_fn_sparse_layer_multi_ipu(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None, num_ipus=1, weight_mul=1.0):
     if return_all:
@@ -474,7 +478,11 @@ def model_fn_sparse_layer_multi_ipu(sparse_shapes, seq_len, dense_shapes, decay_
 
     for iipu in range(1,num_ipus-1):
         with ipu.keras.PipelineStage(iipu):
-            out = KerasSparseIdentity()(out)
+            out = type(out)(
+                tf.clip_by_value(out.ids, 0, dense_shapes[-1]-1, name=f"out_spike_ids_clip_pipelineStage{iipu}"),
+                tf.clip_by_value(out.num_nzelements, 0, sparse_shapes[-1], name=f"out_spike_ids_clip_pipelineStage{iipu}")
+            )
+            # out = KerasSparseIdentity()(out)
 
     with ipu.keras.PipelineStage(num_ipus-1):
         # if num_ipus < 12:
