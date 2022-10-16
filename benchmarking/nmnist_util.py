@@ -167,7 +167,7 @@ def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='
     sensor_size = tonic.datasets.NMNIST.sensor_size
 
     # spatial_fac = 0.5
-    spatial_fac = 1.0 # 24/34
+    spatial_fac = 24/34
     scale_fac = np.array([spatial_fac, spatial_fac, 1])
     sensor_size = tuple((np.asarray(tonic.datasets.NMNIST.sensor_size) * scale_fac).astype(np.int16).tolist())
 
