@@ -30,19 +30,44 @@ def get_tmad_slice(times, addrs, start_time, seq_len, ds_tm=1, ds_ad=1):
         raise IndexError("Empty batch found")
 
 def events_to_sparse_tensors(events,
+                     order = ("x", "y", "p"),
                      deltat=1000,
                      seq_len=500,
-                     ds_w=1,
-                     ds_h=1,
-                     sparse_size=128):
+                     sparse_size=128,
+                     reduce_to_unique_spikes=False,
+                     dims=None):
+
+    if reduce_to_unique_spikes:
+        assert dims is not None
+        dims_larger_one = []
+        dims_larger_one_ids = []
+        for i,dim in enumerate(dims):
+            if dim > 1:
+                dims_larger_one.append(dim)
+                dims_larger_one_ids.append(i)
+        ds = np.array([1] + [np.prod(dims[:i]) for i in range(1,len(dims_larger_one))], dtype=np.int16)
+        def flatten_spike_ids(spike_ids):
+            '''
+            Flattens N-dimensional data to a 1 dimensional integer, where N = len(dims).
+            dims: tuple whose elements specify the size of each dimension
+            '''
+            spike_ids_flat = np.sum([spike_ids[...,i]*d for i,d in zip(dims_larger_one_ids, ds)],axis=0)
+            return spike_ids_flat
 
     times = events["t"]
-    addrs = np.stack((events["p"], events["x"], events["y"]), axis=1) # TODO which order ?
-    # # addrs = events[:, ["x", "y", "p"]]
+    # print("\nevents_to_sparse_tensors")
+    # print(f"{times.min():5}, {times.max():12}")
+    if "y" in events.dtype.names:
+        # addrs = np.stack([events[name], events["x"], events["y"] for name in events.dtype.names], axis=1) # TODO which order ?
+        addrs = np.stack([events[name] for name in order], axis=1) # TODO which order ?
+    else:
+        # addrs = np.stack((events["p"], events["x"], np.zeros_like(events["x"])), axis=1) # TODO which order ?
+        addrs = np.stack([np.zeros_like(events["x"]) if (name=="y") else events[name] for name in order], axis=1) # TODO which order ?
+    # addrs = events[:, ["x", "y", "p"]]
 
     n_dims = addrs.shape[1]
     t_start = times[0]
-    ts = range(t_start, t_start + seq_len * deltat, deltat)
+    ts = range(t_start+deltat, t_start + (seq_len+1) * deltat, deltat)
     data = np.zeros([seq_len, sparse_size, n_dims], dtype='int16')
     idx_start = 0
     idx_end = 0
@@ -51,7 +76,14 @@ def events_to_sparse_tensors(events,
     for i, t in enumerate(ts):
         idx_end += find_first(times[idx_end:], t)
         if idx_end > idx_start:
-            ee = addrs[idx_start:idx_end]
+            if reduce_to_unique_spikes:
+                ee = addrs[idx_start:idx_end]
+                flat = flatten_spike_ids(ee)
+                uniques, inds = np.unique(flat, return_index=True, axis=-1)
+                ee = ee[inds]
+            else:
+                ee = addrs[idx_start:idx_end]
+
             #pol, x, y = ee[:, 0], (ee[:, 1] // ds_w).astype('int16'), (ee[:, 2] // ds_h).astype('int16')
 
             l = len(ee)
@@ -115,6 +147,7 @@ class TimeSlice:
         slice[:seq_to_use] = sequence[:seq_to_use]
         return slice
 
+
 def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='train', apply_flatten=False, delta_t=1000):
     '''
     root: root directory of tonic datasets
@@ -138,7 +171,9 @@ def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='
             transforms.Denoise(filter_time=10000),
             ft.partial(events_to_sparse_tensors, deltat=delta_t,
                             seq_len=seq_len,
-                            sparse_size=sparse_size),
+                            sparse_size=sparse_size,
+                            dims = sensor_size,
+                            reduce_to_unique_spikes = True),
         ]
         if apply_flatten:
             def flatten_fn(dims, data):
@@ -151,6 +186,7 @@ def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='
             transforms.Denoise(filter_time=10000),
             transforms.ToFrame(sensor_size, time_window=delta_t),
             TimeSlice(seq_len),
+            lambda x: np.clip(x, 0, 1)
             # transforms.ToFrame(sensor_size, n_time_bins=seq_len),
         ])
         # transform_test = transforms.Compose([
@@ -167,17 +203,133 @@ def create_nmnist_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='
     return dataset
 
 
-def create_dense_batch(ids, dataset, batch_size):
+def create_dvsgesture_dataset(root, sparse, seq_len=300, sparse_size=None, dataset='train', apply_flatten=False, delta_t=1000):
+    '''
+    root: root directory of tonic datasets
+    seq_len: maximum sequence length
+    dataset: 'train', 'val', or 'test
+    
+    returns a `tonic.datasets.NMNIST` instance
+    '''
+    assert dataset in ['train','val','test']
+    
+    if sparse:
+        assert sparse_size is not None, "For `sparse=True`, `sparse_size` must be given, got `None`."
+
+    if dataset == 'val':
+        raise NotImplementedError()
+    
+    # spatial_fac = 0.5
+    spatial_fac = 0.375
+    scale_fac = np.array([spatial_fac, spatial_fac, 1])
+    sensor_size = tuple((np.asarray(tonic.datasets.DVSGesture.sensor_size) * scale_fac).astype(np.int16).tolist())
+
+    transforms_list = [
+        transforms.Denoise(filter_time=10000),
+        transforms.Downsample(time_factor=1.0, spatial_factor=spatial_fac),
+    ]
+    if sparse:
+        transforms_list.extend([
+            ft.partial(events_to_sparse_tensors, deltat=delta_t,
+                            seq_len=seq_len,
+                            sparse_size=sparse_size,
+                            dims = sensor_size,
+                            reduce_to_unique_spikes = True),
+        ])
+        if apply_flatten:
+            def flatten_fn(dims, data):
+                return flatten_spike_ids(dims, data[0]), data[1]
+            transforms_list.append(ft.partial(flatten_fn, sensor_size))
+
+    else:
+        transforms_list.extend([
+            transforms.Denoise(filter_time=10000),
+            transforms.Downsample(time_factor=1.0, spatial_factor=spatial_fac),
+            transforms.ToFrame(sensor_size, time_window=delta_t),
+            TimeSlice(seq_len),
+            lambda x: np.clip(x, 0, 1),
+            # transforms.ToFrame(sensor_size, n_time_bins=seq_len),
+        ])
+        # transform_test = transforms.Compose([
+        #     # transforms.Denoise(filter_time=10000),
+        #     # transforms.ToFrame(sensor_size, time_window=1000.0),
+        #     transforms.ToFrame(sensor_size, n_time_bins=seq_len),
+        # ])
+    transform_train = transforms.Compose(transforms_list)
+
+
+    dataset = tonic.datasets.DVSGesture(save_to=root,
+                                train=dataset == 'train',
+                                transform=transform_train) # TODO decide for first saccade... has to match sparse implementation...
+    return dataset
+
+
+def create_shd_dataset(root, sparse, seq_len=1000, sparse_size=None, dataset='train', apply_flatten=False, delta_t=1000):
+    '''
+    root: root directory of tonic datasets
+    seq_len: maximum sequence length
+    dataset: 'train', 'val', or 'test
+    
+    returns a `tonic.datasets.SHD` instance
+    '''
+    assert dataset in ['train','val','test']
+    
+    if sparse:
+        assert sparse_size is not None, "For `sparse=True`, `sparse_size` must be given, got `None`."
+
+    if dataset == 'val':
+        raise NotImplementedError()
+    
+    sensor_size = tonic.datasets.SHD.sensor_size
+
+    if sparse:
+        transforms_list = [
+            # transforms.Denoise(filter_time=10000),
+            ft.partial(events_to_sparse_tensors, deltat=delta_t,
+                            seq_len=seq_len,
+                            sparse_size=sparse_size,
+                            dims = sensor_size,
+                            reduce_to_unique_spikes = True),
+        ]
+        if apply_flatten:
+            def flatten_fn(dims, data):
+                return flatten_spike_ids(dims, data[0]), data[1]
+            transforms_list.append(ft.partial(flatten_fn, sensor_size))
+
+        transform_train = transforms.Compose(transforms_list)
+    else:
+        transform_train = transforms.Compose([
+            # transforms.Denoise(filter_time=10000),
+            transforms.ToFrame(sensor_size, time_window=delta_t),
+            TimeSlice(seq_len),
+            lambda x: np.clip(x, 0, 1),
+            # transforms.ToFrame(sensor_size, n_time_bins=seq_len),
+        ])
+
+    dataset = tonic.datasets.SHD(save_to=root,
+                                train=dataset == 'train',
+                                transform=transform_train) # TODO decide for first saccade... has to match sparse implementation...
+    return dataset
+
+
+
+def create_dense_batch(ids, dataset, batch_size, pool=None):
     batched_data = []
-    batched_labels = np.empty(batch_size, dtype=np.int32)
-    for i,idx in enumerate(ids):
-        data, label = dataset[idx]
-        data_flat = data.reshape(data.shape[0], -1).astype(np.float32)
-        # data_flat = data
-        # label = 0
-        # data_flat = np.empty((seq_len, np.prod(dataset.sensor_size))) #*data["x"][0]
-        batched_data.append(data_flat)
-        batched_labels[i] = label
+    if pool is None:
+        batched_labels = np.empty(batch_size, dtype=np.int32)
+        for i,idx in enumerate(ids):
+            data, label = dataset[idx]
+            data_flat = data.reshape(data.shape[0], -1).astype(np.float32)
+            batched_data.append(data_flat)
+            batched_labels[i] = label
+    else:
+        data = pool.map(get_dataset_item, ids)
+        batched_labels = []
+        for datai,label in data:
+            data_flat = datai.reshape(datai.shape[0], -1).astype(np.float32)
+            batched_data.append(data_flat)
+            batched_labels.append(label)
+        batched_labels = np.asarray(batched_labels, dtype=np.int32)
     batched_data = np.stack(batched_data)
     return {"inp_spikes": batched_data, "targets": batched_labels}        
 
@@ -219,10 +371,30 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
     data: flattened float32 array of dimension seq_len x prod(sersor_size) containing flattened event addresses
     '''
 
-    dataset = create_nmnist_dataset(root, sparse, seq_len=seq_len, sparse_size=sparse_size, dataset=dataset, apply_flatten=True if use_multiprocessing else False)
+    return create_gener("NMNIST", root, sparse, num_epochs=num_epochs, seq_len=seq_len, sparse_size=sparse_size, num_samples=num_samples, dataset_split=dataset, shuffle=shuffle, batchsize=batchsize, use_multiprocessing=use_multiprocessing)
+
+
+def create_gener(dataset_name, root, sparse, num_epochs=1, seq_len=300, sparse_size=None, num_samples=None, dataset_split='train', shuffle=None, batchsize=None, use_multiprocessing=False, delta_t=1000):
+    '''
+    root: root directory of tonic datasets
+    seq_len: maximum sequence length
+    dataset: 'train', 'val', or 'test
+    
+    returns a generator function with yields data, num_events, target
+    target: integer
+    data: flattened float32 array of dimension seq_len x prod(sersor_size) containing flattened event addresses
+    '''
+
+    dataset_to_fn = {
+        "NMNIST": create_nmnist_dataset,
+        "SHD": create_shd_dataset,
+        "DVSGesture": create_dvsgesture_dataset,
+    }
+
+    dataset = dataset_to_fn[dataset_name](root, sparse, seq_len=seq_len, sparse_size=sparse_size, dataset=dataset_split, apply_flatten=True, delta_t=delta_t)
 
     if shuffle is None:
-        shuffle = True if dataset == 'train' else False
+        shuffle = True if dataset_split == 'train' else False
 
     if num_samples is None:
         num_samples = len(dataset)
@@ -247,13 +419,21 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
         if shuffle:
             np.random.shuffle(idx_samples_base)
         idx_samples[iepoch*num_samples:(iepoch+1)*num_samples] = idx_samples_base
-    print(idx_samples)
 
     def gen_dense_batched():
         for ibatch in range(num_batches):
             inds = idx_samples[ibatch*batchsize:(ibatch+1)*batchsize]
             ret_data = create_dense_batch(inds, dataset, batchsize)
             yield ret_data
+
+    def gen_dense_batched_multiproc():
+        with Pool(min(cpu_count(), batchsize), initializer=set_global_dataset, initargs=(dataset,)) as p:
+            for ibatch in range(num_batches):
+                inds = idx_samples[ibatch*batchsize:(ibatch+1)*batchsize]
+                ret_data = create_dense_batch(inds, dataset, batchsize, p)
+                yield ret_data
+
+
 
     def gen_dense():
         for i in idx_samples:
@@ -297,7 +477,7 @@ def create_nmnist_gener(root, sparse, num_epochs=1, seq_len=300, sparse_size=Non
         if use_multiprocessing:
             # TODO implement multiprocessing !!!
             # gen = gen_sparse_batched_multiproc if sparse else gen_dense_batched_multiproc
-            gen = gen_sparse_batched_multiproc if sparse else gen_dense_batched
+            gen = gen_sparse_batched_multiproc if sparse else gen_dense_batched_multiproc
         else:
             gen = gen_sparse_batched if sparse else gen_dense_batched
 
@@ -415,18 +595,29 @@ def get_nmnist_dataset(root, sparse, num_epochs, seq_len, inp_dim, batchsize, nu
 
 
 
-# def flatten_spike_ids(dims, spike_ids):
-#     '''
-#     Flattens N-dimensional data to a 1 dimensional integer, where N = len(dims).
-#     dims: tuple whose elements specify the size of each dimension
-#     '''
-#     ds = np.array([np.prod(dims[i:]) for i in range(1,len(dims))] + [1], dtype=np.int16)
-#     spike_ids_flat = tf.math.reduce_sum([spike_ids[:,:,i]*d for i,d in enumerate(ds)],axis=0)
-#     return spike_ids_flat
+def flatten_spike_ids(dims, spike_ids):
+    '''
+    Flattens N-dimensional data to a 1 dimensional integer, where N = len(dims).
+    dims: tuple whose elements specify the size of each dimension
+    '''
+    dims_larger_one = []
+    dims_larger_one_ids = []
+    for i,dim in enumerate(dims):
+        if dim > 1:
+            dims_larger_one.append(dim)
+            dims_larger_one_ids.append(i)
+    ds = np.array([1] + [np.prod(dims[:i]) for i in range(1,len(dims_larger_one))], dtype=np.int16)
+    spike_ids_flat = np.sum([spike_ids[...,i]*d for i,d in zip(dims_larger_one_ids, ds)],axis=0)
+    return spike_ids_flat
 
-def flatten_spike_ids(sensor_dim, ids):
-    dimx, dimy, dimp = sensor_dim
-    return  ids[...,1] + dimy * (ids[...,2] + dimx * ids[...,0])
+# def flatten_spike_ids(sensor_dim, ids):
+#     print("\nflatten_spike_ids")
+#     print(sensor_dim)
+#     print(ids)
+#     dimx, dimy, dimp = sensor_dim
+#     # return  ids[...,1] + dimy * (ids[...,2] + dimx * ids[...,0])
+#     # return  ids[...,1] + dimx * (ids[...,2] + dimy * ids[...,0])
+#     return  ids[...,0] + dimy * (ids[...,1] + dimx * ids[...,2])
 
 
 def flatten_data_tf(data, dims):
@@ -476,11 +667,11 @@ def flatten_data_tf(data, dims):
 #     return dataset
 
 
-def load_dataset_to_tensor_dict(root, sparse, seq_len, inp_dim, num_samples=None, iter_batchsize=None, shuffle=True):
+def load_dataset_to_tensor_dict(dataset_name, root, sparse, seq_len, inp_dim, num_samples=None, iter_batchsize=None, shuffle=True):
 
     if iter_batchsize is None:
         iter_batchsize = 1000
-    gen, num_samples = create_nmnist_gener(root, sparse, 1, seq_len=seq_len, sparse_size=inp_dim, num_samples=num_samples, batchsize=iter_batchsize, shuffle=shuffle, use_multiprocessing=True)
+    gen, num_samples = create_gener(dataset_name, root, sparse, 1, seq_len=seq_len, sparse_size=inp_dim, dataset_split="train", num_samples=num_samples, batchsize=iter_batchsize, shuffle=shuffle, use_multiprocessing=True)
 
     assert num_samples % iter_batchsize == 0, "`num_samples` must be divisible by `iter_batchsize`"
 
@@ -492,7 +683,6 @@ def load_dataset_to_tensor_dict(root, sparse, seq_len, inp_dim, num_samples=None
         num_inp_spikes = np.empty((num_samples, seq_len, 1), dtype=np.int32)
         labels = np.empty((num_samples,), dtype=np.int32)
         for i,data in enumerate(gen()):
-            print(i)
             inp_spike_ids[i*iter_batchsize:(i+1)*iter_batchsize] = data["inp_spike_ids"]
             num_inp_spikes[i*iter_batchsize:(i+1)*iter_batchsize] = np.expand_dims(data["num_inp_spikes"], axis=-1)
             labels[i*iter_batchsize:(i+1)*iter_batchsize] = data["targets"]
@@ -505,7 +695,6 @@ def load_dataset_to_tensor_dict(root, sparse, seq_len, inp_dim, num_samples=None
         inp_spikes = np.empty((num_samples, seq_len, inp_dim), dtype=np.float32)
         labels = np.empty((num_samples,), dtype=np.int32)
         for i,data in enumerate(gen()):
-            print(i)
             inp_spikes[i*iter_batchsize:(i+1)*iter_batchsize] = data["inp_spikes"]
             labels[i*iter_batchsize:(i+1)*iter_batchsize] = data["targets"]
         ret_val = {
@@ -520,28 +709,49 @@ if __name__ == "__main__":
     import sys
     gens = {}
     data = {}
-    for use_sparse in [True, False]:
+    # for use_sparse in [True, False]:
+    for use_sparse in [False]:
         sparse_str = "sparse" if use_sparse else "dense"
-        gen, num_samples = create_nmnist_gener(
-            root="/Data/pgi-15/datasets", 
+        # gen, num_samples = create_nmnist_gener(
+        gen, num_samples = create_gener(
+            # "NMNIST",
+            # "SHD",
+            "DVSGesture",
+            # root="/Data/pgi-15/datasets", 
+            root="/localdata/datasets/", 
             sparse=use_sparse, 
             num_epochs=1, 
             seq_len=100, 
-            sparse_size=128, 
+            sparse_size=128*4, 
             num_samples=None, 
-            dataset='train', 
+            # dataset='train', 
+            dataset_split='train', 
             shuffle=False, 
-            batchsize=1, 
-            use_multiprocessing=True
+            batchsize=100, 
+            use_multiprocessing=True,
+            delta_t=1000,
         )
         gens[sparse_str] = gen
         data_next = next(gen())
         data[sparse_str] = data_next
 
-
-        # use_multiprocessing = False
-        # dataset = create_nmnist_dataset("/Data/pgi-15/datasets", use_sparse, seq_len=100, sparse_size=128, dataset="train", apply_flatten=True if use_multiprocessing else False)
-        # data[sparse_str] = dataset[0]
+        print()
+        if use_sparse:
+            num_inp_spikes = data["sparse"]["num_inp_spikes"]
+        else:
+            print(data["dense"]["inp_spikes"].min(), data["dense"]["inp_spikes"].max())
+            data["dense"]["inp_spikes"] = np.clip(data["dense"]["inp_spikes"], 0, 1)
+            print(data["dense"]["inp_spikes"].min(), data["dense"]["inp_spikes"].max())
+            num_inp_spikes = data["dense"]["inp_spikes"].sum(axis=2).astype(np.int32)
+       
+        print(num_inp_spikes.shape)
+        print(num_inp_spikes)
+        print(num_inp_spikes.mean(), num_inp_spikes.std(), num_inp_spikes.min(), num_inp_spikes.max())
+        # sys.exit()
+        import matplotlib.pyplot as plt
+        plt.hist(num_inp_spikes.flatten(), bins=100)
+        plt.show()
+        sys.exit()
 
     print()
     print(data["dense"]["inp_spikes"].shape)
@@ -559,52 +769,14 @@ if __name__ == "__main__":
     inp_spikes_ids_dense = np.argwhere(data["dense"]["inp_spikes"][0] > 0)
     inp_spikes_ids_sparse = data["sparse"]["inp_spike_ids"][0]
 
-
-    sensor_size = tonic.datasets.NMNIST.sensor_size
-    def flatten_fn_general(dims, data):
-        return flatten_spike_ids(dims, data[0]), data[1]
-    flatten_fn = ft.partial(flatten_fn_general, sensor_size)
-    print(sensor_size)
-
-
-    # import sys
-    # sys.exit()
-    # for i in range(len(num_inp_spikes_sparse)-1):
-    #     print(num_inp_spikes_dense[i], num_inp_spikes_sparse[i+1])
-    
-    def flatten_spike_id(sensor_dims, id_):
-        # return id_[0]*sensor_dims[0]*sensor_dims[1] + id_[1]*sensor_dims[0] + id_[2]
-        return  id_[1] + sensor_dims[1] * (id_[2] + id_[0] * sensor_dims[0])
-        # return id_[0] +  id_[2] * sensor_dims[2] + sensor_dims[1]*sensor_dims[2] * id_[1]
-
-    # def flatten_spike_ids_vec(sensor_dims, ids):
-    #     return  ids[...,1] + sensor_dims[1] * (ids[...,2] + ids[...,0] * sensor_dims[0])
-
-    def flatten_spike_ids_vec(dimx, dimy, dimp, ids):
-        return  ids[...,1] + dimy * (ids[...,2] + dimx * ids[...,0])
-
-
-    arr = np.arange(4*4*2).reshape((4,4,2))
-    print(arr)
-    print()
-    print(arr[:,:,0])    
-    print()
-    print(arr[:,0,0])    
-
-    # import sys
-    # sys.exit()
-
-
-
-
     print()
     print(np.all(num_inp_spikes_dense[:-1] == num_inp_spikes_sparse[1:]))
     print()
     print(inp_spikes_ids_dense.shape)
-    print(inp_spikes_ids_dense[:10])
+    print(inp_spikes_ids_dense[:50])
     print()
     print(inp_spikes_ids_sparse.shape)
-    print(inp_spikes_ids_sparse[:6, :3])
+    print(inp_spikes_ids_sparse[:8, :30])
     # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[0, 0]))
     # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[1, 0]))
     # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[2, 0]))

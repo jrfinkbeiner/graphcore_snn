@@ -32,25 +32,18 @@ def determine_neuron_tileMappings(dense_sizes, sparse_sizes, num_ipus=1, min_neu
         # tileMapping =  determine_neuron_tileMappings_singleIPU(dense_sizes, sparse_sizes, min_neurons_per_tile)
     return tileMapping
 
-def determine_neuron_tileMappings_multiIPU(dense_sizes, sparse_sizes, num_ipus, min_neurons_per_tile):
-    
-    TILE_OFFSET = [1] + [0]*(num_ipus-1)
-    TILES_PER_IPU = 1472 # hardcoded fpr IPUv2 MK2000
-    USABLE_TILES_PER_IPU = [int(TILES_PER_IPU - tile_offs) for tile_offs in TILE_OFFSET]
-    USABLE_TILES_TOTAL = sum(USABLE_TILES_PER_IPU)
 
-    num_neurons = np.asarray(dense_sizes[1:], dtype=np.int64)
+def tile_mapping_const_number_states_per_tile(num_neurons, neurons_per_tile, TILES_PER_IPU, TILE_OFFSET):
+
+    num_ipus = len(TILE_OFFSET)
+    USABLE_TILES_PER_IPU = [int(TILES_PER_IPU - tile_offs) for tile_offs in TILE_OFFSET]
+
     num_neurons_total = np.sum(num_neurons).astype(np.float64)
-    max_num_tiles_to_use = np.ceil(num_neurons_total / min_neurons_per_tile)
-    
-    # if max_num_tiles_to_use < USABLE_TILES_PER_IPU[0]:
-    #     tileMapping = determine_neuron_tileMappings_singleIPU(dense_sizes, sparse_sizes, min_neurons_per_tile, tile_offset=TILE_OFFSET[0])
-    #     return tileMapping
-    
-    layerwise_max_tiles = np.ceil(num_neurons / min_neurons_per_tile)
-    cumsum_num_neurons = np.cumsum(dense_sizes[1:])
-    cumsum_max_tiles = cumsum_num_neurons.astype(np.float64) / min_neurons_per_tile
-    max_tile_mapping_possible = True
+
+    layerwise_max_tiles = np.ceil(num_neurons / neurons_per_tile)
+    cumsum_num_neurons = np.cumsum(num_neurons)
+    cumsum_max_tiles = cumsum_num_neurons.astype(np.float64) / neurons_per_tile
+    tile_mapping_possible = True
 
     cumsum_tiles = 0
     ipu_id = 0
@@ -60,7 +53,7 @@ def determine_neuron_tileMappings_multiIPU(dense_sizes, sparse_sizes, num_ipus, 
     for ilay,max_tiles_ilay in enumerate(layerwise_max_tiles):
         print(ilay, max_tiles_ilay)
         if max_tiles_ilay > USABLE_TILES_PER_IPU[ipu_id]:
-            max_tile_mapping_possible = False
+            tile_mapping_possible = False
             break
         new_cumsum_tiles = cumsum_tiles + max_tiles_ilay
         # check whether additonal layer fits on current IPU, otherwise start mapping on next IPU
@@ -70,7 +63,7 @@ def determine_neuron_tileMappings_multiIPU(dense_sizes, sparse_sizes, num_ipus, 
             ipu_id += 1
         
         if ipu_id >= num_ipus:
-            max_tile_mapping_possible = False
+            tile_mapping_possible = False
             break
         
         start_tile = int(cumsum_tiles + TILE_OFFSET[ipu_id] + ipu_id * TILES_PER_IPU)
@@ -78,11 +71,77 @@ def determine_neuron_tileMappings_multiIPU(dense_sizes, sparse_sizes, num_ipus, 
         tileMappings.append(TileMapping(start_tile, end_tile))
         cumsum_tiles = new_cumsum_tiles
 
-    if max_tile_mapping_possible:
+    if tile_mapping_possible:
         return tileMappings
+    else:
+        return None
 
 
-    raise NotImplementedError("multiIpu Mapping not fully impleneted yet. Tilemapping on one IPU was not desireable and mapping with min_neurons_per_tile not possible.")
+def determine_neuron_tileMappings_multiIPU(dense_sizes, sparse_sizes, num_ipus, min_neurons_per_tile):
+    
+    TILE_OFFSET = [1] + [0]*(num_ipus-1)
+    TILES_PER_IPU = 1472 # hardcoded fpr IPUv2 MK2000
+    USABLE_TILES_PER_IPU = [int(TILES_PER_IPU - tile_offs) for tile_offs in TILE_OFFSET]
+    # USABLE_TILES_TOTAL = sum(USABLE_TILES_PER_IPU)
+
+    num_neurons = np.asarray(dense_sizes[1:], dtype=np.int64)
+    num_neurons_total = np.sum(num_neurons).astype(np.float64)
+
+    # max_num_tiles_to_use = np.ceil(num_neurons_total / min_neurons_per_tile)
+    # if max_num_tiles_to_use < USABLE_TILES_PER_IPU[0]:
+    #     tileMapping = determine_neuron_tileMappings_singleIPU(dense_sizes, sparse_sizes, min_neurons_per_tile, tile_offset=TILE_OFFSET[0])
+    #     return tileMapping
+    
+    neurons_per_tile = min_neurons_per_tile
+    tile_mapping_found = False
+    while not tile_mapping_found:
+        print(f"\nneurons_per_tile={neurons_per_tile}")
+        print(f"num_neurons={num_neurons}")
+        tile_mapping = tile_mapping_const_number_states_per_tile(num_neurons, neurons_per_tile, TILES_PER_IPU, TILE_OFFSET)
+        neurons_per_tile += min_neurons_per_tile
+        print(tile_mapping)
+        if tile_mapping is not None:
+            tile_mapping_found = True
+        print(f"tile_mapping_found={tile_mapping_found}")
+
+    return tile_mapping
+    
+    # layerwise_max_tiles = np.ceil(num_neurons / min_neurons_per_tile)
+    # cumsum_num_neurons = np.cumsum(dense_sizes[1:])
+    # cumsum_max_tiles = cumsum_num_neurons.astype(np.float64) / min_neurons_per_tile
+    # max_tile_mapping_possible = True
+
+    # cumsum_tiles = 0
+    # ipu_id = 0
+    # start_tiles = []
+    # end_tiles = []
+    # tileMappings = []
+    # for ilay,max_tiles_ilay in enumerate(layerwise_max_tiles):
+    #     print(ilay, max_tiles_ilay)
+    #     if max_tiles_ilay > USABLE_TILES_PER_IPU[ipu_id]:
+    #         max_tile_mapping_possible = False
+    #         break
+    #     new_cumsum_tiles = cumsum_tiles + max_tiles_ilay
+    #     # check whether additonal layer fits on current IPU, otherwise start mapping on next IPU
+    #     if new_cumsum_tiles > USABLE_TILES_PER_IPU[ipu_id]:
+    #         cumsum_tiles = 0
+    #         new_cumsum_tiles = max_tiles_ilay
+    #         ipu_id += 1
+        
+    #     if ipu_id >= num_ipus:
+    #         max_tile_mapping_possible = False
+    #         break
+        
+    #     start_tile = int(cumsum_tiles + TILE_OFFSET[ipu_id] + ipu_id * TILES_PER_IPU)
+    #     end_tile = int(start_tile + max_tiles_ilay)
+    #     tileMappings.append(TileMapping(start_tile, end_tile))
+    #     cumsum_tiles = new_cumsum_tiles
+
+    # if max_tile_mapping_possible:
+    #     return tileMappings
+
+
+    # raise NotImplementedError("multiIpu Mapping not fully impleneted yet. Tilemapping on one IPU was not desireable and mapping with min_neurons_per_tile not possible.")
 
     
 
@@ -431,8 +490,8 @@ def custom_multi_lif_layer_sparse(sparse_sizes, transpose_weights, weights, init
     return out
 
 class KerasMultiLIFLayerSparse(KerasMultiLIFLayerBase):
-    def __init__(self, dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights=False, seed=None, num_ipus=1):
-        super().__init__(dense_shapes, decay_constant, threshold, transpose_weights, seed)
+    def __init__(self, dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights=False, seed=None, num_ipus=1, weight_mul=1.0):
+        super().__init__(dense_shapes, decay_constant, threshold, transpose_weights, seed, weight_mul)
         assert len(dense_shapes) == len(sparse_shapes), "`dense_shapes` and `sparse_shapes` must have the same nmber of elements."
         self.sparse_shapes = sparse_shapes
         self.neuron_tileMappings = determine_neuron_tileMappings(dense_shapes, sparse_shapes, num_ipus, min_neurons_per_tile=2 if transpose_weights else 1)
@@ -549,7 +608,7 @@ def KerasMultiLIFLayerSparseOps(dense_shapes, sparse_shapes, decay_constant, thr
     return tf.keras.layers.RNN(KerasMultiLIFLayerSparseCell(dense_shapes, sparse_shapes, decay_constant, threshold, batchsize, seed), **kwargs)
 
 
-def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None, num_ipus=1):
+def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None, num_ipus=1, weight_mul=1.0):
     if return_all:
         warnings.warn("All layers outputs will be returned. But note that only gradient propagation through the last layers outputs is implemented."
                     " Adding loss terms to other layers outputs will be ignored and will result in a wrong gradient.", UserWarning)
@@ -565,7 +624,7 @@ def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, 
 
     init_states = [tf.zeros((batchsize_per_step, dense_shapes[i+1]), dtype=tf.float32) for i in range(num_layers)]
     out = KerasMultiLIFLayerSparse(
-            dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed, num_ipus
+            dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed, num_ipus, weight_mul
         )(inp_spikes, init_states)
     out_spike_ids, num_out_spikes, states = out[:num_layers], out[num_layers:2*num_layers], out[2*num_layers:]
 
@@ -662,6 +721,7 @@ def train_ipu(
         num_ipus=1,
         seed=None,
         grad_scale_facs=None,
+        weight_mul=1.0,
     ):
     # set ipu config and strategy 
     ipu_config = ipu.config.IPUConfig()
@@ -677,7 +737,7 @@ def train_ipu(
     method_to_model_fn = {
         "dense": model_fn_dense, 
         "sparse_ops": ft.partial(model_fn_sparse_ops, sparse_shapes, transpose_weights=transpose_weights), 
-        "sparse_layer": ft.partial(model_fn_sparse_layer, sparse_shapes, transpose_weights=transpose_weights, num_ipus=num_ipus),
+        "sparse_layer": ft.partial(model_fn_sparse_layer, sparse_shapes, transpose_weights=transpose_weights, num_ipus=num_ipus, weight_mul=weight_mul),
     }
 
     with strategy.scope():
@@ -879,9 +939,6 @@ def test_sparse_vs_dense():
     data_sparse = iter(dataset_sparse).next()
     data_sparse = ((data_sparse["inp_spike_ids"], data_sparse["num_inp_spikes"]), data_sparse["targets"])
     data_dense = iter(dataset_dense).next().values()
-
-    print(data_dense)
-    sys.exit()
 
     # # with strategy.scope():
     # #     model_dense_ipu = keras.Model(*model_fn_dense(seq_len, dense_sizes, decay_constant, threshold, batchsize, seed=model_seed, return_all=False))

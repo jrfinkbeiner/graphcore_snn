@@ -1,3 +1,8 @@
+final_bench_results*/
+logs_*/
+log_*.log
+log_*.out
+log_*.txt
 check_tile_allocation.py
 good_runs/
 results/
@@ -21,8 +26,11 @@ benchmarking/convergence_learning_rate_sweep_512/
 benchmarking/convergence_sparsity_sweep_512/
 # benchmarking/create_sbatch.py
 benchmarking/reports_*/
+benchmarking/final_bench_results/
+
 build*/
 *.bc
+*.csv
 
 # Graphcore/Poplar extensions
 *.gp

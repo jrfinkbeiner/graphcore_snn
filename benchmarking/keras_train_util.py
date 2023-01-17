@@ -2,11 +2,15 @@ import os
 import warnings
 import sys
 import math
-from typing import Union, NamedTuple
+import json
+import time 
+from typing import Union, NamedTuple, Optional
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras as keras
 import functools as ft
+
+
 
 
 def gen_sparse_spikes(rng, seq_len, batchsize, size_dense, size_sparse):
@@ -50,10 +54,66 @@ def get_shape(in_features: int, out_features: int, transpose: bool):
     return (out_features, in_features)
 
 
+class TimingCallback(keras.callbacks.Callback):
+    def __init__(self, filename: Optional[str] = None):
+        self.filename = filename + ".npz" if isinstance(filename, str) is not None else filename
+        self._batch_times_begin = []
+        self._batch_times_end = []
+        self._epoch_times_begin = []
+        self._epoch_times_end = []
+        self._epoch_begin_ids = []
+        self._epoch_end_ids = []
+        self._batch_begin_ids = []
+        self._batch_end_ids = []
 
+    @property
+    def epoch_times(self):
+        return np.asarray(self._epoch_times_end, dtype=np.int64) - np.asarray(self._epoch_times_begin, dtype=np.int64) \
+                // (np.asarray(self._epoch_end_ids, dtype=np.int64) + 1 - np.asarray(self._epoch_begin_ids, dtype=np.int64))
+
+    @property
+    def batch_times(self):
+        return (np.asarray(self._batch_times_end, dtype=np.int64) - np.asarray(self._batch_times_begin, dtype=np.int64)) \
+                // (np.asarray(self._batch_end_ids, dtype=np.int64) + 1 - np.asarray(self._batch_begin_ids, dtype=np.int64))
+
+    def on_epoch_begin(self, epoch, logs={}):
+        self._epoch_begin_ids.append(epoch)
+        self._epoch_times_begin.append(time.monotonic_ns())
+
+    def on_epoch_end(self, epoch, logs={}):
+        self._epoch_end_ids.append(epoch)
+        self._epoch_times_end.append(time.monotonic_ns())
+
+    def on_batch_begin(self, batch, logs={}):
+        self._batch_begin_ids.append(batch)
+        self._batch_times_begin.append(time.monotonic_ns())
+
+    def on_batch_end(self, batch, logs={}):
+        self._batch_end_ids.append(batch)
+        self._batch_times_end.append(time.monotonic_ns())
+
+    def on_train_end(self, *args, **kwargs):
+        print("\nepoch_times:")
+        print(self.epoch_times.tolist())
+        print("\nbatch_times:")
+        print(self.batch_times.tolist())
+        if self.filename is not None:
+            self.dump_to_file()
+
+    def dump_to_file(self):
+        if self.filename is None:
+            raise ValueError("Filename is `None`.")
+        os.makedirs(os.path.dirname(os.path.abspath(self.filename)), exist_ok=True)
+        dump_data = {
+            "epoch_times": self.epoch_times,
+            "batch_times": self.batch_times,
+        }
+        # with open(self.filename, 'w', encoding='utf-8') as f:
+        #     json.dump(dump_data, f, ensure_ascii=False, indent=4)
+        np.savez(self.filename, **dump_data)
 
 class KerasMultiLIFLayerBase(keras.layers.Layer):
-    def __init__(self, dense_shapes, decay_constant, threshold, transpose_weights=False, seed=None):
+    def __init__(self, dense_shapes, decay_constant, threshold, transpose_weights=False, seed=None, weight_mul=1.0):
         super().__init__()
         assert len(dense_shapes) > 1, "`dense_shapes` must be of at least length 2, generating a network with no hidden layers."
         self.num_layers = len(dense_shapes)-1
@@ -63,6 +123,7 @@ class KerasMultiLIFLayerBase(keras.layers.Layer):
         self.version_multi_thresh = isinstance(self.threshold_value, (list, tuple)) and (len(self.threshold_value) > 1)
         self.transpose_weights = transpose_weights
         self.seed = seed
+        self.weight_mul = weight_mul
         # self.current_second_threshs = [-100.0 for i in range(self.num_layers)] if self.version_multi_thresh else None
         if self.version_multi_thresh:
             self.current_second_threshs = self.threshold_value[1] if isinstance(self.threshold_value[1], (tuple, list)) \
@@ -72,15 +133,12 @@ class KerasMultiLIFLayerBase(keras.layers.Layer):
     def build(self, input_shape):
 
         def custom_init(in_feat, out_feat, dtype):
-            # limit = (6/(in_feat + out_feat))**0.5
-            limit = (6/(in_feat))**0.5 * 1.5
+            limit = (6/(in_feat))**0.5 * self.weight_mul # + 100
             shape = get_shape(in_feat, out_feat, self.transpose_weights)
-            print(f"limit={limit}")
-            # return tf.random.uniform(shape, minval=0, maxval=limit, dtype=dtype)
-            return tf.random.uniform(shape, minval=-limit, maxval=limit, dtype=dtype)
+            return tf.random.uniform(shape, minval=-limit, maxval=limit, dtype=dtype) + 0.001
 
         # w_init = tf.random_normal_initializer(0.0, 10.0, self.seed)
-        w_init = tf.random_normal_initializer(0.0, 0.1, self.seed)
+        # w_init = tf.random_normal_initializer(0.0, 0.1, self.seed)
         # dec_const_init = tf.random_uniform_initializer(minval=0.87, maxval=0.93, seed=self.seed)
 
         if self.seed is not None:

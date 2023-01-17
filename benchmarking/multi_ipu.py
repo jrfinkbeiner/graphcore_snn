@@ -369,7 +369,7 @@ def model_fn_sparse_ops(sparse_shapes, seq_len, dense_shapes, decay_constant, th
 
     return (inp_spike_ids, num_inp_spikes), output
 
-def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None, num_ipus=1):
+def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None, num_ipus=1, weight_mul=1.0):
     if return_all:
         warnings.warn("All layers outputs will be returned. But note that only gradient propagation through the last layers outputs is implemented."
                     " Adding loss terms to other layers outputs will be ignored and will result in a wrong gradient.", UserWarning)
@@ -381,11 +381,13 @@ def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, 
     
     spike_ids = [tf.transpose(inp_spike_ids, perm=[1, 0, 2]), *[tf.zeros((batchsize_per_step, sparse_shapes[ilay]), dtype=inp_spike_ids.dtype ) for ilay in range(1, num_layers)]]
     num_spikes = [tf.transpose(num_inp_spikes, perm=[1, 0, 2]), *[tf.zeros((batchsize_per_step,1), dtype=num_inp_spikes.dtype ) for ilay in range(1, num_layers)]]
+    # spike_ids = [tf.transpose(inp_spike_ids, perm=[1, 0, 2]), *[tf.repeat(tf.expand_dims(tf.range(0, sparse_shapes[ilay], delta=1,  dtype=inp_spike_ids.dtype), axis=0), batchsize_per_step, axis=0) for ilay in range(1, num_layers)]]
+    # num_spikes = [tf.transpose(num_inp_spikes, perm=[1, 0, 2]), *[tf.cast(tf.fill((batchsize_per_step,1), sparse_shapes[ilay]), dtype=num_inp_spikes.dtype) for ilay in range(1, num_layers)]]
     inp_spikes = [SparseBinaryVec(ids,nz_elemts) for ids,nz_elemts in zip(spike_ids, num_spikes)]
 
     init_states = [tf.zeros((batchsize_per_step, dense_shapes[i+1]), dtype=tf.float32, name=f"init_state_{i}") for i in range(num_layers)]
     out = KerasMultiLIFLayerSparse(
-            dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed, num_ipus
+            dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed, num_ipus, weight_mul
         )(inp_spikes, init_states)
     out_spike_ids, num_out_spikes, states = out[:num_layers], out[num_layers:2*num_layers], out[2*num_layers:]
 
@@ -427,7 +429,7 @@ class KerasSparseIdentity(keras.layers.Layer):
         return type(x)(x.ids @ self.eye, x.num_nzelements)
 
 
-def model_fn_sparse_layer_multi_ipu(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None, num_ipus=1):
+def model_fn_sparse_layer_multi_ipu(sparse_shapes, seq_len, dense_shapes, decay_constant, threshold, batchsize_per_step, transpose_weights=False, return_all=False, seed=None, num_ipus=1, weight_mul=1.0):
     if return_all:
         warnings.warn("All layers outputs will be returned. But note that only gradient propagation through the last layers outputs is implemented."
                     " Adding loss terms to other layers outputs will be ignored and will result in a wrong gradient.", UserWarning)
@@ -450,7 +452,7 @@ def model_fn_sparse_layer_multi_ipu(sparse_shapes, seq_len, dense_shapes, decay_
         init_states = [tf.zeros((batchsize_per_step, dense_shapes[i+1]), dtype=tf.float32, name=f"init_state_{i}") for i in range(num_layers)]
     
         out = KerasMultiLIFLayerSparse(
-                dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed, num_ipus
+                dense_shapes, sparse_shapes, decay_constant, threshold, transpose_weights, seed, num_ipus, weight_mul
             )(inp_spikes, init_states)
         out_spike_ids, num_out_spikes, states = out[:num_layers], out[num_layers:2*num_layers], out[2*num_layers:]
 
@@ -674,16 +676,22 @@ def train_mutli_ipu_benchmarking(
         threshold,
         loss_fn,
         steps_per_epoch=None,
+        callbacks=None,
         return_all=False,
         transpose_weights=False,
         learning_rate=1e-2,
         num_ipus=1,
         seed=None,
+        weight_mul=1.0,
+        ipu_id=None,
         **optim_kwargs
     ):
     # set ipu config and strategy 
     ipu_config = ipu.config.IPUConfig()
-    ipu_config.auto_select_ipus = num_ipus
+    if ipu_id is None:
+        ipu_config.auto_select_ipus = num_ipus
+    else:
+        ipu_config.select_ipus = ipu_id
     ipu_config.configure_ipu_system()
     strategy = ipu.ipu_strategy.IPUStrategy()
 
@@ -694,13 +702,13 @@ def train_mutli_ipu_benchmarking(
         method_to_model_fn = {
             # "dense": model_fn_dense, 
             "sparse_ops": ft.partial(model_fn_sparse_ops, sparse_sizes, transpose_weights=False),
-            "sparse_layer": ft.partial(model_fn_sparse_layer_multi_ipu, sparse_sizes, transpose_weights=True, num_ipus=num_ipus),
+            "sparse_layer": ft.partial(model_fn_sparse_layer_multi_ipu, sparse_sizes, transpose_weights=True, num_ipus=num_ipus, weight_mul=weight_mul),
         }
     else:
         method_to_model_fn = {
             # "dense": model_fn_dense, 
             "sparse_ops": ft.partial(model_fn_sparse_ops, sparse_sizes, transpose_weights=False),
-            "sparse_layer": ft.partial(model_fn_sparse_layer, sparse_sizes, transpose_weights=True),
+            "sparse_layer": ft.partial(model_fn_sparse_layer, sparse_sizes, transpose_weights=True, weight_mul=weight_mul),
         }
 
     with strategy.scope():
@@ -733,7 +741,7 @@ def train_mutli_ipu_benchmarking(
         model.summary()
         start_time = time.time()
         print('\nTraining')
-        model.fit(dataset, epochs=num_epochs, steps_per_epoch=steps_per_epoch, workers=batch_size)
+        model.fit(dataset, epochs=num_epochs, steps_per_epoch=steps_per_epoch, workers=batch_size, callbacks=callbacks)
         print("\nFinal time: ", time.time()-start_time)
 
 
