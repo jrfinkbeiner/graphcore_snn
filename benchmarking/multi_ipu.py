@@ -381,6 +381,8 @@ def model_fn_sparse_layer(sparse_shapes, seq_len, dense_shapes, decay_constant, 
     
     spike_ids = [tf.transpose(inp_spike_ids, perm=[1, 0, 2]), *[tf.zeros((batchsize_per_step, sparse_shapes[ilay]), dtype=inp_spike_ids.dtype ) for ilay in range(1, num_layers)]]
     num_spikes = [tf.transpose(num_inp_spikes, perm=[1, 0, 2]), *[tf.zeros((batchsize_per_step,1), dtype=num_inp_spikes.dtype ) for ilay in range(1, num_layers)]]
+    # spike_ids = [tf.transpose(inp_spike_ids, perm=[1, 0, 2]), *[tf.repeat(tf.expand_dims(tf.range(0, sparse_shapes[ilay], delta=1,  dtype=inp_spike_ids.dtype), axis=0), batchsize_per_step, axis=0) for ilay in range(1, num_layers)]]
+    # num_spikes = [tf.transpose(num_inp_spikes, perm=[1, 0, 2]), *[tf.cast(tf.fill((batchsize_per_step,1), sparse_shapes[ilay]), dtype=num_inp_spikes.dtype) for ilay in range(1, num_layers)]]
     inp_spikes = [SparseBinaryVec(ids,nz_elemts) for ids,nz_elemts in zip(spike_ids, num_spikes)]
 
     init_states = [tf.zeros((batchsize_per_step, dense_shapes[i+1]), dtype=tf.float32, name=f"init_state_{i}") for i in range(num_layers)]
@@ -681,11 +683,15 @@ def train_mutli_ipu_benchmarking(
         num_ipus=1,
         seed=None,
         weight_mul=1.0,
+        ipu_id=None,
         **optim_kwargs
     ):
     # set ipu config and strategy 
     ipu_config = ipu.config.IPUConfig()
-    ipu_config.auto_select_ipus = num_ipus
+    if ipu_id is None:
+        ipu_config.auto_select_ipus = num_ipus
+    else:
+        ipu_config.select_ipus = ipu_id
     ipu_config.configure_ipu_system()
     strategy = ipu.ipu_strategy.IPUStrategy()
 
