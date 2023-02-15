@@ -1,5 +1,5 @@
 #!/bin/bash -x
-#SBATCH --account=hpsadm
+#SBATCH --account=exalab
 #SBATCH --nodes=1
 #SBATCH --output=slurm-out.%j
 #SBATCH --error=slurm-err.%j
