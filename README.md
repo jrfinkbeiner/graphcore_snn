@@ -45,7 +45,7 @@ srun singularity run <docker_image_path> ./runfile_test.sh
 ```console
 sbatch performance_jobscript
 ```
-(NOTE you have to adjust the file to use the correct docker image file.)
+(NOTE you have to adjust the file to use the correct docker image file. As well as the data-path in `benchmarking_script.py`)
 
 
 
