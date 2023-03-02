@@ -473,6 +473,10 @@ def main(args, ROOT_PATH_DATA):
 
 
 if __name__ == "__main__":
+    # import sys
+    # print(sys.version)
+    # sys.exit()
+
     import argparse
     parser = argparse.ArgumentParser(description="Randman training optionally using the IPU and sparse implementations.")
     parser.add_argument('--use_ipu', type=int, default=1, help="Whether to use the IPU (default is `1` therefore `True`).")
@@ -502,7 +506,8 @@ if __name__ == "__main__":
 
     # ROOT_PATH_DATA = "/p/scratch/chpsadm/finkbeiner1/datasets"
     # ROOT_PATH_DATA = "/Data/pgi-15/datasets"
+    ROOT_PATH_DATA = "/p/scratch/pgi-15/common/datasets"
     # ROOT_PATH_DATA = "/p/scratch/icei-hbp-2022-0011/common/datasets/"
-    ROOT_PATH_DATA = "/localdata/datasets/"
+    # ROOT_PATH_DATA = "/localdata/datasets/"
 
     main(args, ROOT_PATH_DATA)

@@ -1163,6 +1163,7 @@ def test_sparse_vs_dense():
 
 
 if __name__ == '__main__':
+    print("RUNNING FILE")
     test_sparse_vs_dense()
     # main()
 

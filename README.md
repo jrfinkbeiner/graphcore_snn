@@ -13,6 +13,35 @@ make
 
 For now only omiling code for sparse ops is supported. For other code (sparse layer, ...) please go to the respective folders and run `make` manually.
 
+```console
+cd custom_lif_multi_layer/custom_lif_layer_vectorize_transpose/
+make
+```
+
+With this you will be able to use the sparse implementations as defined in `benchmarking/keras_train_util_ipu.py`.
+If you are only interested in using select operations, just import them from this file in your python file:
+
+```python
+from keras_train_util_ipu import 
+```
+
+For now there is no more sophisticated integration into python packages, so just place your files in the benchmarking folder and execute from there. 
+
+It follows a list of interesting files in the `benchmarking` folder:
+- `keras_train_util.py`: Keras implementation of base SNN class and the dense version for the GPU
+- `keras_train_util_ipu.py`: Keras SNN-implementation for the IPU, including dense and sparse implementations, both for the sparse ops as well as for the fully custom sparse multi-layer SNN. Executing this file directly will run and compare results for dense, sparse ops, and sparse layer implementation (essentially running a poor man's test case).
+- `nmnist_util.py`: Utility file for dataloaders
+- `multi_proc_helper.py`: Helper file for multiprocessing for dataloading
+- `benchmarking_script.py`: File to execute training for benchmarking puproses
+- `performance_jobscript.sh`: Sbatch file that executes a runscript.
+- `runfile_nmnist_multi_layer_benchmark.sh`: Runfile that in it's current form just executes example runs for the `sprase_layer` and `sparse_ops` implementation.
+
+In order to test your setup either run:
+
+
+
+
+
 
 ## Relevant Resources
 - Zenke, Friedemann, and Emre O. Neftci. "Brain-inspired learning on neuromorphic substrates." Proceedings of the IEEE 109.5 (2021): 935-950. (https://ieeexplore.ieee.org/abstract/document/9317744/)

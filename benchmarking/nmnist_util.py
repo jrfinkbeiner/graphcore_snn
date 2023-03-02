@@ -714,9 +714,9 @@ if __name__ == "__main__":
         sparse_str = "sparse" if use_sparse else "dense"
         # gen, num_samples = create_nmnist_gener(
         gen, num_samples = create_gener(
-            # "NMNIST",
+            "NMNIST",
             # "SHD",
-            "DVSGesture",
+            # "DVSGesture",
             # root="/Data/pgi-15/datasets", 
             root="/localdata/datasets/", 
             sparse=use_sparse, 
