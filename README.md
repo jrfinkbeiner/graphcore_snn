@@ -22,7 +22,7 @@ With this you will be able to use the sparse implementations as defined in `benc
 If you are only interested in using select operations, just import them from this file in your python file:
 
 ```python
-from keras_train_util_ipu import 
+from keras_train_util_ipu import compute_sparse_spikes, dyn_dense_binary_sparse_matmul_op
 ```
 
 For now there is no more sophisticated integration into python packages, so just place your files in the benchmarking folder and execute from there. 
