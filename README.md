@@ -38,6 +38,18 @@ It follows a list of interesting files in the `benchmarking` folder:
 
 In order to test your setup either run:
 
+```console
+srun singularity run <docker_image_path> ./runfile_test.sh
+```
+
+```console
+sbatch performance_jobscript
+```
+(NOTE you have to adjust the file to use the correct docker image file.)
+
+
+
+
 
 
 
