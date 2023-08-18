@@ -2,6 +2,8 @@ benchmarking/system_analys*
 benchmarking/graph_analysis/
 *failure*
 benchmarking/final_bench_results*
+final_bench_results*/
+logs_*/
 log_*.log
 log_*.out
 log_*.txt
