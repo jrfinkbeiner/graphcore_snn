@@ -2,7 +2,24 @@
 
 Projects related to the development of an efficient spiking neural network (SNN) implementation on graphcore's IPU.
 
-To compile run:
+## Running Code with and without Access to IPUs
+
+If you have access to an IPU, great, if not, you can also compile the code and run it in a simulation mode, the `IPUModel` on an CPU. 
+
+If you are working on your own machine, go to https://www.graphcore.ai/downloads and download the latest polar sdk. 
+Unpack it on your machine. In there you will find a tensorflow wheel, that you can install in a new environment. Additionally, you will have to source the "poplar<...sth...>/enable.sh" file in there and then you can run the same code but only using the IPUModel configuration.
+
+## Installation Guide
+
+Source the poplar as mentioned in the section above and install the provided tensorflow 2 wheel:
+
+```console
+source poplar<...sth...>/enable.sh
+pip install --upgrade pip
+pip install tensorflow-<... smth...>.whl
+```
+
+Then, to compile run:
 
 ```console
 mkdir build
@@ -11,21 +28,46 @@ cmake ..
 make
 ```
 
-For now only omiling code for sparse ops is supported. For other code (sparse layer, ...) please go to the respective folders and run `make` manually.
+For now only compiling code via cmake is supported for sparse ops. For other code (sparse layer, ...) please go to the respective folders and run `make` manually.
 
 ```console
 cd custom_lif_multi_layer/custom_lif_layer_vectorize_transpose/
 make
 ```
 
-With this you will be able to use the sparse implementations as defined in `benchmarking/keras_train_util_ipu.py`.
+Lastly, pip install necessary requirements for the benchmarking code:
+
+```console
+pip install -r requirements.txt
+```
+
+Test your installation by running the following code if executing with an actual IPU:
+
+```console
+cd benchmarking
+./runfile_test.sh
+```
+
+Alternatively, if running on a cpu in simulation mode using the `IPUModel`, run:
+
+```console
+cd benchmarking
+TF_POPLAR_FLAGS=--use_ipu_model ./runfile_test.sh
+```
+
+
+## First Steps
+
+Everytime, you want to run anything, using either the `IPUModel` on CPU or on an actual IPU, amke sure you sourced the poplar sdk first. 
+
+With this and the installations you will be able to use the sparse implementations as defined in `benchmarking/keras_train_util_ipu.py`.
 If you are only interested in using select operations, just import them from this file in your python file:
 
 ```python
 from keras_train_util_ipu import compute_sparse_spikes, dyn_dense_binary_sparse_matmul_op
 ```
 
-For now there is no more sophisticated integration into python packages, so just place your files in the benchmarking folder and execute from there. 
+For now there is no more sophisticated integration into python packages, so just place your files in the benchmarking folder and execute from there.
 
 It follows a list of interesting files in the `benchmarking` folder:
 - `keras_train_util.py`: Keras implementation of base SNN class and the dense version for the GPU
@@ -46,9 +88,6 @@ srun singularity run <docker_image_path> ./runfile_test.sh
 sbatch performance_jobscript
 ```
 (NOTE you have to adjust the file to use the correct docker image file. As well as the data-path in `benchmarking_script.py`)
-
-
-
 
 
 
