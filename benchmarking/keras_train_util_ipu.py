@@ -997,7 +997,7 @@ def test_sparse_vs_dense():
 
 
 
-    sys.exit()
+    # sys.exit()
 
 
     print("\n############################## SPARSE OPS ####################################")
