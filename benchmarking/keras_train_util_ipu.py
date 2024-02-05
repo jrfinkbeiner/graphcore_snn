@@ -830,7 +830,7 @@ def check_values(a, b, name, *,rtol=1e-4, **kwargs):
 
 def test_sparse_vs_dense():
 
-    # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
+    os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
 
     rng = np.random.default_rng(1)
     num_sequences = 24
@@ -927,7 +927,7 @@ def test_sparse_vs_dense():
     inp_spikes = sparse2dense(inp_spike_ids, num_inp_spikes, dense_sizes[0])
     dataset_dense = create_dataset_dense(inp_spikes.transpose(1, 0, 2), targets, batchsize, shuffle=False)
 
-    num_ipus = 1
+    num_ipus = 2
 
     # set ipu config and strategy 
     ipu_config = ipu.config.IPUConfig()

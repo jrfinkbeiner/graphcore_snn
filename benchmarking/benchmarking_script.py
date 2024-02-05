@@ -213,6 +213,16 @@ def main(args, ROOT_PATH_DATA):
         SPARSE_SIZES_BASE = [64, 4, *[4]*(2*(NUM_IPUS-1)), 4, 10]
         SPARSE_SIZES = SPARSE_SIZES_BASE[:1] + [min(dense, int(sparse*SPARSE_MULTIPLIER)) for sparse,dense in zip(SPARSE_SIZES_BASE[1:], DENSE_SIZES[1:])]
 
+    print("\nNUM_HIDDEN_LAYERS", NUM_HIDDEN_LAYERS)
+    print("NUM_NEURONS_PER_TILE: ", NUM_NEURONS_PER_TILE) 
+    print("MAX_ACTIVITY: ", MAX_ACTIVITY)
+    print("BENCH_MODE: ", BENCH_MODE) 
+    print("DENSE_SIZES", DENSE_SIZES)
+    print("SPARSE_SIZES", SPARSE_SIZES)
+    print("Num Weights", np.sum(np.array(DENSE_SIZES[1:])*np.array(DENSE_SIZES[:-1])))
+    print("sum", np.sum(DENSE_SIZES[1:]), np.sum(DENSE_SIZES[1:])/NUM_NEURONS_PER_TILE)
+    sys.exit()
+
     # if DATASET_NAME=="NMNIST":
     #     # benchmarking presentation
     #     # DENSE_SIZES = [np.prod(IMAGE_DIMS), 1470, *[1472]*(2*(NUM_IPUS-1)), 1076+384, NUM_CLASSES]
